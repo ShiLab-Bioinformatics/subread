@@ -1,0 +1,9 @@
+# Program:featureCounts v1.4.5; Command:"../../../bin/featureCounts" "-a" "test-minimum.GTF" "--minReadOverlap" "-10000" "-o" "test-minimum-35ext.ora" "test-minimum.bam" 
+Geneid	test-minimum.bam
+simu_gene1	17
+simu_gene2	9
+simu_gene3	18
+simu_gene4	6
+simu_gene5	86
+simu_gene6	38
+simu_gene7	264

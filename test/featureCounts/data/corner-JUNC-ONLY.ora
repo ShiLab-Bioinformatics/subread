@@ -1,0 +1,25 @@
+# Program:featureCounts v1.4.5; Command:"../../../bin/featureCounts" "-o" "corner-JUNC-ONLY.ora" "-a" "test-minimum.GTF" "--countSplitAlignmentsOnly" "-O" "-f" "corner-JUNC.sam" 
+Geneid	Chr	Start	End	corner-JUNC.sam
+simu_gene1	chr3	100	10000	0
+simu_gene1	chr3	20000	30000	0
+simu_gene1	chr3	40000	89000	0
+simu_gene2	chr3	100010	101000	0
+simu_gene2	chr3	102000	103000	0
+simu_gene2	chr3	104000	129000	0
+simu_gene2	chr3	102000	131000	0
+simu_gene3	chr3	500010	501000	0
+simu_gene3	chr3	502000	503000	0
+simu_gene3	chr3	504000	529000	0
+simu_gene3	chr3	600000	669000	2
+simu_gene4	chr3	602000	631000	1
+simu_gene4	chr3	672000	699000	0
+simu_gene4	chr3	702000	719000	0
+simu_gene5	chr4	20000	100000	0
+simu_gene5	chr4	120000	190000	0
+simu_gene5	chr4	200000	210000	0
+simu_gene5	chr4	220000	300000	0
+simu_gene6	chr4	420000	490000	0
+simu_gene6	chr4	500000	560000	0
+simu_gene7	chr5	120000	490000	0
+simu_gene7	chr5	500000	960000	0
+simu_gene7	chr5	970000	1000000	0

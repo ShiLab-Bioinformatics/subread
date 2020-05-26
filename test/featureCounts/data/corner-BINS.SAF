@@ -1,0 +1,7 @@
+GeneID	Chr	Start	End	Strand
+bin1	chrX	10000	10049	+
+bin2	chrX	10050	10099	+
+bin3	chrX	10100	10149	+
+bin4	chrX	10150	10199	+
+bin5	chrX	10200	10249	+
+bin6	chrX	10250	10299	+

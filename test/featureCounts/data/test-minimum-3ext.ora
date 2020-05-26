@@ -1,0 +1,9 @@
+# Program:featureCounts v1.4.5; Command:"../../../bin/featureCounts" "-o" "test-minimum-3ext.ora" "-a" "test-minimum.GTF" "--readExtension3" "10000" "test-minimum.bam" 
+Geneid	test-minimum.bam
+simu_gene1	16
+simu_gene2	6
+simu_gene3	14
+simu_gene4	4
+simu_gene5	80
+simu_gene6	34
+simu_gene7	260

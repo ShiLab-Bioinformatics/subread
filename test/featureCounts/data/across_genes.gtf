@@ -1,0 +1,8 @@
+1	SOURCE	exon	281759	282189	.	+	.	gene_id "GENE1"; transcript_id "GENE1.1";
+1	SOURCE	exon	282484	282766	.	+	.	gene_id "GENE1"; transcript_id "GENE1.1";
+1	SOURCE	exon	282849	282891	.	+	.	gene_id "GENE1"; transcript_id "GENE1.1";
+1	SOURCE	exon	282761	283053	.	+	.	gene_id "GENE2"; transcript_id "GENE2.1";
+1	SOURCE	exon	283132	283231	.	+	.	gene_id "GENE2"; transcript_id "GENE2.1";
+1	SOURCE	exon	283314	283336	.	+	.	gene_id "GENE2"; transcript_id "GENE2.1";
+1	SOURCE	exon	283444	283533	.	+	.	gene_id "GENE2"; transcript_id "GENE2.1";
+1	SOURCE	exon	283813	284245	.	+	.	gene_id "GENE2"; transcript_id "GENE2.1";

@@ -1,0 +1,10 @@
+## featureCounts output gene_level; version:1.4.0b5
+## CMD:"../../../bin/featureCounts" "-a" "test-minimum.GTF" "-i" "test-minimum.sam" "-o" "test-minimum-STR.ora" "-p" "-s1" 
+geneid	nreads
+simu_gene1	4
+simu_gene2	0
+simu_gene3	4
+simu_gene4	1
+simu_gene5	16
+simu_gene6	10
+simu_gene7	51

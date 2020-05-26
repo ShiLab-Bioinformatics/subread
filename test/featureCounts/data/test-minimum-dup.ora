@@ -1,0 +1,9 @@
+# Program:featureCounts v1.4.5; Command:"../../../bin/featureCounts" "-o" "test-minimum-dup.ora" "-p" "-a" "test-minimum.GTF" "--ignoreDup" "test-chrname.sam" 
+Geneid	test-chrname.sam
+simu_gene1	8
+simu_gene2	5
+simu_gene3	6
+simu_gene4	3
+simu_gene5	21
+simu_gene6	14
+simu_gene7	82

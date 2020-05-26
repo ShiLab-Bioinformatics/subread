@@ -1,0 +1,7 @@
+@SQ	SN:chr3	LN:999950
+R1	0	chr3	1000	40	100M	*	0	0	N	I	NH:i:3	HI:i:1
+R1	0	chr3	3000	40	100M	*	0	0	N	I	NH:i:3	HI:i:2
+R1	0	chr3	5000	40	100M	*	0	0	N	I	NH:i:3	HI:i:3
+R2	0	chr3	1000	40	100M	*	0	0	N	I	NH:i:1	HI:i:1
+R3	0	chr3	3000	40	100M	*	0	0	N	I	NH:i:2	HI:i:1
+R3	0	chr3	9000	40	100M	*	0	0	N	I	NH:i:2	HI:i:2
