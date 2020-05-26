@@ -29,3 +29,8 @@ The Subread package incoperates many small test cases that cover most of its fun
 
 # Usage
 The usages of the programs in this package can be found in the users-guide in the "/doc" directory.
+
+# Citation
+1. The Subread aligner: fast, accurate and scalable read mapping by seed-and-vote Y Liao, GK Smyth, W Shi - Nucleic acids research, 2013
+
+2. featureCounts: an efficient general purpose program for assigning sequence reads to genomic features Y Liao, GK Smyth, W Shi - Bioinformatics, 2014
