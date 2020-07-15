@@ -44,6 +44,7 @@ If your computer has 32GB or more memory, you can set ``gappedIndex=FALSE`` to b
 The Rsubread package provides two functions for read mapping: ``align()`` and ``subjunc()``. The ``align()`` function can map both DNA-seq and RNA-seq data while the ``subjunc()`` function is dedicated for mapping RNA-seq reads, but with all exons detected in reads that contain exon-exon junctions.
 
 Although it only maps at most one exon in each read, the ``align()`` function is usually good enough for gene Differential-Expression (DE) analyses. The ``subjunc()`` function is for specific analyses that involve calling of known/de novo exon-exon junctions.
+
 ```R
 align.sum <- align(
   "hg38-index", "SEQC-A_R1.fastq.gz", readfile2="SEQC-A_R2.fastq.gz", output_file="SEQC-A-align.bam",
@@ -51,14 +52,14 @@ align.sum <- align(
 )
 
 junc.sum <- subjunc(
-  "hg38-index", "SEQC-A_R1.fastq.gz", readfile2="SEQC-A_R2.fastq.gz", output_file="SEQC-A-align.bam",
+  "hg38-index", "SEQC-A_R1.fastq.gz", readfile2="SEQC-A_R2.fastq.gz", output_file="SEQC-A-subjunc.bam",
   nthreads=4, useAnnotation=TRUE, annot.inbuilt="hg38"
 )
 
 print(align.sum)
 print(junc.sum)
 ```
+The summary of mapping will be printed on screen, and you can find two new files named ``SEQC-A-align.bam`` and ``SEQC-A-subjunc.bam`` in the current working directory. The files contain the mapping results of the SEQC-A sample. You can also find some other files with names that have the same prefixes: the ``index.vcf`` files give the short insertions and deletions (indels) detected in the samples, and the ``junction.bed`` file gives the list of exon-exon junction points called in reads, with the numbers of reads supporting each junction.
 
-
-
-## 
+## Next step
+The next step after you have the mapping results depends on the purpose of your study. If you are calling the differential expression genes, you may proceed to our tutorial for counting reads using featureCounts.
