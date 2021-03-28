@@ -9,5 +9,5 @@ echo
 # ================================================================================
 # Testing alias file to convert chromosome names in the annotation file
 # The alias file has each line defining an alias: Chro_Name_in_Annotation,Chro_Name_in_SAM
-$SH_CMD data/compare.sh data/test-chralias.sam data/test-chralias.ora data/test-chralias.SAF  "-F SAF -p -A data/test-chralias.txt " "chromosome aliases"
+$SH_CMD data/compare.sh data/test-chralias.sam data/test-chralias.ora data/test-chralias.SAF  "-F SAF --countReadPairs -p -A data/test-chralias.txt " "chromosome aliases"
 echo

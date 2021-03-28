@@ -33,7 +33,7 @@ echo
 rm -f data/test-minimum.log
 # ================================================================================
 # The minimum runnable test
-../../bin/featureCounts -a data/test-minimum.GTF -o result/test-minimum.FC data/test-minimum.sam 
+../../bin/featureCounts -p -a data/test-minimum.GTF -o result/test-minimum.FC data/test-minimum.sam 
 
 echo "================================================================================"
 echo "Basic Test finished."

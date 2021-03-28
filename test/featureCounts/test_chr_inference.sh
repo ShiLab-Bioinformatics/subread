@@ -8,6 +8,6 @@ echo
 
 # ================================================================================
 # Testing incomplete chromosome names in the annotations and in the SAM file
-$SH_CMD data/compare.sh data/test-chrname.sam data/test-chrname.ora data/test-chrname.SAF  "-F SAF -p " "automatic inference of chromosome names"
+$SH_CMD data/compare.sh data/test-chrname.sam data/test-chrname.ora data/test-chrname.SAF  "-F SAF -p --countReadPairs " "automatic inference of chromosome names"
 
 echo

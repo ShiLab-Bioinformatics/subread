@@ -1,4 +1,4 @@
-PrimaryGene	SecondaryGenes	Site1_chr	Site1_location	Site1_strand	Site2_chr	Site2_location	Site2_strand	test-junc.sam
+PrimaryGene	SecondaryGenes	Site1_chr	Site1_location	Site1_strand	Site2_chr	Site2_location	Site2_strand	data/test-junc-u.sam
 NA	NA	chr3	10347376	NA	chr3	10353649	NA	1
 NA	NA	chr3	10353782	NA	chr3	10354263	NA	1
 NA	NA	chr3	12626156	NA	chr3	12626346	NA	1
@@ -69,7 +69,6 @@ NA	NA	chr3	142606619	NA	chr3	142607656	NA	1
 NA	NA	chr3	148891517	NA	chr3	148894037	NA	1
 NA	NA	chr3	149093556	NA	chr3	149095158	NA	1
 NA	NA	chr3	150321286	NA	chr3	150340172	NA	1
-NA	NA	chr3	150344950	NA	chr3	150345446	NA	1
 NA	NA	chr3	155643155	NA	chr3	155649554	NA	1
 NA	NA	chr3	156392583	NA	chr3	156395444	NA	1
 NA	NA	chr3	160137331	NA	chr3	160138528	NA	1
