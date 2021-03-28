@@ -267,7 +267,7 @@ int LRMgehash_load_option(const char fname [], int option_no, int * result){
 	if(fp){	
 		int rlen = fread(magic_chars,1,8,fp);
 		if(rlen < 8){
-			LRMprintf("ERROR: Unable to read-in the index!\n");
+			LRMprintf("ERROR: Unable to read-in the index.\n");
 			return -1;
 		}
 		if(memcmp(magic_chars, "2subindx",7)==0) {
@@ -276,7 +276,7 @@ int LRMgehash_load_option(const char fname [], int option_no, int * result){
 
 				rlen = fread(&option_key, 2, 1, fp);
 				if(rlen<1){
-					LRMprintf("ERROR: Unable to read-in the index!\n");
+					LRMprintf("ERROR: Unable to read-in the index.\n");
 					return -1;
 				}
 
@@ -284,7 +284,7 @@ int LRMgehash_load_option(const char fname [], int option_no, int * result){
 
 				rlen = fread(&option_length, 2, 1, fp);
 				if(rlen<1){
-					LRMprintf("ERROR: Unable to read-in the index!\n");
+					LRMprintf("ERROR: Unable to read-in the index.\n");
 					return -1;
 				}
 
@@ -293,7 +293,7 @@ int LRMgehash_load_option(const char fname [], int option_no, int * result){
 					*result = 0;
 					rlen = fread(result ,option_length,1,fp);
 					if(rlen<1){
-						LRMprintf("ERROR: Unable to read-in the index!\n");
+						LRMprintf("ERROR: Unable to read-in the index.\n");
 						return -1;
 					}
 					found = 1;
@@ -324,7 +324,7 @@ int LRMgehash_load(LRMgehash_t * the_table, const char fname [])
 
 	int rlen = fread(magic_chars,1,8,fp);
 	if(rlen<8){
-		LRMprintf("ERROR: Unable to read-in the index!\n");
+		LRMprintf("ERROR: Unable to read-in the index.\n");
 		return -1;
 	}
 	
@@ -340,14 +340,14 @@ int LRMgehash_load(LRMgehash_t * the_table, const char fname [])
 
 			rlen = fread(&option_key, 2, 1, fp);
 			if(rlen<1){
-				LRMprintf("ERROR: Unable to read-in the index!\n");
+				LRMprintf("ERROR: Unable to read-in the index.\n");
 				return -1;
 			}
 			if(!option_key) break;
 
 			rlen = fread(&option_length, 2, 1, fp);
 			if(rlen<1){
-				LRMprintf("ERROR: Unable to read-in the index!\n");
+				LRMprintf("ERROR: Unable to read-in the index.\n");
 				return -1;
 			}
 
@@ -360,7 +360,7 @@ int LRMgehash_load(LRMgehash_t * the_table, const char fname [])
 				fseek(fp, option_length, SEEK_CUR);
 
 			if(rlen<1){
-				LRMprintf("ERROR: Unable to read-in the index!\n");
+				LRMprintf("ERROR: Unable to read-in the index.\n");
 				return -1;
 			}
 		}

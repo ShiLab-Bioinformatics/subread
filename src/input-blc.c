@@ -8,7 +8,9 @@
 #include "HelperFunctions.h"
 #include "seek-zlib.h"
 #include "gene-algorithms.h"
+#include "input-files.h"
 #include "input-blc.h"
+#include "sambam-file.h"
 
 #ifdef __MINGW32__
 #define SR_PATH_SPLIT_STR "\\"
@@ -434,7 +436,7 @@ int iCache_copy_read(cache_BCL_t * cache_input, char * read_name, char * seq, ch
 	read_name[13+idx_offset]='|';
 	read_name[14+2*idx_offset]='|';
 	read_name[15+base_offset+idx_offset]='|';
-	sprintf(read_name +16 +2*base_offset, "|L%03d" , cache_input -> lane_no_in_chunk[cache_input -> read_no_in_chunk]);
+	sprintf(read_name +16 +2*base_offset, "|@RgLater@L%03d" , cache_input -> lane_no_in_chunk[cache_input -> read_no_in_chunk]);
 
 	for(bii = 0; bii < cache_input -> total_bases_in_each_cluster; bii++){
 		int nch = cache_input -> bcl_bin_cache[bii][cache_input -> read_no_in_chunk];
@@ -519,33 +521,33 @@ int iBLC_current_lane_next_read(input_BLC_t * blc_input, char * readname , char 
 		int baseii =0;
 		for(bii =0; bii< blc_input -> total_bases_in_each_cluster; bii++){
 			int nch = blc_input -> bcl_is_gzipped?seekgz_next_int8(blc_input -> bcl_gzip_fps[bii]):fgetc(blc_input -> bcl_fps[bii]), bv, qv;
-			assert(nch >=0 && nch <=255);
 
-			if(0==nch){
-				bv='N';
-				qv='#';
-			}else{
-				bv="ACGT"[nch%4];
-				qv=33+(nch>>2);
-				if(qv >= '/') qv++;
-			}
-			if(bii < idx_offset){
-				assert(bv !=0 && qv !=0);
-				readname[13+ bii]=bv;
-				readname[14+ bii+idx_offset]=qv;
-			}else if(bii < base_offset){
-				assert(bv !=0 && qv !=0);
-				readname[15+ bii+ idx_offset]=bv;
-				readname[16+ bii+ base_offset]=qv;
-			}else{
-				read[baseii] = bv;
-				qual[baseii] = qv;
-				baseii++;
+			if(fch == 1){
+				if(0==nch){
+					bv='N';
+					qv='#';
+				}else{
+					bv="ACGT"[nch%4];
+					qv=33+(nch>>2);
+					if(qv >= '/') qv++;
+				}
+				if(bii < idx_offset){
+					assert(bv !=0 && qv !=0);
+					readname[13+ bii]=bv;
+					readname[14+ bii+idx_offset]=qv;
+				}else if(bii < base_offset){
+					assert(bv !=0 && qv !=0);
+					readname[15+ bii+ idx_offset]=bv;
+					readname[16+ bii+ base_offset]=qv;
+				}else{
+					read[baseii] = bv;
+					qual[baseii] = qv;
+					baseii++;
+				}
 			}
 		}
-		assert(fch==1||fch==0);
+
 		if(fch==1){
-		//	SUBREADprintf("ASS_RNAME=%s\n", readname);
 			blc_input -> read_number ++;
 			return baseii;
 		}
@@ -666,41 +668,82 @@ void iBLC_free_3tp(void * t){
 	free(tt);
 }
 
+#define SHEET_FORMAT_RAWDIR_INPUT 10
+#define SHEET_FORMAT_FASTQ_INPUT 20
+#define SHEET_FORMAT_BAM_INPUT 30
 HashTable * input_BLC_parse_SampleSheet(char * fname){
 	HashTable * ret = StringTableCreate(30);
 	HashTableSetDeallocationFunctions(ret, free, iBLC_free_sample_items);
 	FILE * fp = fopen(fname, "rb");
 	if(fp==NULL) return NULL;
 	char linebuf[MAX_FILE_NAME_LENGTH];
-	int state = -1;
+	int state = -1, file_format=-1, stat1_line = 0;
 	while(!feof(fp)){
 		char * gret = fgets(linebuf, MAX_FILE_NAME_LENGTH-1, fp);
 		if(gret == NULL) break;
-		if(strlen(linebuf)<5)continue;
+		int linelen = strlen(linebuf);
+		if(linelen<5)continue;
+		if(linebuf[linelen -1] == '\r' || linebuf[linelen -1] == '\n') linebuf[linelen -1] =0;
+		if(linebuf[linelen -2] == '\r' || linebuf[linelen -2] == '\n') linebuf[linelen -2] =0;
+		
 		if(state < 0 && strstr(linebuf,"EMFileVersion,4")) state = 0;
 		if(state == 1 && linebuf[0]=='[') state = 99999;
 		if(state == 1){
-			if(memcmp( linebuf, "Lane", 4 )==0)continue;
+			if(0==stat1_line){
+				if(strstr( linebuf, "Lane")){
+					file_format = SHEET_FORMAT_RAWDIR_INPUT;
+					continue;
+				}
+
+				if(strstr( linebuf, "BAMFile")){
+					file_format = SHEET_FORMAT_BAM_INPUT;
+					continue;
+				}
+
+				if(strstr( linebuf, "BarcodeUMIFile")){
+					file_format = SHEET_FORMAT_FASTQ_INPUT;
+					continue;
+				}
+			}
+			if(strlen(linebuf)>10)stat1_line ++;
 
 			char * tokp=NULL;
-			int lane_no = atoi(strtok_r(linebuf, ",", &tokp));
-			strtok_r(NULL, ",", &tokp);
-			char * sample_name = strtok_r(NULL, ",", &tokp);
-			char * sample_index = strdup(strtok_r(NULL, ",", &tokp));
+			int lane_no = 1;
+			char * sample_name = NULL;
+			char * sample_index = NULL;
+
+			if(file_format == SHEET_FORMAT_RAWDIR_INPUT){
+				lane_no = atoi(strtok_r(linebuf, ",", &tokp));
+				strtok_r(NULL, ",", &tokp);
+				sample_name = strtok_r(NULL, ",", &tokp);
+				sample_index = strdup(strtok_r(NULL, ",", &tokp));
+			}else if(file_format == SHEET_FORMAT_FASTQ_INPUT){
+				strtok_r(linebuf, ",", &tokp); // fastq file 1
+				strtok_r(NULL, ",", &tokp); // fastq file 2
+				sample_name = strtok_r(NULL, ",", &tokp); // sample name
+			}else{
+				strtok_r(linebuf, ",", &tokp); // bam file
+				sample_name = strtok_r(NULL, ",", &tokp); // sample name
+			}
+
 			char ** entry = malloc(sizeof(void*)*3);
 			entry[0] = NULL + lane_no;
 			entry[1] = sample_index;
+			entry[2] = NULL + stat1_line; // the N-th line in the file , 1 based
 
 			ArrayList * arr = HashTableGet(ret, sample_name);
 			if(NULL == arr){
 				arr = ArrayListCreate(16);
 				ArrayListSetDeallocationFunction(arr, iBLC_free_3tp);
-				//SUBREADprintf("PUT_SAMPLE=%s\n", sample_name);
 				HashTablePut( ret, strdup(sample_name), arr );
 			}
+			//SUBREADprintf("PUT_SAMPLE=%s of lane_no %d\n", sample_name, lane_no);
 			ArrayListPush(arr,entry);
 		}
-		if(state == 0 && strstr(linebuf,"ata]"))state = 1;
+		if(state == 0 && strstr(linebuf,"ata]")){
+			state = 1;
+			stat1_line = 0;
+		}
 	}
 	if(state <1){
 		SUBREADprintf("ERROR: the sample sheet doesn't contain any sample.\n");
@@ -862,41 +905,169 @@ void iCache_delete_bcb_key(void *k){
 	if(((k-NULL) & 0xFFFFFFFFF0000000llu)!= IMPOSSIBLE_MEMORY_ADDRESS) ArrayListDestroy(k);
 }
 
-int cacheBCL_quality_test(char * datadir, HashTable * sample_sheet_table, ArrayList * cell_barcode_list, int testing_reads, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode);
+int cacheBCL_quality_test(int input_mode, char * datadir, HashTable * sample_sheet_table, ArrayList * cell_barcode_list, int testing_reads, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode);
 #ifdef MAKE_TEST_QUALITY_TEST
 int main(int argc,char ** argv){
 #else
 int do_R_try_cell_barcode_files(int argc, char ** argv){
 #endif
-//	SUBREADprintf("%d : %s : %s : %s : %s\n", argc, argv[1], argv[2], argv[3], argv[4]);
-	assert(argc>=5);// data-dir, sample-sheet, cell-barcode-list (must be plain text)
+	assert(argc>=6);
+	int input_mode = GENE_INPUT_BCL;
+	if(strcmp("fastq", argv[5])==0) input_mode = GENE_INPUT_SCRNA_FASTQ;
+	if(strcmp("bam", argv[5])==0) input_mode = GENE_INPUT_SCRNA_BAM;
 	int testing_reads = atoi(argv[4]);
-	HashTable * sample_sheet = input_BLC_parse_SampleSheet(argv[2]);
 	ArrayList * cell_barcode_list = input_BLC_parse_CellBarcodes(argv[3]);
+	SUBREADprintf("Loaded %lld cell barcodes from %s\n", cell_barcode_list -> numOfElements, argv[3]);
+
+	HashTable * sample_sheet = NULL;
+	if(input_mode==GENE_INPUT_BCL) input_BLC_parse_SampleSheet(argv[2]);
+	char * input_BCL_raw_dir = argv[1];
 
 	int tested_reads=0, valid_sample_index=0, valid_cell_barcode=0;
-	int rv = cacheBCL_quality_test( argv[1], sample_sheet, cell_barcode_list, testing_reads, &tested_reads, &valid_sample_index, &valid_cell_barcode );
+	int rv = cacheBCL_quality_test(input_mode, input_BCL_raw_dir, sample_sheet, cell_barcode_list, testing_reads, &tested_reads, &valid_sample_index, &valid_cell_barcode );
 
 #ifdef MAKE_TEST_QUALITY_TEST
 	printf("Samples = %ld loaded\n", sample_sheet -> numOfElements);
 	printf("Cell barcodes = %ld loaded\n", cell_barcode_list -> numOfElements);
 	printf("QUALITY-TEST : rv=%d , tested = %d , good-sample = %d , good-cell = %d\n", rv, tested_reads, valid_sample_index, valid_cell_barcode);
 #else
-	argv[5]=NULL+rv;
-	argv[6]=NULL+tested_reads;
-	argv[7]=NULL+valid_sample_index;
-	argv[8]=NULL+valid_cell_barcode;
+	argv[6]=NULL+rv;
+	argv[7]=NULL+tested_reads;
+	argv[8]=NULL+valid_sample_index;
+	argv[9]=NULL+valid_cell_barcode;
 #endif
+	ArrayListDestroy(cell_barcode_list);
 	return 0;
 }
 
-int cacheBCL_quality_test(char * datadir, HashTable * sample_sheet_table, ArrayList * cell_barcode_list, int testing_reads, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode){
-	cache_BCL_t blc_input;
+int cacheBCL_qualTest_BAMmode(char * datadir, int testing_reads, int known_cell_barcode_length, ArrayList * sample_sheet_list, ArrayList * cell_barcode_list, HashTable * cell_barcode_table, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode){
+	input_scBAM_t * scBAM_input = malloc(sizeof(input_scBAM_t));
+	int ret = input_scBAM_init(scBAM_input, datadir);
+	SUBREADprintf("cacheBCL_qualTest_RET_BAMmode = %d for %s\n", ret, datadir);
+	if(ret)return ret;
+	while(1){
+		char base[MAX_READ_LENGTH], qual[MAX_READ_LENGTH], rname[MAX_READ_NAME_LEN];
+		base[0]=qual[0]=rname[0]=0;
+		ret = scBAM_next_read(scBAM_input, rname , base, qual);
+		if(ret<=0)break;
+		char *cell_barcode = NULL, *sample_barcode=NULL, *lane_str=NULL;
 
+		int xx=0;
+		char *testi;
+		for(testi = rname+1; * testi; testi ++){
+			if( * testi=='|'){
+				xx++;
+				if(xx == 1) {
+					cell_barcode = testi +1;
+				}else if(xx == 2) {
+					sample_barcode = testi +1;
+				}else if(xx == 4){
+					lane_str = testi+1;
+					break;
+				}
+			}
+		}
+
+		int cell_no = iCache_get_cell_no(cell_barcode_table, cell_barcode_list, cell_barcode, known_cell_barcode_length);
+		if(cell_no>0) (*valid_cell_barcode)++;
+
+		(*tested_reads)++;
+		if((*tested_reads) >= testing_reads)break;
+	}
+	input_scBAM_close(scBAM_input);
+	free(scBAM_input);
+	return 0;
+}
+
+int cacheBCL_qualTest_FQmode(char * datadir, int testing_reads, int known_cell_barcode_length, ArrayList * sample_sheet_list, ArrayList * cell_barcode_list, HashTable * cell_barcode_table, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode){
+	input_mFQ_t fqs_input;
+	int ret = input_mFQ_init_by_one_string(&fqs_input, datadir);
+	if(ret)return ret;
+	while(1){
+		char base[MAX_READ_LENGTH], qual[MAX_READ_LENGTH], rname[MAX_READ_NAME_LEN];
+		base[0]=qual[0]=rname[0]=0;
+		ret = input_mFQ_next_read(&fqs_input, rname , base, qual);
+		if(ret<=0)break;
+
+		char *cell_barcode = NULL;
+		//SUBREADprintf("RETV=%d, RN=%s\n" ,ret, rname);
+		int xx=0;
+		char *testi;
+		for(testi = rname+1; * testi; testi ++){
+			if( * testi=='|'){
+				xx++;
+				if(xx == 1) {
+					cell_barcode = testi+1;
+					break;
+				}
+			}
+		}
+
+		int cell_no = iCache_get_cell_no(cell_barcode_table, cell_barcode_list, cell_barcode, known_cell_barcode_length);
+		if(cell_no>0) (*valid_cell_barcode)++;
+
+		(*tested_reads)++;
+		if((*tested_reads) >= testing_reads)break;
+	}
+	input_mFQ_close(&fqs_input);
+	return 0;
+}
+
+
+int cacheBCL_qualTest_BCLmode(char * datadir, int testing_reads, int known_cell_barcode_length, ArrayList * sample_sheet_list, ArrayList * cell_barcode_list, HashTable * cell_barcode_table, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode){
+	cache_BCL_t blc_input;
+	int orv = cacheBCL_init(&blc_input, datadir,testing_reads+1, 1);
+	if(orv)return -1;
+	while(1){
+		char base[MAX_READ_LENGTH], qual[MAX_READ_LENGTH], rname[MAX_READ_NAME_LEN];
+		srInt_64 readno = 0;
+		base[0]=qual[0]=rname[0]=0;
+		orv = cacheBCL_next_read(&blc_input, rname, base, qual, &readno);
+		if(0==orv) break;
+
+		char * testi, *lane_str = NULL, * sample_barcode = NULL, * cell_barcode, * umi_barcode; // cell_barcode MUST be 16-bp long, see https://community.10xgenomics.com/t5/Data-Sharing/Cell-barcode-and-UMI-with-linked-reads/td-p/68376
+		cell_barcode = rname + 13;
+		umi_barcode = cell_barcode + known_cell_barcode_length;
+		int xx=0, laneno=0;
+		for(testi = umi_barcode+1; * testi; testi ++){
+			if( * testi=='|'){
+				xx++;
+				if(xx == 2) {
+					sample_barcode = testi +1;
+				}else if(xx == 4){
+					lane_str = testi+1;
+					break;
+				}
+			}
+		}
+		assert(xx ==4 && (*lane_str)=='L');
+		for(testi = lane_str+1; *testi; testi++){
+			assert(isdigit(*testi));
+			laneno = laneno*10 + (*testi)-'0';
+		}
+
+		int sample_no = -1;
+		if(sample_sheet_list->numOfElements)iCache_get_sample_id(sample_sheet_list, sample_barcode, laneno);
+		int cell_no = iCache_get_cell_no(cell_barcode_table, cell_barcode_list, cell_barcode, known_cell_barcode_length);
+		//printf("CELL_CALL %d = %s\n", cell_no, cell_barcode);
+		if(sample_no>0) (*valid_sample_index)++;
+		if(cell_no>0) (*valid_cell_barcode)++;
+
+		(*tested_reads)++;
+		if((*tested_reads) >= testing_reads)break;
+	}
+
+	cacheBCL_close(&blc_input);
+	return 0;
+}
+
+int cacheBCL_quality_test(int input_mode, char * datadir, HashTable * sample_sheet_table, ArrayList * cell_barcode_list, int testing_reads, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode){
 	ArrayList * sample_sheet_list = ArrayListCreate(100);
 	ArrayListSetDeallocationFunction(sample_sheet_list, free);
-	sample_sheet_table -> appendix1 = sample_sheet_list;
-	HashTableIteration(sample_sheet_table, iCache_copy_sample_table_2_list);
+	if(sample_sheet_table){
+		sample_sheet_table -> appendix1 = sample_sheet_list;
+		HashTableIteration(sample_sheet_table, iCache_copy_sample_table_2_list);
+	}
 
 	HashTable * cell_barcode_table = StringTableCreate(1000000);
 	HashTableSetDeallocationFunctions(cell_barcode_table, free, iCache_delete_bcb_key);
@@ -928,51 +1099,21 @@ int cacheBCL_quality_test(char * datadir, HashTable * sample_sheet_table, ArrayL
 			ArrayListPush(array_of_codes, NULL+xx1);
 		}
 	}
-
-	int orv = cacheBCL_init(&blc_input, datadir,testing_reads+1, 1);
-	if(orv)return -1;
-	while(1){
-		char base[MAX_READ_LENGTH], qual[MAX_READ_LENGTH], rname[MAX_READ_NAME_LEN];
-		srInt_64 readno = 0;
-		base[0]=qual[0]=rname[0]=0;
-		orv = cacheBCL_next_read(&blc_input, rname, base, qual, &readno);
-		if(0==orv) break;
-
-		char * testi, *lane_str = NULL, * sample_barcode = NULL, * cell_barcode, * umi_barcode; // cell_barcode MUST be 16-bp long, see https://community.10xgenomics.com/t5/Data-Sharing/Cell-barcode-and-UMI-with-linked-reads/td-p/68376
-		cell_barcode = rname + 13;
-		umi_barcode = cell_barcode + known_cell_barcode_length;
-		int xx=0, laneno=0;
-		for(testi = umi_barcode+1; * testi; testi ++){
-			if( * testi=='|'){
-				xx++;
-				if(xx == 2) {
-					sample_barcode = testi +1;
-				}else if(xx == 4){
-					lane_str = testi+1;
-					break;
-				}
-			}
-		}
-		assert(xx ==4 && (*lane_str)=='L');
-		for(testi = lane_str+1; *testi; testi++){
-			assert(isdigit(*testi));
-			laneno = laneno*10 + (*testi)-'0';
-		}
-
-		int sample_no = iCache_get_sample_id(sample_sheet_list, sample_barcode, laneno);
-		int cell_no = iCache_get_cell_no(cell_barcode_table, cell_barcode_list, cell_barcode, known_cell_barcode_length);
-		//printf("CELL_CALL %d = %s\n", cell_no, cell_barcode);
-		if(sample_no>0) (*valid_sample_index)++;
-		if(cell_no>0) (*valid_cell_barcode)++;
-
-		(*tested_reads)++;
-		if((*tested_reads) >= testing_reads)break;
+	if(known_cell_barcode_length<0){
+		SUBREADprintf("ERROR: cannot load any cell barcode from database\n");
+		return -1;
 	}
 
-	cacheBCL_close(&blc_input);
+	int ret = -1;
+	if(input_mode == GENE_INPUT_SCRNA_FASTQ)
+		ret=cacheBCL_qualTest_FQmode(datadir, testing_reads, known_cell_barcode_length, sample_sheet_list, cell_barcode_list, cell_barcode_table,  tested_reads,  valid_sample_index,  valid_cell_barcode);
+	else if(input_mode == GENE_INPUT_SCRNA_BAM)
+		ret=cacheBCL_qualTest_BAMmode(datadir, testing_reads, known_cell_barcode_length, sample_sheet_list, cell_barcode_list, cell_barcode_table,  tested_reads,  valid_sample_index,  valid_cell_barcode);
+	else
+		ret=cacheBCL_qualTest_BCLmode(datadir, testing_reads, known_cell_barcode_length, sample_sheet_list, cell_barcode_list, cell_barcode_table,  tested_reads,  valid_sample_index,  valid_cell_barcode);
 	ArrayListDestroy(sample_sheet_list);
 	HashTableDestroy(cell_barcode_table);
-	return 0;
+	return ret;
 }
 
 #ifdef MAKE_TEST_SAMPLESHEET
@@ -1045,3 +1186,400 @@ int main(int argc, char ** argv){
 	return 0;
 }
 #endif
+
+void scBAM_tell(input_scBAM_t * bam_input, input_scBAM_pos_t * pos){
+	pos -> current_BAM_file_no = bam_input -> current_BAM_file_no;
+	pos -> section_start_pos = bam_input -> section_start_pos;
+	pos -> current_read_no = bam_input -> current_read_no;
+	pos -> in_section_offset = bam_input -> in_section_offset;
+}
+
+int scBAM_next_char(input_scBAM_t * bam_input);
+int scBAM_next_string(input_scBAM_t * bam_input, char * strbuff, int lenstr);
+
+int scBAM_next_int(input_scBAM_t * bam_input, int *ret){
+	*ret = 0;
+	int xk1;
+	for(xk1=0;xk1<4;xk1++){
+		int nbyte = scBAM_next_char(bam_input);
+		if(nbyte<0) return -1;
+		(*ret) += nbyte <<(8*xk1);
+	}
+	return 0;
+}
+
+int scBAM_skip_bam_header(input_scBAM_t * bam_input){
+	int ret = 0, tmpi = 0, nref=0, x1;
+	ret = scBAM_next_int(bam_input, &tmpi);
+	if(ret < 0 || tmpi != 0x014d4142)return -1; // 0x014d4142 = 'BAM\1' little-endian
+	scBAM_next_int(bam_input, &tmpi); // header txt length
+	while(tmpi--) scBAM_next_char(bam_input); // skip header txt
+	scBAM_next_int(bam_input, &nref); // n_ref
+	bam_input -> chro_table = calloc(sizeof(SamBam_Reference_Info), nref);
+	SUBREADprintf("OPEN '%s' : %d refs\n",bam_input -> BAM_file_names[bam_input -> current_BAM_file_no], nref);
+	for(x1=0;x1<nref;x1++){
+		scBAM_next_int(bam_input, &tmpi); // l_name
+		scBAM_next_string(bam_input, bam_input -> chro_table [x1].chro_name, tmpi);
+		ret = scBAM_next_int(bam_input, (int*)&bam_input -> chro_table [x1].chro_length);
+		if(ret < 0) return -1;
+	}
+	return 0;
+}
+
+int scBAM_inner_fopen(input_scBAM_t * bam_input){
+	bam_input -> os_file = f_subr_open(bam_input -> BAM_file_names[bam_input -> current_BAM_file_no], "rb");
+	if(!bam_input -> os_file)return -1;
+	return scBAM_skip_bam_header(bam_input);
+}
+
+void scBAM_inner_fclose(input_scBAM_t * bam_input){
+	free(bam_input -> chro_table);
+	fclose(bam_input -> os_file);
+}
+
+int scBAM_rebuffer(input_scBAM_t * bam_input){
+	int bin_len=0;
+	while(1){
+		if(bam_input -> current_BAM_file_no== bam_input -> total_BAM_files) return -1;
+		if(feof(bam_input -> os_file)){
+			scBAM_inner_fclose(bam_input);
+			bam_input -> current_BAM_file_no++;
+			if(bam_input -> current_BAM_file_no== bam_input -> total_BAM_files){
+				return -1;
+			}
+			scBAM_inner_fopen(bam_input);
+		}
+		char zipped_bam_buf[66000];
+		bam_input -> section_start_pos = ftello(bam_input -> os_file);
+		int ziplen = PBam_get_next_zchunk(bam_input -> os_file, zipped_bam_buf, 66000, (unsigned int*)&bin_len);
+		if(ziplen<1) return -1;
+		bin_len = SamBam_unzip(bam_input -> section_buff, 65536, zipped_bam_buf, ziplen, 0);
+		if(bin_len>0){
+			bam_input -> section_bin_bytes = bin_len;
+			bam_input -> in_section_offset = 0;
+			break;
+		}else if(bin_len<0) return -1;
+	}
+	return bin_len;
+}
+
+// negative : EOF
+int scBAM_next_char(input_scBAM_t * bam_input){
+	if(bam_input -> current_BAM_file_no== bam_input -> total_BAM_files) return -1;
+	if(bam_input -> in_section_offset == bam_input -> section_bin_bytes)
+		if(0>scBAM_rebuffer(bam_input))return -1;
+	
+	int ret = bam_input -> section_buff[bam_input -> in_section_offset++];
+	if(ret<0)ret+=256;
+	return ret;
+}
+
+
+void scBAM_seek(input_scBAM_t * bam_input, input_scBAM_pos_t * pos){
+	if(bam_input -> current_BAM_file_no!= pos -> current_BAM_file_no){
+		if(bam_input -> current_BAM_file_no < bam_input -> total_BAM_files) scBAM_inner_fclose(bam_input);
+		bam_input -> current_BAM_file_no = pos -> current_BAM_file_no;
+		if(bam_input -> current_BAM_file_no < bam_input -> total_BAM_files) scBAM_inner_fopen(bam_input);
+	}
+	if(bam_input -> current_BAM_file_no < bam_input -> total_BAM_files){
+		bam_input -> section_start_pos = pos -> section_start_pos;
+		fseeko(bam_input -> os_file, bam_input -> section_start_pos, SEEK_SET);
+		scBAM_rebuffer(bam_input);
+		bam_input -> current_read_no = pos -> current_read_no;
+		bam_input -> in_section_offset = pos -> in_section_offset;
+	}
+}
+
+int scBAM_next_string(input_scBAM_t * bam_input, char * strbuff, int lenstr){
+	int x1=0;
+	while(lenstr--){
+		int nbyte = scBAM_next_char(bam_input);
+		if(nbyte<0) return -1;
+		strbuff[x1++]=nbyte;
+	}
+	return x1;
+}
+
+
+// binbuf >= FC_LONG_READ_RECORD_HARDLIMIT 
+// the alignment block with binlen will be written into binbuf.
+// negative : EOF
+int scBAM_next_alignment_bin(input_scBAM_t * bam_input, char * binbuf){
+	int reclen = 0;
+	int ret = scBAM_next_int(bam_input, &reclen);
+	if(ret<0)return -1;
+	if(reclen < 36 || reclen > FC_LONG_READ_RECORD_HARDLIMIT -4)return -1;
+	memcpy(binbuf, &reclen, 4);
+	return scBAM_next_string(bam_input, binbuf +4, reclen);
+}
+
+int scBAM_next_read(input_scBAM_t * bam_input, char * read_name, char * seq, char * qual){
+	int ret = scBAM_next_alignment_bin(bam_input, bam_input -> align_buff);
+	if(ret<0)return -1;
+	int binlen=0, l_read_name = 0, flag=0, n_cigar_op=0, l_seq=0, x1;
+	memcpy(&binlen, bam_input -> align_buff, 4);
+	memcpy(&l_read_name, bam_input -> align_buff+12,1);
+	memcpy(&n_cigar_op, bam_input -> align_buff+16,2);
+	memcpy(&flag, bam_input -> align_buff+18,2);
+	memcpy(&l_seq, bam_input -> align_buff+20,4);
+	int rname_build_ptr = l_read_name-1;
+	strcpy(read_name, bam_input -> align_buff+36);
+	char * seq_start = bam_input -> align_buff+36+l_read_name+4*n_cigar_op;
+	for(x1=0;x1<l_seq;x1++)
+		seq[x1]="=ACMGRSVTWYHKDBN"[(seq_start[x1/2] >> ( 4*!(x1%2) ) ) & 15];
+
+	char * qual_start = seq_start + (l_seq+1)/2;
+	memcpy(qual, qual_start, l_seq);
+	for(x1=0;x1<l_seq;x1++) qual[x1]+=33;
+	if(flag & 16){
+		reverse_quality(qual, l_seq);
+		reverse_read(seq, l_seq, GENE_SPACE_BASE);
+	}
+	qual[l_seq] = 0;
+	char * extag_start = qual_start + l_seq;
+	char * tag_str_val=NULL, tag_type = 0;
+
+	for(x1=0;x1<5;x1++){
+		char * tagname = NULL;
+		if(x1==0)tagname ="CR";
+		if(x1==1)tagname ="UR";
+
+		if(x1==2)tagname ="CY";
+		if(x1==3)tagname ="UY";
+
+		if(x1==4)tagname ="RG";
+
+		tag_type = 0;
+		SAM_pairer_iterate_tags((unsigned char*)extag_start, bam_input -> align_buff + 4 + binlen - extag_start, tagname, &tag_type, &tag_str_val);
+		if(tag_type!='Z')return -1;
+		int tag_str_len = strlen(tag_str_val);
+		if(x1==0||x1==2||x1==4)read_name[rname_build_ptr++] = '|';
+		memcpy( read_name +  rname_build_ptr, tag_str_val, tag_str_len );
+		rname_build_ptr += tag_str_len;
+	}
+
+	read_name[rname_build_ptr] = 0;
+	return l_seq;
+}
+
+int input_scBAM_init(input_scBAM_t * bam_input, char * bam_fnames){
+	char * ubamnames = strdup(bam_fnames);
+	char * tpl1 = NULL;
+	char * fnl1 = strtokmm(ubamnames, SCRNA_FASTA_SPLIT1, &tpl1);
+	int no_file = 0;
+
+	memset(bam_input, 0, sizeof(input_scBAM_t));
+	while(fnl1){
+		bam_input -> BAM_file_names[no_file++] = strdup(fnl1);
+		fnl1 = strtokmm(NULL, SCRNA_FASTA_SPLIT1, &tpl1);
+	}
+	bam_input -> total_BAM_files = no_file;
+	free(ubamnames);
+	return scBAM_inner_fopen(bam_input);
+}
+
+void input_scBAM_close(input_scBAM_t * bam_input){
+	int x1;
+	for(x1=0; x1<bam_input -> total_BAM_files; x1++)free(bam_input ->BAM_file_names[x1]);
+	if(bam_input -> current_BAM_file_no < bam_input -> total_BAM_files)scBAM_inner_fclose(bam_input);
+}
+
+void input_mFQ_fp_close(input_mFQ_t * fqs_input){
+	if(fqs_input -> autofp1.filename[0]){
+		autozip_close(&fqs_input -> autofp1);
+		if(fqs_input->files2)autozip_close(&fqs_input -> autofp2);
+		autozip_close(&fqs_input -> autofp3);
+	}
+	fqs_input -> autofp1.filename[0] = 0;
+}
+
+int input_mFQ_guess_lane_no(char * f1_name){
+	int fnamelen = strlen(f1_name);
+	char * lst = strstr(f1_name + fnamelen - 24, "_L0");
+	if(lst){
+		int lno = 0;
+		lno += lst[3]-'0';
+		lno = lno*10+( lst[4]-'0' );
+	}
+	return 999;
+}
+
+int input_mFQ_open_files(input_mFQ_t * fqs_input){
+	fqs_input -> current_guessed_lane_no = input_mFQ_guess_lane_no(fqs_input->files1[fqs_input-> current_file_no]);
+	int gzipped_ret = autozip_open(fqs_input->files1[fqs_input-> current_file_no],&fqs_input -> autofp1);
+	if(fqs_input -> files2)gzipped_ret = gzipped_ret < 0 ?gzipped_ret:autozip_open(fqs_input->files2[fqs_input-> current_file_no],&fqs_input -> autofp2);
+	gzipped_ret = gzipped_ret < 0?gzipped_ret:autozip_open(fqs_input->files3[fqs_input-> current_file_no],&fqs_input -> autofp3);
+	return gzipped_ret < 0;
+}
+
+int input_mFQ_next_file(input_mFQ_t * fqs_input){
+	input_mFQ_fp_close(fqs_input);
+	fqs_input-> current_file_no ++;
+
+	if(fqs_input-> current_file_no >= fqs_input-> total_files)return -1;
+	return input_mFQ_open_files(fqs_input);
+}
+
+int input_mFQ_init_by_one_string(input_mFQ_t * fqs_input, char * three_paired_fqnames){
+	int total_files = 0;
+	char * fnames = strdup(three_paired_fqnames);
+	char ** files1 = malloc(sizeof(char*) * MAX_SCRNA_FASTQ_FILES);
+	char ** files2 = malloc(sizeof(char*) * MAX_SCRNA_FASTQ_FILES);
+	char ** files3 = malloc(sizeof(char*) * MAX_SCRNA_FASTQ_FILES);
+
+	char * tpl1 = NULL, * tpl2 = NULL;
+	char * fnl1 = strtokmm(fnames, SCRNA_FASTA_SPLIT1, &tpl1);
+	int no_file2 = 0;
+	while(fnl1){
+		char * fnl2 = strtokmm(fnl1, SCRNA_FASTA_SPLIT2, &tpl2);
+		files1[total_files] = fnl2;
+		fnl2 = strtokmm(NULL, SCRNA_FASTA_SPLIT2, &tpl2);
+		files2[total_files] = fnl2;
+		no_file2 = no_file2 || strlen(fnl2)<2;
+		fnl2 = strtokmm(NULL, SCRNA_FASTA_SPLIT2, &tpl2);
+		files3[total_files] = fnl2;
+		fnl1 = strtokmm(NULL, SCRNA_FASTA_SPLIT1, &tpl1);
+		total_files++;
+	}
+
+	int rv = input_mFQ_init(fqs_input, files1, no_file2?NULL:files2, files3, total_files);
+	free(fnames);
+	free(files1);
+	free(files2);
+	free(files3);
+	return rv;
+
+}
+
+int input_mFQ_init( input_mFQ_t * fqs_input, char ** files1, char ** files2, char** files3, int total_files ){
+	int x1;
+	memset(fqs_input, 0, sizeof(input_mFQ_t));
+	fqs_input->files1 = malloc(sizeof(char*)*total_files);
+	fqs_input->files2 = files2?malloc(sizeof(char*)*total_files):NULL;
+	fqs_input->files3 = malloc(sizeof(char*)*total_files);
+	fqs_input->total_files = total_files;
+
+	for(x1=0; x1<fqs_input -> total_files; x1++){
+		fqs_input->files1[x1] = strdup(files1[x1]);
+		if(files2)fqs_input->files2[x1] = strdup(files2[x1]);
+		fqs_input->files3[x1] = strdup(files3[x1]);
+	}
+	fqs_input->current_file_no = 0;
+	fqs_input->current_read_no = 0;
+	return input_mFQ_open_files(fqs_input);
+}
+int input_mFQ_next_read(input_mFQ_t * fqs_input, char * readname , char * read, char * qual ){
+	char tmpline [MAX_READ_NAME_LEN+1];
+	int ret = -1,x1;
+	if(fqs_input -> current_file_no == fqs_input -> total_files) return -1;
+	while(1){
+		ret = autozip_gets(&fqs_input -> autofp1, tmpline, MAX_READ_NAME_LEN);
+		int write_ptr=0;
+		if(ret==0){
+			ret = input_mFQ_next_file(fqs_input);
+			if(ret >=0) continue;
+			return -1;
+		} else if(ret<0) return -1;
+
+		#ifdef __MINGW32__
+		sprintf(readname, "R%011I64d", fqs_input -> current_read_no);
+		#else
+		sprintf(readname, "R%011lld", fqs_input -> current_read_no);
+		#endif
+		readname[12]='|';
+		ret = autozip_gets(&fqs_input -> autofp1, readname+13, MAX_READ_NAME_LEN);
+		readname[13+ret-1]='|';
+		write_ptr = 13+ret;
+
+		autozip_gets(&fqs_input -> autofp1, tmpline, MAX_READ_NAME_LEN);
+
+		ret = autozip_gets(&fqs_input -> autofp1, readname+write_ptr, MAX_READ_NAME_LEN);
+		ret --;
+		for(x1=write_ptr; x1<write_ptr+ret; x1++) if(readname[x1]>='/') readname[x1]++;
+		readname[write_ptr+ret]='|';
+		write_ptr += ret;
+
+		if(fqs_input->files2){
+			ret = autozip_gets(&fqs_input -> autofp2, tmpline, MAX_READ_NAME_LEN);
+			if(ret<=0) return -1;
+			ret = autozip_gets(&fqs_input -> autofp2, readname+write_ptr, MAX_READ_NAME_LEN);
+			ret --;
+			readname[write_ptr+ret]='|';
+			write_ptr += ret;
+
+			autozip_gets(&fqs_input -> autofp2, tmpline, MAX_READ_NAME_LEN);
+			ret = autozip_gets(&fqs_input -> autofp2, readname+write_ptr, MAX_READ_NAME_LEN);
+			for(x1=write_ptr; x1<write_ptr+ret; x1++) if(readname[x1]>='/') readname[x1]++;
+			ret --;
+			readname[write_ptr+ret]=0;
+		}else write_ptr+=sprintf(readname+write_ptr,"|input#%04d@L%03d", fqs_input -> current_file_no, fqs_input  -> current_guessed_lane_no);
+
+		ret = autozip_gets(&fqs_input -> autofp3, tmpline, MAX_READ_NAME_LEN);
+		if(ret<=0) return -1;
+		ret = autozip_gets(&fqs_input -> autofp3, read, MAX_READ_LENGTH);
+		ret --; // read length excludes "\n"
+		read[ret]=0;
+		autozip_gets(&fqs_input -> autofp3, tmpline, MAX_READ_NAME_LEN);
+		autozip_gets(&fqs_input -> autofp3, qual, MAX_READ_LENGTH);
+		qual[ret]=0;
+
+		break;
+	}
+	fqs_input->current_read_no ++;
+	return ret;
+}
+
+
+void input_mFQ_close(input_mFQ_t * fqs_input){
+	int x1;
+
+	input_mFQ_fp_close(fqs_input);
+	for(x1=0; x1<fqs_input -> total_files; x1++){
+		free(fqs_input->files1[x1]);
+		if(fqs_input->files2)free(fqs_input->files2[x1]);
+		free(fqs_input->files3[x1]);
+	}
+	free(fqs_input->files1);
+	if(fqs_input->files2)free(fqs_input->files2);
+	free(fqs_input->files3);
+}
+
+int input_mFQ_seek(input_mFQ_t * fqs_input, input_mFQ_pos_t * pos ){
+	if(fqs_input -> current_file_no != pos -> current_file_no){
+		if(fqs_input -> current_file_no < fqs_input -> total_files)input_mFQ_fp_close(fqs_input);
+		fqs_input -> current_file_no = pos -> current_file_no;
+		if(fqs_input -> current_file_no < fqs_input -> total_files)input_mFQ_open_files(fqs_input);
+	}
+	if(fqs_input -> current_file_no < fqs_input -> total_files){
+		fqs_input -> current_read_no = pos -> current_read_no;
+		if(fqs_input -> autofp1.is_plain){
+			fseeko(fqs_input -> autofp1.plain_fp,  pos -> pos_file1, SEEK_SET);
+			if(fqs_input -> files2)fseeko(fqs_input -> autofp2.plain_fp,  pos -> pos_file2, SEEK_SET);
+			fseeko(fqs_input -> autofp3.plain_fp,  pos -> pos_file3, SEEK_SET);
+		}else{
+			seekgz_seek(&fqs_input -> autofp1.gz_fp,&pos -> zpos_file1);
+			if(fqs_input -> files2)seekgz_seek(&fqs_input -> autofp2.gz_fp,&pos -> zpos_file2);
+			seekgz_seek(&fqs_input -> autofp3.gz_fp,&pos -> zpos_file3);
+		}
+	}
+	return 0;
+}
+
+int input_mFQ_tell(input_mFQ_t * fqs_input, input_mFQ_pos_t * pos ){
+	memset(pos, 0, sizeof(input_mFQ_pos_t));
+	pos -> current_file_no = fqs_input -> current_file_no;
+	pos -> current_read_no = fqs_input -> current_read_no;
+
+	if(fqs_input -> current_file_no < fqs_input -> total_files){
+		if(fqs_input -> autofp1.is_plain){
+			pos -> pos_file1 = ftello(fqs_input -> autofp1.plain_fp);
+			if(fqs_input -> files2)pos -> pos_file2 = ftello(fqs_input -> autofp2.plain_fp);
+			pos -> pos_file3 = ftello(fqs_input -> autofp3.plain_fp);
+		}else{
+			seekgz_tell(&fqs_input -> autofp1.gz_fp,&pos -> zpos_file1);
+			if(fqs_input -> files2)seekgz_tell(&fqs_input -> autofp2.gz_fp,&pos -> zpos_file2);
+			seekgz_tell(&fqs_input -> autofp3.gz_fp,&pos -> zpos_file3);
+		}
+	}
+	return 0;
+}

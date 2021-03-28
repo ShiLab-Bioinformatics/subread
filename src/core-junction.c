@@ -248,7 +248,7 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 
 					if(new_remainder_len>0)
 					{
-						//if(explain_context -> pair_number==2074) printf("JUMPPED IN!\n");
+						//if(explain_context -> pair_number==2074) printf("JUMPPED IN.\n");
 
 						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_end = explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_start + tested_read_pos;
 						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].event_after_section = tested_event;
@@ -703,20 +703,14 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].read_pos_end = tested_read_pos + min(0, tested_event->indel_length) - tested_event -> indel_at_junction;
 						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].abs_offset_for_start = new_read_tail_abs_offset; 
 
-			if(0 && FIXLENstrcmp("R000404427", explain_context -> read_name) == 0)
-				SUBREADprintf("BACK_ADD_EVENT : %s , %u ~ %u , INDELLEN=%d, TEST_READ_POS=%u, RPED=%u, ABSSTART=%u\n", explain_context -> read_name, tested_event -> event_small_side, tested_event -> event_large_side, tested_event -> indel_length, tested_read_pos, explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].read_pos_end, new_read_tail_abs_offset);
-
 						if(tested_event->event_type == CHRO_EVENT_TYPE_FUSION) jump_penalty = 2;
-						//else if(tested_event->event_type == CHRO_EVENT_TYPE_JUNCTION) jump_penalty = 1;
 
 						int current_is_jumped = explain_context -> current_is_strand_jumped ;
 						int current_sup_as_complex = explain_context -> tmp_min_support_as_complex;
 						int current_sup_as_simple = explain_context -> tmp_support_as_simple;
-						//int current_unsup_as_simple = explain_context -> tmp_min_unsupport;
 						int current_pure_donor_found = explain_context -> tmp_is_pure_donor_found_explain;
 
 						explain_context -> tmp_support_as_simple = tested_event -> supporting_reads;
-						//explain_context -> tmp_min_support_as_complex = min(tested_event -> supporting_reads,explain_context -> tmp_min_support_as_complex);
 						explain_context -> tmp_min_support_as_complex = min((tested_event -> is_donor_found_or_annotation & 64)?0x7fffffff:tested_event -> supporting_reads,explain_context -> tmp_min_support_as_complex);
 						explain_context -> tmp_min_unsupport = min(tested_event -> anti_supporting_reads,explain_context -> tmp_min_unsupport);
 						explain_context -> tmp_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain && tested_event -> is_donor_found_or_annotation;
@@ -737,7 +731,6 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 						explain_context -> tmp_support_as_simple = current_sup_as_simple;
 						explain_context -> tmp_is_pure_donor_found_explain = current_pure_donor_found;
 					}
-					//if(global_context ->config.limited_tree_scan) break;
 				}
 			if(( global_context ->config.limited_tree_scan) && explain_context -> full_read_len <= EXON_LONG_READ_LENGTH) break;
 			this_round_junction_scanned = max(this_round_junction_scanned, is_junction_scanned);
@@ -1058,12 +1051,14 @@ int is_long_del_high_quality(global_context_t * global_context, thread_context_t
 	if( read_len - max(p1_end, p2_end)  > 10 ) return 0;
 	return 1;
 }
+#define SE_READ_IN_KNOWN_EXON_REWARD 1
 
 void copy_vote_to_alignment_res(global_context_t * global_context, thread_context_t * thread_context, mapping_result_t * align_res, subjunc_result_t * junc_res, gene_vote_t * current_vote, int vote_i, int vote_j, int curr_read_len, char * read_name, char * curr_read_text, int used_subreads_in_vote, int noninformative_subreads_in_vote, subread_read_number_t pair_number, int is_second_read, int * is_fully_covered)
 {
-
+	int vv = current_vote -> votes[vote_i][vote_j];
+	if(global_context->config.scRNA_input_mode && !global_context -> input_reads.is_paired_end_reads) vv += SE_READ_IN_KNOWN_EXON_REWARD *is_pos_in_annotated_exon_regions(global_context, current_vote -> pos[vote_i][vote_j]);
 	align_res -> selected_position = current_vote -> pos[vote_i][vote_j];
-	align_res -> selected_votes = current_vote -> votes[vote_i][vote_j];
+	align_res -> selected_votes = vv;
 	align_res -> indels_in_confident_coverage = indel_recorder_copy(align_res -> selected_indel_record, current_vote -> indel_recorder[vote_i][vote_j]);
 	align_res -> confident_coverage_end = current_vote -> coverage_end[vote_i][vote_j];
 	align_res -> confident_coverage_start = current_vote -> coverage_start[vote_i][vote_j];
@@ -2230,8 +2225,11 @@ int process_voting_junction_PE_topK(global_context_t * global_context, thread_co
 
 		for (i=0; i<GENE_VOTE_TABLE_SIZE; i++)
 		{
-			for (j=0; j< current_vote->items[i]; j++)
-				update_top_three(global_context, top_three_buff, current_vote -> votes[i][j]);
+			for (j=0; j< current_vote->items[i]; j++){
+				int vv = current_vote -> votes[i][j];
+				if(global_context->config.scRNA_input_mode && !global_context -> input_reads.is_paired_end_reads)vv += SE_READ_IN_KNOWN_EXON_REWARD*is_pos_in_annotated_exon_regions(global_context, current_vote -> pos[i][j]);
+				update_top_three(global_context, top_three_buff, vv);
+			}
 		}
 
 		if(0 && FIXLENstrcmp("R00000003493",read_name_1)==0)SUBREADprintf("3N [R %d] =%d,%d,%d\n", 1+is_second_read, top_three_buff[0], top_three_buff[1], top_three_buff[2]);
@@ -2273,14 +2271,16 @@ int process_voting_junction_PE_topK(global_context_t * global_context, thread_co
 					if(global_context->config.do_big_margin_filtering_for_junctions && third_k == 0 && current_vote->votes[i][j] >= third_highest_votes [is_second_read][global_context -> config.top_scores - 1])
 						insert_big_margin_record(global_context , _global_retrieve_big_margin_ptr(global_context,pair_number, is_second_read), current_vote -> votes[i][j], current_vote -> coverage_start[i][j], current_vote -> coverage_end[i][j] , current_read_len, (current_vote -> masks[i][j] & IS_NEGATIVE_STRAND)?1:0);
 					
-					if(current_vote->votes[i][j] == this_vote_N && current_vote->votes[i][j] >= global_context->config.minimum_subread_for_second_read)
+					int vv = current_vote->votes[i][j];
+					if(global_context->config.scRNA_input_mode && !global_context -> input_reads.is_paired_end_reads)vv += SE_READ_IN_KNOWN_EXON_REWARD*is_pos_in_annotated_exon_regions(global_context,  current_vote -> pos[i][j]);
+					if(vv == this_vote_N && current_vote->votes[i][j] >= global_context->config.minimum_subread_for_second_read)
 					{
 						current_simple[current_simple_number].is_vote_t_item = 1;
 						current_simple[current_simple_number].item_index_i = i;
 						current_simple[current_simple_number].item_index_j = j;
 						current_simple[current_simple_number].read_start_base = current_vote -> coverage_start[i][j];
 						current_simple[current_simple_number].mapping_position = current_vote -> pos[i][j];
-						current_simple[current_simple_number].major_half_votes = current_vote -> votes[i][j];
+						current_simple[current_simple_number].major_half_votes = vv;
 
 						current_simple_number ++;
 					
@@ -2600,7 +2600,7 @@ int is_funky_fragment(global_context_t * global_context, char * rname1, char * c
 int process_voting_junction(global_context_t * global_context, thread_context_t * thread_context, subread_read_number_t pair_number, gene_vote_t * vote_1, gene_vote_t * vote_2, char * read_name_1, char * read_name_2, char * read_text_1, char * read_text_2, int read_len_1, int read_len_2, int is_negative_strand, gene_vote_number_t v1_all_subreads, gene_vote_number_t v2_all_subreads){
 
 
-	//#warning "FOR TESTING CLUSTER_BASED JUNCTION DETECTION ONLY!!!"
+	//#warning "FOR TESTING CLUSTER_BASED JUNCTION DETECTION ONLY!!."
 	//return process_voting_junction_PE_juncs(global_context, thread_context, pair_number, vote_1, vote_2, read_name_1, read_name_2, read_text_1, read_text_2, read_len_1, read_len_2, is_negative_strand, v1_all_subreads, v2_all_subreads);
 		return process_voting_junction_PE_topK(global_context, thread_context, pair_number, vote_1, vote_2, read_name_1, read_name_2, read_text_1, read_text_2, read_len_1, read_len_2, is_negative_strand, v1_all_subreads, v2_all_subreads);
 		
@@ -3350,7 +3350,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 
 
 			//#warning " ========== COMMENT THIS LINE !! ========="
-			if(1 && FIXLENstrcmp("NS500643:556:HGTMTBGXB:4:13403:18179:8012", explain_context -> read_name) ==0){
+			if(0 && FIXLENstrcmp("HWI-ST945:119:D0J2JACXX:1:1303:17374:199067", explain_context -> read_name) ==0){
 				char outpos1[100];
 				absoffset_to_posstr(global_context, final_position, outpos1);
 				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?  MASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, global_context -> config.minimum_exonic_subread_fraction,result-> used_subreads_in_vote, result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);
@@ -6344,7 +6344,7 @@ void finalise_inversions(global_context_t * global_context){
 
 			}
 			else is_roughly_called = 1;
-			//SUBREADprintf("\nINVLOG: FINALLY_%sCONFIRMED: %09u  %s:%u (len=%d) INVERSED!\n", is_passed_YZ?"":"NOT ", frag_A_no, brkYchr, brkYsmall, brkYlarge - brkYsmall);
+			//SUBREADprintf("\nINVLOG: FINALLY_%sCONFIRMED: %09u  %s:%u (len=%d) INVERSED.\n", is_passed_YZ?"":"NOT ", frag_A_no, brkYchr, brkYsmall, brkYlarge - brkYsmall);
 		}
 
 		//SUBREADprintf("\nINVLOG: FINALLY_GUESSED: %09u  found_INV_frags=%d, s1_list_items=%d, s2_list_items=%d, cand_YZ_breakpoints=%d\n", frag_A_no, found_INV_frags, s1_list_items, s2_list_items, cand_YZ_breakpoints);
@@ -6359,7 +6359,7 @@ void finalise_inversions(global_context_t * global_context){
 			// guess brkYlarge, brkYsmall, brkZlarge, brkZsmall, brkYabsLarge, brkZabsLarge...
 			locate_gene_position(guessed_Y_small_abs_sum,  &global_context -> chromosome_table, &brkYchr, &brkYsmall);
 			locate_gene_position(guessed_Z_large_abs_sum,  &global_context -> chromosome_table, &brkYchr, &brkYlarge);
-			//SUBREADprintf("\nINVLOG: FINALLY_GUESSED: %09u  %s:%u (len=%llu) INVERSED!\n", frag_A_no, brkYchr, brkYsmall, guessed_Z_large_abs_sum - guessed_Y_small_abs_sum);
+			//SUBREADprintf("\nINVLOG: FINALLY_GUESSED: %09u  %s:%u (len=%llu) INVERSED.\n", frag_A_no, brkYchr, brkYsmall, guessed_Z_large_abs_sum - guessed_Y_small_abs_sum);
 			is_roughly_called = 1;
 		}*/
 

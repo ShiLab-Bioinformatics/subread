@@ -143,12 +143,12 @@ void LRMseekgz_tell(seekable_zfile_t * fp, seekable_position_t * pos){
 }
 
 void LRMseekgz_seek(seekable_zfile_t * fp, seekable_position_t * pos){
-	//#warning "COMMENT THIS LINE !!!!!"
+	//#warning "COMMENT THIS LINE !!!!."
 	//fprintf(stderr, "SEEK => %llu[%d] + %u ; WIN=%d CRC=%u\n", pos -> block_gzfile_offset, pos -> block_gzfile_bits, pos -> in_block_text_offset, pos -> block_dict_window_size, crc_pos( pos -> dict_window, pos -> block_dict_window_size));
 	fseeko(fp->gz_fp, pos -> block_gzfile_offset - (pos -> block_gzfile_bits?1:0), SEEK_SET);
 
 	if(Z_OK!=inflateReset(&fp->stem))
-		SEEKZLIBprintf("FATAL: UNABLE TO INIT STREAM!\n\n\n");
+		SEEKZLIBprintf("FATAL: UNABLE TO INIT STREAM.\n\n\n");
 	if(pos -> block_dict_window_size>0){
 		if(pos -> block_gzfile_bits){
 			char nch = fgetc(fp->gz_fp);
@@ -156,7 +156,7 @@ void LRMseekgz_seek(seekable_zfile_t * fp, seekable_position_t * pos){
 			inflatePrime(&fp->stem, pos -> block_gzfile_bits, nch>>(8-pos -> block_gzfile_bits));
 		}
 		if(Z_OK != inflateSetDictionary(&fp->stem, (unsigned char *)pos -> dict_window, pos -> block_dict_window_size))
-			SEEKZLIBprintf("FATAL: UNABLE TO RESET STREAM!\n\n\n");
+			SEEKZLIBprintf("FATAL: UNABLE TO RESET STREAM.\n\n\n");
 	}
 
 	fp -> stem.avail_in = 0;
@@ -214,7 +214,7 @@ int LRMseekgz_decompress_next_chunk(seekable_zfile_t * fp){
 		int have = ( fp -> current_chunk_txt_size  - fp -> txt_buffer_used) - fp -> stem.avail_out;
 		int is_chunk_end = 0;
 
-		//#warning "COMMENT NEXT LINE!!!!!!"
+		//#warning "COMMENT NEXT LINE!!!!!."
 		//fprintf(stderr,"INFLATING: INLEN=%d , OLEN=%d, POS=%lld, RET=%d, TOOL=%s\n", inlen , have, LRMseekgz_ftello(fp), ret, zlibVersion());
 		if(ret != Z_OK && ret != Z_STREAM_END){ //any error
 			#ifdef __MINGW32__

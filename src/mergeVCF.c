@@ -226,7 +226,7 @@ void do_find_common(char ** file_names, int files)
 					}
 					else
 					{
-						if(!warning_reported_repeated)SUBREADprintf("Warning: repeated rows are found in the first input file!\n");
+						if(!warning_reported_repeated)SUBREADprintf("Warning: repeated rows are found in the first input file.\n");
 						warning_reported_repeated=1;
 						free(ky);
 					}

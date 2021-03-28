@@ -49,6 +49,8 @@ static struct option long_options[] =
 	{"SAMinput", no_argument, 0, 0},
 	{"reportPairedMultiBest",  no_argument, 0, 0},
 	{"BCLinput", no_argument, 0, 0},
+	{"scRNA_FQinput", no_argument, 0, 0},
+	{"scRNA_BAMinput", no_argument, 0, 0},
 	{"sv", no_argument, 0, 0},
 	{"longDel", no_argument, 0, 0},
 	{"exonAnnotationScreenOut", required_argument, 0, 0},
@@ -403,7 +405,7 @@ int parse_opts_aligner(int argc , char ** argv, global_context_t * global_contex
 
 				break;
 			case 'r':
-				strncpy(global_context->config.first_read_file, optarg, MAX_FILE_NAME_LENGTH-1);
+				strncpy(global_context->config.first_read_file, optarg, MAX_FILE_NAME_LENGTH * 3 * MAX_SCRNA_FASTQ_FILES-1);
 				break;
 			case 'R':
 				global_context->input_reads.is_paired_end_reads = 1;
@@ -499,7 +501,15 @@ int parse_opts_aligner(int argc , char ** argv, global_context_t * global_contex
 				}
 				else if(strcmp("BCLinput", long_options[option_index].name)==0) 
 				{
-					global_context->config.is_BCL_input=1;
+					global_context->config.scRNA_input_mode=GENE_INPUT_BCL;
+				}
+				else if(strcmp("scRNA_FQinput", long_options[option_index].name)==0) 
+				{
+					global_context->config.scRNA_input_mode=GENE_INPUT_SCRNA_FASTQ;
+				}
+				else if(strcmp("scRNA_BAMinput", long_options[option_index].name)==0) 
+				{
+					global_context->config.scRNA_input_mode=GENE_INPUT_SCRNA_BAM;
 				}
 				else if(strcmp("rg-id", long_options[option_index].name)==0) 
 				{
@@ -609,7 +619,6 @@ int parse_opts_aligner(int argc , char ** argv, global_context_t * global_contex
 				{
 					global_context->config.maximise_sensitivity_indel = 1;
 					global_context->config.realignment_minimum_variant_distance = 1;
-				//	global_context->config.max_indel_length = max(16, global_context->config.max_indel_length);
 				}
 				else if(strcmp("exonAnnotationScreenOut", long_options[option_index].name)==0){
 					strcpy(global_context->config.exon_annotation_file_screen_out, optarg);

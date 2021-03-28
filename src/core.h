@@ -138,7 +138,7 @@ typedef struct{
 	int fast_run;
 
 	// input_scheme
-	char first_read_file[MAX_FILE_NAME_LENGTH];
+	char first_read_file[MAX_FILE_NAME_LENGTH * MAX_SCRNA_FASTQ_FILES * 3];
 	char second_read_file[MAX_FILE_NAME_LENGTH];
 	char exon_annotation_file[MAX_FILE_NAME_LENGTH];
 	char exon_annotation_file_screen_out[MAX_FILE_NAME_LENGTH];
@@ -148,7 +148,8 @@ typedef struct{
 	char exon_annotation_feature_name_column[MAX_READ_NAME_LEN];
 
 
-	int is_BCL_input;
+	int do_remove_neighbour_for_scRNA;
+	int scRNA_input_mode;
 	short read_trim_5;
 	short read_trim_3;
 	int is_first_read_reversed;

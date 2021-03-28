@@ -240,33 +240,33 @@ int grc_check_parameters(genRand_context_t * grc){
 	}
 	if(grc->is_paired_end){
 		if(grc->insertion_length_min>grc->insertion_length_max){
-			SUBREADprintf("Error: the minimum insertion length must be equal or higher than the maximum insertion length!\n");
+			SUBREADprintf("Error: the minimum insertion length must be equal or higher than the maximum insertion length.\n");
 			ret=1;
 		}
 	
 		if(grc->insertion_length_min<grc->read_length){
-			SUBREADprintf("Error: the minimum insertion length must be equal or higher than read length!\n");
+			SUBREADprintf("Error: the minimum insertion length must be equal or higher than read length.\n");
 			ret=1;
 		}
 	
 		if(grc->insertion_length_max<1){
-			SUBREADprintf("Error: the maximum insertion length must be a positive number!\n");
+			SUBREADprintf("Error: the maximum insertion length must be a positive number.\n");
 			ret=1;
 		}
 	}
 
 	if(grc->read_length<1){
-		SUBREADprintf("Error: the read length must be a positive number!\n");
+		SUBREADprintf("Error: the read length must be a positive number.\n");
 		ret=1;
 	}
 
 	if(!grc->transcript_fasta_file[0]){
-		SUBREADprintf("Error: a transcript file must be provide!\n");
+		SUBREADprintf("Error: a transcript file must be provide.\n");
 		ret=1;
 	}
 
 	if(!grc->output_prefix[0]){
-		SUBREADprintf("Error: the output prefix must be provide!\n");
+		SUBREADprintf("Error: the output prefix must be provide.\n");
 		ret=1;
 	}else{
 		char outname[MAX_FILE_NAME_LENGTH+30];
@@ -276,13 +276,13 @@ int grc_check_parameters(genRand_context_t * grc){
 			fclose(test_out);
 			unlink(outname);
 		}else{
-			SUBREADprintf("Error: cannot create the output file!\n");
+			SUBREADprintf("Error: cannot create the output file.\n");
 			ret=1;
 		}
 	}
 
 	if(!grc->expression_level_file[0]){
-		SUBREADprintf("Error: the wanted expression levels must be provided!\n");
+		SUBREADprintf("Error: the wanted expression levels must be provided.\n");
 		ret=1;
 	}
 
@@ -477,7 +477,7 @@ int grc_summary_fasta(genRand_context_t * grc){
 	autozip_fp auto_FP;
 
 	if(!grc->output_prefix[0]){
-		SUBREADprintf("Error: the output prefix must be provide!\n");
+		SUBREADprintf("Error: the output prefix must be provide.\n");
 		return -1;
 	}
 
@@ -513,7 +513,7 @@ int grc_summary_fasta(genRand_context_t * grc){
 		int rlength = autozip_gets(&auto_FP, clinebuf, TRANSCRIPT_FASTA_LINE_WIDTH -1);
 		if(rlength < 1)break;
 		if(rlength >= TRANSCRIPT_FASTA_LINE_WIDTH -1 || clinebuf[rlength]!='\0' || clinebuf[rlength-1]!='\n'){
-			SUBREADprintf("Error: The line width of the fasta file excessed %d bytes!\n", TRANSCRIPT_FASTA_LINE_WIDTH);
+			SUBREADprintf("Error: The line width of the fasta file excessed %d bytes.\n", TRANSCRIPT_FASTA_LINE_WIDTH);
 			ret = 1;
 			break;
 		}
@@ -553,7 +553,7 @@ int grc_summary_fasta(genRand_context_t * grc){
 			void * had_tab = HashTableGet(name_duplicate_tab, clinebuf+1);
 			//SUBREADprintf("CHECK PTR: %s => %p\n", clinebuf+1, had_tab);
 			if(had_tab){
-				SUBREADprintf("Error: duplicate sequence name was found : '%s'. The program terminates without output.\n", clinebuf+1);
+				SUBREADprintf("Error: duplicate sequence name was found : '%s'.\n", clinebuf+1);
 				return -1;
 			}
 			seq_name=malloc(rlength);
@@ -621,13 +621,13 @@ int grc_summary_fasta(genRand_context_t * grc){
 
 void grc_put_new_trans(genRand_context_t *grc, char * seq_name, char * seq_str, unsigned int seq_len, unsigned long long * linear_space_top){
 	if(seq_len<1){
-		SUBREADprintf("Warning: a transcript, '%s', has a zero length. No read is generated from it!\n", seq_name);
+		SUBREADprintf("Warning: a transcript, '%s', has a zero length. No read is generated from it.\n", seq_name);
 	}
 	HashTablePut(grc-> transcript_sequences,seq_name, seq_str);
 	HashTablePut(grc-> transcript_lengths, seq_name, NULL+ seq_len);
 	unsigned long long this_seq_exp_10000 = HashTableGet(grc->expression_levels, seq_name)-NULL;
 	if(this_seq_exp_10000<1){
-		SUBREADprintf("Warning: a transcript, '%s', has no wanted expression level. No read is generated from it!\n", seq_name);
+		SUBREADprintf("Warning: a transcript, '%s', has no wanted expression level. No read is generated from it.\n", seq_name);
 		this_seq_exp_10000=0;
 	}else this_seq_exp_10000-=1;
 	//SUBREADprintf("TESTLEN\t%s\t%d\n", seq_name, seq_len);
@@ -662,7 +662,7 @@ int grc_load_env(genRand_context_t *grc){
 	int ret = autozip_open(grc->expression_level_file, &auto_FP);
 	if(ret<0){
 		ret = 1;
-		SUBREADprintf("Error: unable to open the expression level file!\n");
+		SUBREADprintf("Error: unable to open the expression level file.\n");
 	}else ret = 0;
 	if(ret) return ret;
 
@@ -675,7 +675,7 @@ int grc_load_env(genRand_context_t *grc){
 		char * seqname = strtok_r(linebuf, "\t", &tokbuf);
 		char * seqexp_str = tokbuf;
 		if(NULL == seqexp_str){
-			SUBREADprintf("Error: expression level file format error!\n");
+			SUBREADprintf("Error: expression level file format error.\n");
 			ret = 1;
 		}
 		double seqexp = atof(seqexp_str);
@@ -690,7 +690,7 @@ int grc_load_env(genRand_context_t *grc){
 
 		void * had_tab = HashTableGet(grc->expression_levels, seqname_buf);
 		if(had_tab){
-			SUBREADprintf("Error: duplicate transcript name was found in the TMP table: '%s'. The program terminates without output.\n", seqname_buf);
+			SUBREADprintf("Error: duplicate transcript name was found in the TMP table: '%s'.\n", seqname_buf);
 			return -1;
 		}
 		HashTablePut(grc->expression_levels, seqname_buf, NULL+seqexp_int+1);
@@ -711,7 +711,7 @@ int grc_load_env(genRand_context_t *grc){
 		ret = autozip_open(grc->quality_string_file, &auto_FP);
 		if(ret<0){
 			ret = 1;
-			SUBREADprintf("Error: unable to open the quality string file!\n");
+			SUBREADprintf("Error: unable to open the quality string file.\n");
 		}else ret = 0;
 		if(ret) return ret;
 		while(1){
@@ -739,7 +739,7 @@ int grc_load_env(genRand_context_t *grc){
 	ret = autozip_open(grc->transcript_fasta_file, &auto_FP);
 	if(ret<0){
 		ret = 1;
-		SUBREADprintf("Error: unable to open the transcript file!\n");
+		SUBREADprintf("Error: unable to open the transcript file.\n");
 	} else ret = 0;
 	if(ret) return ret;
 	
@@ -758,7 +758,7 @@ int grc_load_env(genRand_context_t *grc){
 		int rlength = autozip_gets(&auto_FP, clinebuf, TRANSCRIPT_FASTA_LINE_WIDTH -1);
 		if(rlength < 1)break;
 		if(rlength >= TRANSCRIPT_FASTA_LINE_WIDTH -1 || clinebuf[rlength]!='\0' || clinebuf[rlength-1]!='\n'){
-			SUBREADprintf("Error: The line width of the fasta file excessed %d bytes!\n", TRANSCRIPT_FASTA_LINE_WIDTH);
+			SUBREADprintf("Error: The line width of the fasta file excessed %d bytes.\n", TRANSCRIPT_FASTA_LINE_WIDTH);
 			ret = 1;
 			break;
 		}
@@ -775,7 +775,7 @@ int grc_load_env(genRand_context_t *grc){
 
 				had_tab = HashTableGet(grc-> transcript_sequences, seq_name);
 				if(had_tab){
-					SUBREADprintf("Error: duplicate sequence names were found in the input: '%s'. The program terminates without output.\n", seq_name);
+					SUBREADprintf("Error: duplicate sequence names were found in the input: '%s'.\n", seq_name);
 					return -1;
 				}
 
@@ -788,7 +788,7 @@ int grc_load_env(genRand_context_t *grc){
 
 			seq_name = malloc(strlen(clinebuf));
 			if( clinebuf[1]==0 ){
-				SUBREADprintf("Error: Every transcript needs a name!\n");
+				SUBREADprintf("Error: Every transcript needs a name.\n");
 				ret = 1;
 				break;
 			}
@@ -833,7 +833,7 @@ int grc_load_env(genRand_context_t *grc){
 
 		had_tab = HashTableGet(grc-> transcript_sequences, seq_name);
 		if(had_tab){
-			SUBREADprintf("Error: duplicate sequence names were found in the input: '%s'. The program terminates without output.\n", seq_name);
+			SUBREADprintf("Error: duplicate sequence names were found in the input: '%s'.\n", seq_name);
 			return -1;
 		}
 

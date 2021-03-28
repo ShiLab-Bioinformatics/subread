@@ -23,7 +23,8 @@
 #include "hashtable.h"
 #include "core.h"
 
-#define REALIGN_TOTAL_TRIES 50
+//#warning "======== REMOVE *2000 ============="
+#define REALIGN_TOTAL_TRIES (50)
 
 #define FUNKY_FRAGMENT_A	1	// same strand and gapped (0<gap<tra_len)
 #define FUNKY_FRAGMENT_BC	2	// very far far away (>=tra_len) or chimeric.

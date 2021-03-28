@@ -87,7 +87,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 //	gehash_t huge_table;
 	gene_value_index_t value_array_index;
 
-	gene_input_t ginp;
+	gene_input_t * ginp = malloc(sizeof(gene_input_t));
 	begin_ftime = miltime();
 
 //	SUBREADprintf ("Index items per partition = %u\n\n", expected_hash_items);
@@ -120,6 +120,10 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 	if(1==for_measure_buckets){
 		*bucket_sizes = realloc(*bucket_sizes, sizeof(int) * (table_no+1) * bucket_no);
 		memset((*bucket_sizes) + table_no * bucket_no, 0, sizeof(int) *  bucket_no);
+		memset(&table,0 , sizeof(gehash_t));
+		memset(&value_array_index, 0, sizeof(gene_value_index_t));
+		table.padding = padding_around_contigs;
+		table.index_gap = GENE_SLIDING_STEP;
 	}
 
 	file_number = 0;
@@ -155,7 +159,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 				{
 					FILE * fp;
 
-					geinput_close(&ginp);
+					geinput_close(ginp);
 
 					//SUBREADprintf ("Processing chromosome files ...\n");
 
@@ -194,15 +198,15 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 				else
 				{
 					if (file_number)
-						geinput_close(&ginp);
-					geinput_open(chro_files[file_number++], &ginp);
+						geinput_close(ginp);
+					geinput_open(chro_files[file_number++], ginp);
 					status = NEXT_READ;
 				}
 			}
 			if (status == NEXT_READ)
 			{
 
-				geinput_readline(&ginp, fn, 0);
+				geinput_readline(ginp, fn, 0);
 
 				if(read_no>0){
 					read_offsets[read_no-1] = offset + table.padding;
@@ -218,12 +222,12 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 
 				sprintf(fn, "%s.files", index_prefix);
 				FILE * fname_fp = f_subr_open(fn, "a");
-				fprintf(fname_fp, "%s\t%s\t%ld\n", read_names+read_no*MAX_READ_NAME_LEN, ginp.filename, ftell(ginp.input_fp));
+				fprintf(fname_fp, "%s\t%s\t%ld\n", read_names+read_no*MAX_READ_NAME_LEN, ginp -> filename, ftell(ginp -> input_fp));
 				fclose(fname_fp);
 				
 				for (i=0; i<16; i++)
 				{
-					char nch = geinput_next_char(&ginp);
+					char nch = geinput_next_char(ginp);
 					if (nch == 'N') skips = 16;
 					else if (skips>0) skips--;
 					window[i] = nch;
@@ -290,15 +294,15 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 
 				while(seek_back_reads)
 				{
-					fseek(ginp.input_fp, -1, SEEK_CUR);
-					char bnch = fgetc(ginp.input_fp);
+					fseek(ginp -> input_fp, -1, SEEK_CUR);
+					char bnch = fgetc(ginp -> input_fp);
 					if ((bnch >='A' && bnch <= 'Z' ) || (bnch >='a' && bnch <= 'z' ) || bnch == '-' || bnch == 'N' || bnch=='.')seek_back_reads--;
-					fseek(ginp.input_fp, -1, SEEK_CUR);
+					fseek(ginp -> input_fp, -1, SEEK_CUR);
 				}
 
 				for (i=0; i<16; i++)
 				{
-					char nch = geinput_next_char(&ginp);
+					char nch = geinput_next_char(ginp);
 					if (nch == 'N' ) skips = 16;
 					else if (skips>0) skips--;
 					window[i] = nch;
@@ -354,7 +358,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 
 			for (i=0; i<GENE_SLIDING_STEP; i++)
 			{
-				next_char = geinput_next_char(&ginp);
+				next_char = geinput_next_char(ginp);
 				if(next_char < 0) {
 					if( 0 == for_measure_buckets ) gvindex_set(&value_array_index, offset - (IS_COLOR_SPACE?0:0), array_int_key, padding_around_contigs);
 
@@ -435,6 +439,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 		}
 	}
 	free(fn);
+	free(ginp);
 	*total_tables = table_no+1;
 	return 0;
 }
@@ -479,14 +484,14 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 	for(i=0;i<128;i++) {
 		huge_index[i] = calloc(1024*1024*16,1);
 		if(NULL == huge_index[i]){ 
-			SUBREADprintf("ERROR: No memory can be allocated.\nThe program has to terminate\n");
+			SUBREADprintf("ERROR: No memory can be allocated.\n");
 			return -1;
 		}
 	}
 
 	if(gehash_create_ex(&occurrence_table, 500000, 0, SUBINDEX_VER0, 1, 0)) return 1;
 
-	gene_input_t ginp;
+	gene_input_t * ginp = malloc(sizeof(gene_input_t));
 
 	print_in_box(80,0,0,"Scan uninformative subreads in reference sequences ...");
 
@@ -537,15 +542,15 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 				(*actual_total_bases_inc_marging)+=padding_around_contigs;
 				if(file_number == chro_file_number)
 				{
-					geinput_close(&ginp);
+					geinput_close(ginp);
 
 					break;
 				}
 				else
 				{
 					if (file_number)
-						geinput_close(&ginp);
-					geinput_open(chro_files[file_number++], &ginp);
+						geinput_close(ginp);
+					geinput_open(chro_files[file_number++], ginp);
 					status = NEXT_READ;
 				}
 			}
@@ -553,12 +558,12 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 			{
 				(*actual_total_bases_inc_marging)+=2*padding_around_contigs;
 
-				geinput_readline(&ginp, fn, 0);
+				geinput_readline(ginp, fn, 0);
 				//SUBREADprintf("HEADER_SCAN '''%s'''\n", fn);
 
 				for (i=0; i<16; i++)
 				{
-					char nch = geinput_next_char(&ginp);
+					char nch = geinput_next_char(ginp);
 					if (nch == 'N') skips = 16;
 					else if (skips>0) skips--;
 					window[i] = nch;
@@ -593,7 +598,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 
 			for (i=0; i<GENE_SLIDING_STEP; i++)
 			{
-				next_char = geinput_next_char(&ginp);
+				next_char = geinput_next_char(ginp);
 				if(next_char < 0)
 				{
 					if (next_char == -1) status = NEXT_READ;
@@ -665,6 +670,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 	for(i=0;i<128;i++)
 		if(huge_index[i])  free(huge_index[i]);
 
+	free(ginp);
 	gehash_destory(&occurrence_table);
 
 	if(huge_table -> numOfElements)
@@ -1136,7 +1142,7 @@ int main_buildindex(int argc,char ** argv)
 	}
 
 	if(threshold < 5) {
-		SUBREADprintf("The threshold of non-informative reads cannot be less than 5\nThe program has to terminate.\n");
+		SUBREADprintf("ERROR: The threshold of non-informative reads cannot be less than 5.\n");
 		return -1;
 	}
 
@@ -1269,7 +1275,7 @@ int main_buildindex(int argc,char ** argv)
 			print_in_box(80, 0, 1, "");
 			print_in_box(80, 0, 1, "WARNING: available memory is lower than %.1f GB." ,needed_mem*1./1024l/1024/1024); 
 			print_in_box(80, 0, 1, "         The program may run very slow.");
-			print_in_box(80, 0, 1, "Build a gapped index and/or split index into blocks to reduce memore use.");
+			print_in_box(80, 0, 1, "Build a gapped index and/or split index into blocks to reduce memory use.");
 			print_in_box(80, 0, 1, "");
 		}else
 			print_in_box(80, 0, 0, "%.1f GB of memory is needed for index building." ,needed_mem*1./1024l/1024/1024); 
@@ -1279,7 +1285,7 @@ int main_buildindex(int argc,char ** argv)
 
 		if(!ret){
 			print_in_box(80, 0, 1, "Total running time: %.1f minutes.", (miltime()-begin00_ftime)/60);
-			print_in_box(89, 0, 1, "Index %c[36m%s%c[0m was successfully built!", CHAR_ESC, output_file, CHAR_ESC);
+			print_in_box(89, 0, 1, "Index %c[36m%s%c[0m was successfully built.", CHAR_ESC, output_file, CHAR_ESC);
 		}
 		HashTableDestroy(huge_table);
 		free(chromosome_lengths);

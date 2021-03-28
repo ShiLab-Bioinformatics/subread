@@ -23,6 +23,7 @@
 #include <stdarg.h>
 #include <math.h>
 #include <unistd.h>
+#include <pthread.h>
 
 
 #ifdef MACOS
@@ -1105,7 +1106,7 @@ int load_features_annotation(char * file_name, int file_type, char * gene_id_col
 
 			if( isdigit(start_ptr[0]) && isdigit(end_ptr[0]) ){
 				if(strlen(start_ptr) > 10 || strlen(end_ptr) > 10 || tv1 > 0x7fffffff || tv2> 0x7fffffff){
-					SUBREADprintf("\nError: Line %d contains a coordinate greater than 2^31!\n", lineno);
+					SUBREADprintf("\nError: Line %d contains a coordinate greater than 2^31.\n", lineno);
 					return -2;
 				}
 			}else{
@@ -1143,7 +1144,7 @@ int load_features_annotation(char * file_name, int file_type, char * gene_id_col
 				
 				if( isdigit(start_ptr[0]) && isdigit(end_ptr[0]) ){
 					if(strlen(start_ptr) > 10 || strlen(end_ptr) > 10 || tv1 > 0x7fffffff || tv2> 0x7fffffff){
-						SUBREADprintf("\nError: Line %d contains a coordinate greater than 2^31!\n", lineno);
+						SUBREADprintf("\nError: Line %d contains a coordinate greater than 2^31.\n", lineno);
 						return -2;
 					}
 				}else{
@@ -1177,7 +1178,7 @@ int load_features_annotation(char * file_name, int file_type, char * gene_id_col
 					if(!is_GFF_geneid_warned){
 						int ext_att_len = strlen(extra_attrs);
 						if(extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
-						SUBREADprintf("\nERROR: failed to find the gene identifier attribute in the 9th column of the provided GTF file.\nThe specified gene identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\nThe program has to terminate.\n\n",  gene_id_column, extra_attrs);
+						SUBREADprintf("\nERROR: failed to find the gene identifier attribute in the 9th column of the provided GTF file.\nThe specified gene identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\n\n",  gene_id_column, extra_attrs);
 					}
 					is_GFF_geneid_warned++;
 				}
@@ -1186,7 +1187,7 @@ int load_features_annotation(char * file_name, int file_type, char * gene_id_col
 					if(!is_GFF_txid_warned){
 						int ext_att_len = strlen(extra_attrs);
 						if(extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
-						SUBREADprintf("\nERROR: failed to find the transcript identifier attribute in the 9th column of the provided GTF file.\nThe specified transcript identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\nThe program has to terminate\n\n", transcript_id_column, extra_attrs);
+						SUBREADprintf("\nERROR: failed to find the transcript identifier attribute in the 9th column of the provided GTF file.\nThe specified transcript identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\n\n", transcript_id_column, extra_attrs);
 					}
 					is_GFF_txid_warned++;
 				}
@@ -1257,9 +1258,10 @@ int rebuild_command_line(char ** lineptr, int argc, char ** argv){
 
 	for(c = 0; c<argc;c++)
 	{
-		if(strlen(*lineptr) + 500 > linecap)
+		int cline = strlen(argv[c]);
+		if(strlen(*lineptr) + 100 + cline > linecap)
 		{
-			linecap *=2;
+			linecap += cline+500;
 			*lineptr = realloc(*lineptr, linecap);
 		}
 		sprintf((*lineptr) + strlen(*lineptr), "\"%s\" ", argv[c]);
@@ -2683,13 +2685,13 @@ void main(){
 #ifdef HELPER_TEST_CRC32
 void main(){
   long c32=0;
-  c32 = crc32(c32, "Hello!",6);
+  c32 = crc32(c32, "Hello.",6);
   printf("CRC = %08lX\n", c32);
 
   c32=0;
   c32 = crc32(c32, "Hel",3);
   c32 = crc32(c32, "lo",2);
-  c32 = crc32(c32, "!",1);
+  c32 = crc32(c32, ".",1);
   c32 = crc32(c32, "",0);
   printf("CRC = %08lX\n", c32);
 }
@@ -2736,4 +2738,130 @@ int get_free_total_mem(size_t * total, size_t * free_mem){
     return 0;
 #endif
 #endif
+}
+
+void worker_master_mutex_init(worker_master_mutex_t * wmt, int all_workers){
+	memset(wmt,0,sizeof(worker_master_mutex_t));
+	wmt -> conds_worker_wait = malloc(sizeof(pthread_cond_t) * all_workers);
+	wmt -> mutexs_worker_wait = malloc(sizeof(pthread_mutex_t) * all_workers);
+	wmt -> mutex_with_master = calloc(sizeof(int), all_workers);
+	wmt -> worker_is_working = calloc(sizeof(int), all_workers);
+
+	wmt -> workers = all_workers;
+	int x1;
+	for(x1=0;x1<all_workers;x1++){
+		pthread_cond_init(&wmt -> conds_worker_wait [x1], NULL);
+		pthread_mutex_init(&wmt -> mutexs_worker_wait [x1], NULL);
+	}
+}
+
+void worker_thread_start(worker_master_mutex_t * wmt, int worker_id){
+	pthread_mutex_lock(&wmt->mutexs_worker_wait[worker_id]);
+	wmt -> mutex_with_master[worker_id] = 0;
+}
+
+void worker_master_mutex_destroy(worker_master_mutex_t * wmt){
+	int x1;
+	for(x1=0;x1<wmt -> workers;x1++){
+		pthread_mutex_destroy(&wmt -> mutexs_worker_wait [x1]);
+		pthread_cond_destroy(&wmt -> conds_worker_wait [x1]);
+	}
+	free( wmt -> worker_is_working);
+	free( wmt -> mutex_with_master);
+	free( wmt -> conds_worker_wait);
+	free( wmt -> mutexs_worker_wait);
+}
+
+int worker_wait_for_job(worker_master_mutex_t * wmt, int worker_id){
+	pthread_mutex_trylock(wmt->mutexs_worker_wait + worker_id);
+	wmt->worker_is_working[worker_id] = 0;
+	while(1){
+		pthread_cond_wait(&wmt->conds_worker_wait[worker_id], &wmt->mutexs_worker_wait[worker_id]);
+		if(wmt -> all_terminate)
+			pthread_mutex_unlock(&wmt->mutexs_worker_wait[worker_id]);
+		if(wmt -> mutex_with_master[worker_id] == 0)break;
+		// otherwise, it is a spurious wakeup
+	}
+	return wmt -> all_terminate;
+}
+
+void master_wait_for_job_done(worker_master_mutex_t * wmt, int worker_id){
+	if(!wmt -> mutex_with_master[worker_id] ){
+		while(1){
+			pthread_mutex_lock(&wmt->mutexs_worker_wait[worker_id]);
+			if(!wmt->worker_is_working[worker_id])break;
+			// In a rare situation, the worker hasn't been scheduled after the last notification.
+			// Namely, the master will notify twice the worker when the worker thread hasn't started at all. The second notification will cause no condition signaled.
+			// This test is to prevent such a situation.
+			pthread_mutex_unlock(&wmt->mutexs_worker_wait[worker_id]);
+			usleep(50);
+		}
+		if(wmt->worker_is_working[worker_id])
+			SUBREADprintf("ERROR 3: HOW CAN I HAVE THIS LOCK : %d?? TH_%d\n", wmt->worker_is_working[worker_id], worker_id);
+	}
+	wmt -> mutex_with_master[worker_id] = 1;
+}
+
+// master collects results between master_wait_for_job_done and master_notify_worker
+void master_notify_worker(worker_master_mutex_t * wmt, int worker_id){
+	if(!wmt -> mutex_with_master[worker_id])SUBREADprintf("ERROR 2: HOW CAN I NOT HAVE THE LOCK : %d ; TERM=%d\n", worker_id, wmt -> all_terminate);
+
+	wmt -> worker_is_working[worker_id] = 1;
+	wmt -> mutex_with_master[worker_id] = 0;
+	pthread_cond_signal(&wmt->conds_worker_wait[worker_id]);
+	pthread_mutex_unlock(&wmt->mutexs_worker_wait[worker_id]);
+}
+
+// this function must be called when the master thread has all the worker locks in control.
+// ie all the workers should be in the "wait_for_job" status.
+void terminate_workers(worker_master_mutex_t * wmt){
+	int x1;
+	wmt -> all_terminate = 1;
+	for(x1=0;x1<wmt -> workers;x1++)
+		master_notify_worker(wmt,x1);
+}
+
+void *windows_memmem(const void *haystack_start, size_t haystack_len, const void *needle_start, size_t needle_len)
+{
+
+    const unsigned char *haystack = (const unsigned char *) haystack_start;
+    const unsigned char *needle = (const unsigned char *) needle_start;
+    const unsigned char *h = NULL;
+    const unsigned char *n = NULL;
+    size_t x = needle_len;
+
+    /* The first occurrence of the empty string is deemed to occur at
+ *     the beginning of the string.  */
+    if (needle_len == 0)
+        return (void *) haystack_start;
+
+    /* Sanity check, otherwise the loop might search through the whole
+ *         memory.  */
+     if (haystack_len < needle_len)
+       return NULL;
+
+    for (; *haystack && haystack_len--; haystack++) {
+
+        x = needle_len;
+        n = needle;
+        h = haystack;
+
+        if (haystack_len < needle_len)
+            break;
+
+        if ((*haystack != *needle) || ( *haystack + needle_len != *needle + needle_len))
+            continue;
+
+        for (; x ; h++ , n++) {
+            x--;
+
+            if (*h != *n) 
+                break;
+
+           if (x == 0)
+            return (void *)haystack;
+        }
+    }
+
+    return NULL;
 }

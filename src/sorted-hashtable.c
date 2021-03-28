@@ -210,7 +210,7 @@ int gehash_insert(gehash_t * the_table, gehash_key_t key, gehash_data_t data, un
 		if (current_bucket->current_items >= current_bucket->space_size) {
 			int bucket_number;
 			if(bucket_sizes){
-				SUBREADprintf("Bucket size was wrongly calculated!\n");
+				SUBREADprintf("Bucket size was wrongly calculated.\n");
 				return 1;
 			}
 
@@ -282,7 +282,7 @@ int gehash_insert(gehash_t * the_table, gehash_key_t key, gehash_data_t data, un
 
 		if (current_bucket->current_items >= current_bucket->space_size) {
 			if(bucket_sizes){
-				SUBREADprintf("Bucket [%d] size was wrongly calculated : %d >= %u!\n",  _gehash_get_bucketNO (the_table, key), current_bucket->current_items,  current_bucket->space_size);
+				SUBREADprintf("Bucket [%d] size was wrongly calculated : %d >= %u.\n",  _gehash_get_bucketNO (the_table, key), current_bucket->current_items,  current_bucket->space_size);
 				return 1;
 			}
 
@@ -811,10 +811,13 @@ size_t gehash_go_q(gehash_t * the_table, gehash_key_t raw_key, int offset, int r
 
 			for (;  last_accepted_index<items && current_keys[last_accepted_index] == key ; last_accepted_index++)
 			{
-				unsigned int kv = current_bucket->item_values[last_accepted_index] - offset;
 				int iix, offsetX2, offsetX, datalen, datalen2;
-				offsetX2 = offsetX = _index_vote_tol(kv);
-				datalen = datalen2 = vote -> items[offsetX2];
+				unsigned int kv = current_bucket->item_values[last_accepted_index] - offset;
+				offsetX2 = _index_vote_tol(kv);
+				datalen = vote -> items[offsetX2];
+
+				datalen2 = datalen;
+				offsetX = offsetX2;
 				unsigned int * dat2, *dat;
 				dat = dat2 = vote -> pos[offsetX2];
 
@@ -826,11 +829,10 @@ size_t gehash_go_q(gehash_t * the_table, gehash_key_t raw_key, int offset, int r
 					{
 						offsetX = _index_vote_tol(kv+iix);
 						datalen = vote -> items[offsetX];
+						if(!datalen)continue;
+
 						dat = vote -> pos[offsetX];
-					}
-
-
-					if(!datalen)continue;
+					}else if(!datalen)continue;
 
 					for (i=0;i<datalen;i++)
 					{
@@ -890,9 +892,7 @@ size_t gehash_go_q(gehash_t * the_table, gehash_key_t raw_key, int offset, int r
 							break;
 						}
 					}
-					if (i==9999999){
-						break;
-					}
+					if (i==9999999)break;
 
 				}
 
@@ -992,10 +992,12 @@ size_t gehash_go_X(gehash_t * the_table, gehash_key_t raw_key, int offset, int r
 
 		//for (; last_accepted_index<items && current_keys[last_accepted_index] == key ; last_accepted_index++){
 		while(1){
-			unsigned int kv = current_bucket->item_values[last_accepted_index] - offset;
 			int iix, offsetX2, offsetX, datalen, datalen2;
-			offsetX2 = offsetX = _index_vote_tol(kv);
-			datalen = datalen2 = vote -> items[offsetX2];
+			unsigned int kv = current_bucket->item_values[last_accepted_index] - offset;
+
+			offsetX = offsetX2 = _index_vote_tol(kv);
+			datalen = datalen2 = vote -> items[offsetX];
+
 			unsigned int * dat2, *dat;
 			dat = dat2 = vote -> pos[offsetX2];
 			int found_some = 0;
@@ -1003,15 +1005,12 @@ size_t gehash_go_X(gehash_t * the_table, gehash_key_t raw_key, int offset, int r
 			//SUBREADprintf("You can find KV at %u\n", kv);
 
 			for(iix = 0; iix<=ii_end; iix = iix>0?-iix:(-iix+INDEL_SEGMENT_SIZE)) {
-
 				if(iix) {
 					offsetX = _index_vote_tol(kv+iix);
 					datalen = vote -> items[offsetX];
+					if(!datalen)continue;
 					dat = vote -> pos[offsetX];
-				}
-
-
-				if(!datalen)continue;
+				} else if(!datalen) continue;
 
 				for (i=0;i<datalen;i++)
 				{
@@ -1046,7 +1045,6 @@ size_t gehash_go_X(gehash_t * the_table, gehash_key_t raw_key, int offset, int r
 
 						if (offset +16 > vote->coverage_end [offsetX][i])
 							vote->coverage_end [offsetX][i] = of_p_16;
-	
 	
 						if (dist0 ==  vote->current_indel_cursor[offsetX][i]){
 							vote -> indel_recorder[offsetX][i][toli+1] = subread_number_P1;
@@ -1488,6 +1486,7 @@ int gehash_load(gehash_t * the_table, const char fname [])
 
 		srInt_64 fp_curr = ftello(fp);
 		unsigned int accued_bytes = 0, grp_i = 0, curr_bucks = 0, per_group_bucks = the_table -> buckets_number/ GEHASH_MEM_PTR_NO + 2;
+
 		for(i=0; i<the_table -> buckets_number ; i++){
 			unsigned int current_items = load_int32(fp);
 			load_int32(fp);//useless for loading : space size
@@ -1500,13 +1499,25 @@ int gehash_load(gehash_t * the_table, const char fname [])
 				accued_bytes = 0;
 				curr_bucks = 0;
 			}
+			#ifdef __MINGW32__
+			{
+//if(i%500000 == 0)SUBREADprintf("ESTMHUGE %d/%d\n", i, the_table -> buckets_number);
+
+				char * buffkk = malloc(current_bytes );
+				fread(buffkk,current_bytes ,1, fp);
+				free(buffkk);
+			}
+			#else
 			fseeko(fp, current_bytes, SEEK_CUR);
+			#endif
 		}
 		if(curr_bucks)
 			bucket_bytes[grp_i++] = accued_bytes;
 		fseeko(fp, (off_t)fp_curr, SEEK_SET);
 
 		for(i=0; i<GEHASH_MEM_PTR_NO ; i++){
+
+//if(i%50000 == 0)SUBREADprintf("MEMHUGE %d/%d\n", i, the_table -> buckets_number);
 			unsigned int current_bytes = bucket_bytes[i];
 			if(current_bytes<0xff000000u){
 				the_table -> malloc_ptr[i] = malloc(current_bytes);
@@ -1522,6 +1533,9 @@ int gehash_load(gehash_t * the_table, const char fname [])
 		curr_bucks = 0;
 		accued_bytes = 0;
 		for(i=0; i<the_table -> buckets_number ; i++){
+
+//if(i%50000 == 0)SUBREADprintf("FILLHUGE %d/%d\n", i, the_table -> buckets_number);
+
 			struct gehash_bucket * current_bucket = the_table -> buckets+i;
 			current_bucket -> current_items = load_int32(fp);
 			load_int32(fp);//useless for lo: space size

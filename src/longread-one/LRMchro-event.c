@@ -89,7 +89,7 @@ int LRMevents_build_entries(LRMcontext_t  * context){
 			if(NULL == entries_list){
 				entries_list = malloc(sizeof(int) * 3);
 				if(!entries_list){
-					LRMprintf("ERROR: NO MEMORY CAN BE ALLOCATED!\n");
+					LRMprintf("ERROR: NO MEMORY CAN BE ALLOCATED.\n");
 					assert(0);
 				}
 				entries_list[0]=2;

@@ -186,7 +186,7 @@ unsigned short * _global_retrieve_big_margin_ptr(global_context_t * global_conte
 
 
 void bigtable_release_result(global_context_t * global_context , thread_context_t * thread_context , subread_read_number_t pair_number, int commit_change){
-	assert(NULL == "File result cache is no longer used. Do not call this function!");
+	assert(NULL == "File result cache is no longer used. Do not call this function.");
 }
 
 

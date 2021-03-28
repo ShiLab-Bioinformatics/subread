@@ -70,7 +70,7 @@ int finalise_qs_context(qualscore_context * qs_context, int prev_ret)
 
 	if(prev_ret)
 	{
-		SUBREADprintf("Program terminated. No results were generated.\n");
+		SUBREADprintf("No results were generated.\n");
 	}
 	else
 	{
@@ -149,7 +149,7 @@ int qs_next_qual(qualscore_context * qs_context, char * qual_buff)
 		{
 			if(retstr[0]!='@')
 			{
-				SUBREADprintf("ERROR: The input fastq file has a wrong format!\n");
+				SUBREADprintf("ERROR: The input fastq file has a wrong format.\n");
 				return -1;
 			}
 			qs_context -> line_counter ++;
@@ -170,7 +170,7 @@ int qs_next_qual(qualscore_context * qs_context, char * qual_buff)
 			{
 				if(retstr[0]!='+')
 				{
-					SUBREADprintf("ERROR: The input fastq file has a wrong format!\n");
+					SUBREADprintf("ERROR: The input fastq file has a wrong format.\n");
 					return -1;
 				}
 				qs_context -> line_counter += 2;

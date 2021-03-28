@@ -399,9 +399,9 @@ int show_summary(global_context_t * global_context)
 	print_in_box(80, 0,1,"  ");
 
 	#ifdef __MINGW32__
-    if(global_context->input_reads.is_paired_end_reads)
+	if(global_context->input_reads.is_paired_end_reads)
 		print_in_box(80, 0,0,"            Total fragments : %I64d" , global_context -> all_processed_reads);
-    else
+	else
 		print_in_box(80, 0,0,"                Total reads : %I64d" , global_context -> all_processed_reads);
 
 	print_in_box(81, 0,0,"                     Mapped : %u (%.1f%%%%)", global_context -> all_mapped_reads,  global_context -> all_mapped_reads*100.0 / global_context -> all_processed_reads);
@@ -431,9 +431,9 @@ int show_summary(global_context_t * global_context)
 	        print_in_box(80, 0,0,"                     Indels : %u", global_context -> all_indels);
 	}
 	#else
-    if(global_context->input_reads.is_paired_end_reads)
+	if(global_context->input_reads.is_paired_end_reads)
 		print_in_box(80, 0,0,"            Total fragments : %'llu" , global_context -> all_processed_reads);
-    else
+	else
 		print_in_box(80, 0,0,"                Total reads : %'llu" , global_context -> all_processed_reads);
 
 	print_in_box(81, 0,0,"                     Mapped : %'u (%.1f%%%%)", global_context -> all_mapped_reads,  global_context -> all_mapped_reads*100.0 / global_context -> all_processed_reads);
@@ -499,7 +499,7 @@ void show_progress(global_context_t * global_context, thread_context_t * thread_
 	// current_circle_start_position_file1 is the file_offset of the first read in this 5-million read chunk (or whatever the chunk size is)
 
 
-	if(global_context->config.is_BCL_input){
+	if(global_context->config.scRNA_input_mode){
 		if(task == 10){
 			char minchr[10];
 			float min_value = (miltime() - global_context -> start_time)*1./60;
@@ -798,7 +798,7 @@ int check_configuration(global_context_t * global_context)
 		warning_file_limit();
 
 	int wret = 0, wret2 = 0;
-	if( global_context ->config.is_BCL_input == 0 )  warning_file_type(global_context -> config.first_read_file, expected_type);
+	if( global_context ->config.scRNA_input_mode == 0 )  warning_file_type(global_context -> config.first_read_file, expected_type);
 	if(global_context -> config.second_read_file[0])
 	{
 		if(expected_type==FILE_TYPE_FAST_ || expected_type==FILE_TYPE_GZIP_FAST_)
@@ -1072,7 +1072,7 @@ int convert_GZ_to_FQ(global_context_t * global_context, char * fname, int half_n
 			fclose(outfp);
 		}
 		else{
-			SUBREADprintf("Unable to create temporary file '%s'\nThe program has to terminate.\nPlease run the program in a directory where you have the privilege to create files.\n", temp_file_name);
+			SUBREADprintf("Unable to create temporary file '%s'\nPlease run the program in a directory where you have the privilege to create files.\n", temp_file_name);
 		}
 
 		gzclose(rawfp);
@@ -1084,26 +1084,31 @@ int convert_GZ_to_FQ(global_context_t * global_context, char * fname, int half_n
 	return !is_OK;
 }
 
-int core_geinput_open(global_context_t * global_context, gene_input_t * fp, int half_number, int is_init)
+int core_geinput_open(global_context_t * global_context, gene_input_t * fp, int half_number)
 {
 	char *fname;
 	if(global_context->config.is_SAM_file_input) {
-		fname = is_init?global_context ->config.first_read_file:global_context -> input_reads.first_read_file.filename;
-		if(is_init && half_number == 1)
+		fname = global_context ->config.first_read_file;
+		if(half_number == 1)
 			if(convert_BAM_to_SAM(global_context, global_context ->config.first_read_file, global_context ->config.is_BAM_input)) return -1;
 		if(!global_context->input_reads.is_paired_end_reads) half_number=0;
 		return geinput_open_sam(fname, fp, half_number);
 	} else {
-		if(is_init)
-		{
-			if(global_context -> config.is_gzip_fastq)
-				if(convert_GZ_to_FQ(global_context, (half_number==2)? global_context ->config.second_read_file : global_context ->config.first_read_file, half_number)) return -1;
-			fname = (half_number == 2)?global_context -> config.second_read_file:global_context -> config.first_read_file;
-		}
+		int rv = -1;
+		//SUBREADprintf("SCRNA_MODE=%d\n", global_context->config.scRNA_input_mode );
+		if(global_context -> config.is_gzip_fastq)
+			if(convert_GZ_to_FQ(global_context, (half_number==2)? global_context ->config.second_read_file : global_context ->config.first_read_file, half_number)) return -1;
+		fname = (half_number == 2)?global_context -> config.second_read_file:global_context -> config.first_read_file;
+		if(global_context->config.scRNA_input_mode == GENE_INPUT_BCL)
+			rv = geinput_open_bcl(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
+		else if(global_context->config.scRNA_input_mode == GENE_INPUT_SCRNA_FASTQ)
+			rv = geinput_open_scRNA_fqs(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
+		else if(global_context->config.scRNA_input_mode == GENE_INPUT_SCRNA_BAM)
+			rv = geinput_open_scRNA_BAM(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
 		else
-			fname = (half_number == 2)?global_context -> input_reads.second_read_file.filename:global_context -> input_reads.first_read_file.filename;
-		int rv = global_context->config. is_BCL_input?geinput_open_bcl(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads ):geinput_open(fname, fp);
-		if(global_context->input_reads.is_paired_end_reads && global_context->config. is_BCL_input){
+			rv = geinput_open(fname, fp);
+
+		if(global_context->input_reads.is_paired_end_reads && global_context->config. scRNA_input_mode){
 			SUBREADprintf("ERROR: No paired-end input is allowed on scRNA mode.\n");
 			return -1;
 		}
@@ -1128,7 +1133,7 @@ int fetch_next_read_pair(global_context_t * global_context, thread_context_t * t
 		{
 			is_second_R1 = 0; is_second_R2 = 0;
 			rl1 = geinput_next_read_trim(ginp1, read_name_1, read_text_1 , qual_text_1, global_context->config.read_trim_5, global_context->config.read_trim_3, &is_second_R1);
-			//SUBREADprintf("%s LEN=%d\n", read_name_1, rl1);
+			//if(global_context -> running_processed_reads_in_chunk < 100)SUBREADprintf("GETRNAMES %s LEN=%d\n", read_name_1, rl1);
 			if(global_context->config.space_type == GENE_SPACE_COLOR && remove_color_head)
 			{
 				if(isalpha(read_text_1[0]))
@@ -1173,7 +1178,7 @@ int fetch_next_read_pair(global_context_t * global_context, thread_context_t * t
 
 	if(ginp2 && rl1 * rl2 <=0 && (rl1>0 || rl2>0)){
 		if(!global_context-> input_reads.is_internal_error)
-			SUBREADprintf("\nERROR: two input files have different amounts of reads!\nThe program has to terminate and no alignment results were generated!\n\n");
+			SUBREADprintf("\nERROR: two input files have different amounts of reads.\n\n");
 		global_context-> input_reads.is_internal_error = 1;
 		*read_no_in_chunk = -1;
 		return 1;
@@ -1586,7 +1591,7 @@ int add_event_detected_from_cigar(global_context_t * global_context, unsigned in
 	}
 
 	if(!is_found){
-		//SUBREADprintf("\nEVENT NOT FOUND!\n\n");
+		//SUBREADprintf("\nEVENT NOT FOUND.\n\n");
 		return 1;
 	}
 	return 0;
@@ -1867,14 +1872,14 @@ int for_one_threads = 0;
 
 
 void add_buffered_fragment(global_context_t * global_context, thread_context_t * thread_context, subread_read_number_t pair_number ,
-    char * read_name1, unsigned int flags1, char * chro_name1, unsigned int chro_position1, int mapping_quality1, char * cigar1,
-    char * next_chro_name1, unsigned int next_chro_pos1, int temp_len1, int read_len1,
-    char * read_text1, char * qual_text1, char * additional_columns1,
-    char * read_name2, unsigned int flags2, char * chro_name2, unsigned int chro_position2, int mapping_quality2, char * cigar2,
-    char * next_chro_name2, unsigned int next_chro_pos2, int temp_len2, int read_len2,
-    char * read_text2, char * qual_text2, char * additional_columns2,
-    int all_locations, int this_location
-    ){
+	char * read_name1, unsigned int flags1, char * chro_name1, unsigned int chro_position1, int mapping_quality1, char * cigar1,
+	char * next_chro_name1, unsigned int next_chro_pos1, int temp_len1, int read_len1,
+	char * read_text1, char * qual_text1, char * additional_columns1,
+	char * read_name2, unsigned int flags2, char * chro_name2, unsigned int chro_position2, int mapping_quality2, char * cigar2,
+	char * next_chro_name2, unsigned int next_chro_pos2, int temp_len2, int read_len2,
+	char * read_text2, char * qual_text2, char * additional_columns2,
+	int all_locations, int this_location
+	){
 
 	assert(global_context -> config.all_threads > 1);
 
@@ -2165,7 +2170,7 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 		mate_chro_for_2="=";
 	}
 
-	//if(161436 == pair_number)	SUBREADprintf("DOUBLE_ADD: %u      %d/%d\n", pair_number, current_location, all_locations);
+	//if(pair_number<10)SUBREADprintf("FIN_ADD #%d: %s in %p \n", pair_number, read_name_1, thread_context);
 
 	if(thread_context)
 		add_buffered_fragment(global_context, thread_context, pair_number,
@@ -2634,9 +2639,7 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 			max_votes = max(_global_retrieve_alignment_ptr(global_context, current_read_number, 0, 0)->selected_votes, _global_retrieve_alignment_ptr(global_context, current_read_number, 1, 0)->selected_votes);
 		else	max_votes = _global_retrieve_alignment_ptr(global_context, current_read_number, 0, 0)->selected_votes;
 
-		//#warning "========== COMMENT DEBUG============="
-		if(0 && FIXLENstrcmp("R00000007859", read_name_1)==0)
-			SUBREADprintf("BSSS2 : %s : %d\n", read_name_1, max_votes);
+		//if(  current_read_number < 10 ) SUBREADprintf("BSSS2 : %s : %d\n", read_name_1, max_votes);
 
 		int best_read_id=0;
 
@@ -2767,7 +2770,10 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 						}else{
 							unsigned int skip = 0; int is_exonic_regions = 1;
 							if(global_context -> exonic_region_bitmap)calc_end_pos(current_realignment_result -> first_base_position, current_realignment_result -> cigar_string, &skip, &is_exonic_regions, global_context  );
-							this_SCORE =((100000llu * (10000 - this_MISMATCH) + this_MATCH)*50llu - this_PENALTY)*20llu+ current_realignment_result -> known_junction_supp;
+
+							if(global_context -> config.scRNA_input_mode)
+								this_SCORE =((100000llu * (10000 - this_MISMATCH + 2*is_exonic_regions) + this_MATCH)*50llu - this_PENALTY)*20llu+ current_realignment_result -> known_junction_supp;
+							else this_SCORE =((100000llu * (10000 - this_MISMATCH) + this_MATCH)*50llu - this_PENALTY)*20llu+ current_realignment_result -> known_junction_supp;
 						}
 
 						best_score_highest = max(best_score_highest, this_SCORE);
@@ -2992,6 +2998,7 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 			}
 		}
 
+		//if(  current_read_number < 10 ) SUBREADprintf("BEEE2 : %s : %d\n", read_name_1, max_votes);
 		//#warning ">>>>>>> COMMENT THIS <<<<<<<"
 		//printf("OCT27-WRITE-UNMAP?-%s-THRE %d\n", read_name_1, thread_context -> thread_id);
 		if(output_cursor<1) {
@@ -3203,13 +3210,10 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 							char * subread_string = current_read + subread_offset;
 	
 							gehash_key_t subread_integer = genekey2int(subread_string, global_context->config.space_type);
-	
 							if(global_context->config.is_methylation_reads)
 								 gehash_go_q_CtoT(global_context->current_index, subread_integer , subread_offset, current_rlen, is_reversed, current_vote, 1, 0xffffff, voting_max_indel_length, subread_no, 1,  low_index_border, high_index_border - current_rlen);
 							else
 								 gehash_go_X(global_context->current_index, subread_integer , subread_offset, current_rlen, is_reversed, current_vote,  voting_max_indel_length, subread_no,  low_index_border, current_high_border, allow_indel_i, shift_indel_locs, &shift_indel_NO);
-				if(0 && FIXLENstrcmp("R00000110641:", read_name_1)==0)SUBREADprintf("SR %d = %u  %s ; SPC=%d; INDELNO=%u\n", subread_no, subread_integer, subread_string, global_context->config.space_type , shift_indel_NO);
-	
 							if(global_context->config.SAM_extra_columns)
 								noninformative_subreads_for_each_gap[xk1] = current_vote -> noninformative_subreads;
 						}
@@ -3217,22 +3221,14 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 					}
 					if(shift_indel_NO == 0 || global_context-> config.do_fusion_detection || global_context-> config.do_long_del_detection)break;
 				}
-	//			SUBREADprintf("\n");
-
-				//puts("");
 
 				if(global_context->config.SAM_extra_columns)
 				{
 					short max_noninformative_subreads = -1;
 
 					for(xk1=0;xk1<GENE_SLIDING_STEP;xk1++)
-					{
-						//SUBREADprintf("NON-INF [%d] = %d\n", xk1, noninformative_subreads_for_each_gap[xk1]);
 						if(noninformative_subreads_for_each_gap[xk1] > max_noninformative_subreads)
-						{
 							max_noninformative_subreads = noninformative_subreads_for_each_gap[xk1];
-						}
-					}
 
 					current_vote -> noninformative_subreads = max_noninformative_subreads;
 				}
@@ -3243,13 +3239,11 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 			if(is_reversed==1 || !(global_context-> config.do_fusion_detection || global_context-> config.do_long_del_detection))
 			{
 //#warning "====== CHECK PRINTING !!! =========="
-				if(0 && FIXLENstrcmp("R00000110641:", read_name_1)==0){
-//				if(vote_1->max_vote>= 9){
+				if(0&&current_read_number == 4000){
 					SUBREADprintf(">>>%llu<<<\n%s [%d]  %s\n%s [%d]  %s  VOTE1_MAX=%d >= %d\n", current_read_number, read_name_1, read_len_1, read_text_1, read_name_2, read_len_2, read_text_2, vote_1->max_vote, min_first_read_votes);
 					SUBREADprintf(" ======= PAIR %s = %llu ; NON_INFORMATIVE = %d, %d =======\n", read_name_1, current_read_number, vote_1 -> noninformative_subreads, vote_2 -> noninformative_subreads);
 					print_votes(vote_1, global_context -> config.index_prefix);
 					print_votes(vote_2, global_context -> config.index_prefix);
-					//if(is_reversed==1)exit(0);
 				}
 
 				if(global_context -> input_reads.is_paired_end_reads)
@@ -3272,12 +3266,8 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 			if(is_reversed == 0)
 			{
 				reverse_read(read_text_1, read_len_1,  global_context->config.space_type);
-				if(0)reverse_quality(qual_text_1, read_len_1); // qual is not used at all.
-
-				if(global_context -> input_reads.is_paired_end_reads){
+				if(global_context -> input_reads.is_paired_end_reads)
 					reverse_read(read_text_2, read_len_2,  global_context->config.space_type);
-					if(0)reverse_quality(qual_text_2, read_len_2);  // qual is not used at all.
-				}
 			}
 		}
 
@@ -3338,7 +3328,7 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 		
 		if(!thread_context || thread_context->thread_id == 0)
 		{
-			if(0 == global_context -> config.is_BCL_input  && sqr_read_number > sqr_interval)
+			if(0 == global_context -> config.scRNA_input_mode  && sqr_read_number > sqr_interval)
 			{
 				show_progress(global_context, thread_context, current_read_number, STEP_VOTING);
 				sqr_read_number = 0;
@@ -3346,7 +3336,7 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 				unsigned long long guessed_all_reads = total_file_size / global_context -> input_reads . avg_read_length;// / (1+global_context -> config.is_SAM_file_input);
 				sqr_interval = max(10000,guessed_all_reads / global_context -> config.all_threads/10);
 			}
-			if(global_context -> config.is_BCL_input && current_read_number - last_shown_curr >= 1000000){
+			if(global_context -> config.scRNA_input_mode && current_read_number - last_shown_curr >= 1000000){
 				show_progress(global_context, thread_context, current_read_number + global_context -> all_processed_reads, STEP_VOTING);
 				last_shown_curr = current_read_number;
 			}
@@ -3384,13 +3374,13 @@ void subread_init_topKbuff(global_context_t * global_context, topK_buffer_t * to
 
 void subread_free_topKbuff(global_context_t * global_context, topK_buffer_t * topKbuff){
 	
-    free(topKbuff ->junction_tmp_r1);
-    free(topKbuff ->junction_tmp_r2);
-    free(topKbuff ->alignment_tmp_r1);
-    free(topKbuff ->alignment_tmp_r2);
-    free(topKbuff ->comb_buffer);
-    free(topKbuff ->vote_simple_1_buffer);
-    free(topKbuff ->vote_simple_2_buffer);
+	free(topKbuff ->junction_tmp_r1);
+	free(topKbuff ->junction_tmp_r2);
+	free(topKbuff ->alignment_tmp_r1);
+	free(topKbuff ->alignment_tmp_r2);
+	free(topKbuff ->comb_buffer);
+	free(topKbuff ->vote_simple_1_buffer);
+	free(topKbuff ->vote_simple_2_buffer);
 }
 
 
@@ -3528,21 +3518,26 @@ void clean_context_after_chunk(global_context_t * context)
 
 void locate_read_files(global_context_t * global_context, int type)
 {
-	if(global_context -> input_reads.first_read_file. file_type == GENE_INPUT_BCL) return;
-	if(type==SEEK_SET)
-	{
-		global_context -> current_circle_start_abs_offset_file1 = geinput_file_offset(&(global_context -> input_reads.first_read_file));
+	// The BCL input module uses its own chunking algorithm.
+	if(global_context -> input_reads.first_read_file.file_type == GENE_INPUT_BCL) return;
+
+	if(type==SEEK_SET) {
 		geinput_tell(&global_context -> input_reads.first_read_file, &global_context -> current_circle_start_position_file1);
 		if(global_context ->input_reads.is_paired_end_reads)
 			geinput_tell(&global_context -> input_reads.second_read_file, &global_context -> current_circle_start_position_file2);
-	}
-	else
-	{
+	} else {
 		geinput_tell(&global_context -> input_reads.first_read_file, &global_context -> current_circle_end_position_file1);
 		if(global_context ->input_reads.is_paired_end_reads)
 			geinput_tell(&global_context -> input_reads.second_read_file, &global_context -> current_circle_end_position_file2);
-	
 	}
+	if(global_context -> input_reads.first_read_file.file_type == GENE_INPUT_SCRNA_FASTQ) return;
+	if(global_context -> input_reads.first_read_file.file_type == GENE_INPUT_SCRNA_BAM) return;
+
+	// This variable is only used to display the running progress.
+	// That is why the scRNA-seq mode doesn't need to keep the start pos.
+	if(type==SEEK_SET)
+		global_context -> current_circle_start_abs_offset_file1 = geinput_file_offset(&(global_context -> input_reads.first_read_file));
+
 }
 
 void rewind_read_files(global_context_t * global_context, int type)
@@ -3756,22 +3751,33 @@ int print_configuration(global_context_t * context)
 
 	if(context->config.do_breakpoint_detection)
 	{
-        if(context-> config.do_fusion_detection)
+	    if(context-> config.do_fusion_detection)
 			print_in_box(80, 0, 0, "Function      : Read alignment + Junction/Fusion detection%s", context->config.experiment_type == CORE_EXPERIMENT_DNASEQ?" (DNA-Seq)":" (RNA-Seq)");
-        else if(context-> config.do_long_del_detection)
+	    else if(context-> config.do_long_del_detection)
 			print_in_box(80, 0, 0, "Function      : Read alignment + Long Deletion detection%s", context->config.experiment_type == CORE_EXPERIMENT_DNASEQ?" (DNA-Seq)":" (RNA-Seq)");
 		else
 			print_in_box(80, 0, 0, "Function      : Read alignment + Junction detection (%s)", context->config.experiment_type == CORE_EXPERIMENT_DNASEQ?"DNA-Seq":"RNA-Seq");
 	}
 	else
 	        print_in_box(80, 0, 0, "Function      : Read alignment%s", context->config.experiment_type == CORE_EXPERIMENT_DNASEQ?" (DNA-Seq)":" (RNA-Seq)");
-	if( context->config.second_read_file[0])
-	{
+	if( context->config.second_read_file[0]){
 	        print_in_box(80, 0, 0, "Input file 1  : %s", get_short_fname(context->config.first_read_file));
 	        print_in_box(80, 0, 0, "Input file 2  : %s", get_short_fname(context->config.second_read_file));
+	}else if(context->config.scRNA_input_mode == GENE_INPUT_SCRNA_FASTQ){
+			const char *strmm_tmp = context->config.first_read_file;
+			int sample_no = 1;
+			while((strmm_tmp = strstr(strmm_tmp, SCRNA_FASTA_SPLIT1))!=NULL) {
+				sample_no++;
+				strmm_tmp++;
+			}
+	        print_in_box(80, 0, 0, "Input file    : %d samples from scRNA-seq", sample_no);
+	}else if(context->config.scRNA_input_mode == GENE_INPUT_BCL){
+	        print_in_box(80, 0, 0, "Input file    : %s%s", get_short_fname(context->config.first_read_file), " (scRNA)");
+	}else if(context->config.scRNA_input_mode == GENE_INPUT_SCRNA_BAM){
+	        print_in_box(80, 0, 0, "Input file    : %s%s", get_short_fname(context->config.first_read_file), " (10X BAM)");
+	}else{
+	        print_in_box(80, 0, 0, "Input file    : %s%s", get_short_fname(context->config.first_read_file), context->config.is_SAM_file_input?(context->config.is_BAM_input?" (BAM)":" (SAM)"):(""));
 	}
-	else
-	        print_in_box(80, 0, 0, "Input file    : %s%s", get_short_fname(context->config.first_read_file), context->config.is_SAM_file_input?(context->config.is_BAM_input?" (BAM)":" (SAM)"):(context->config.is_BCL_input?" (BCL)":""));
 
 	if(context->config.output_prefix [0])
 	        print_in_box(80, 0, 0, "Output file   : %s (%s)%s", get_short_fname(context->config.output_prefix), context->config.is_BAM_output?"BAM":"SAM", context->config.is_input_read_order_required?", Keep Order":(context->config.sort_reads_by_coordinates?", Sorted":""));
@@ -3854,16 +3860,7 @@ int print_configuration(global_context_t * context)
 
 int init_paired_votes(global_context_t *context)
 {
-
 	init_bigtable_results(context, 0);
-
-	//context -> big_margin_record = malloc( sizeof(*context -> big_margin_record) * (context->input_reads.is_paired_end_reads?2:1) * context -> config.big_margin_record_size * context ->config.reads_per_chunk);
-
-	//memset(context ->big_margin_record  , 0 , sizeof(*context -> big_margin_record) *context ->config.reads_per_chunk * (context->input_reads.is_paired_end_reads?2:1) * context -> config.big_margin_record_size);
-
-		//fprintf(stderr, "MALLOC=%llu = %d * %d * %d \n", sizeof(mapping_result_t) * context ->config.reads_per_chunk * (context->input_reads.is_paired_end_reads?2:1) * context->config.multi_best_reads, sizeof(mapping_result_t), context ->config.reads_per_chunk, context->config.multi_best_reads);
-		//sleep(10000);
-
 	return 0;
 }
 
@@ -4050,16 +4047,22 @@ int load_global_context(global_context_t * context)
 		context->config.report_multi_mapping_reads = 1;
 	}
 
-	if(context->config.is_BCL_input){
-		// opening a BCL input needs the exact chunk size. 
+	if(context->config.scRNA_input_mode){
 		context -> config.multi_best_reads = 3;
+		context -> config.do_remove_neighbour_for_scRNA = 1;
+		context -> config.reads_per_chunk = 30000000*context -> config.multi_best_reads;
 		context -> config.multi_best_reads = max(context -> config.multi_best_reads , context -> config.reported_multi_best_reads);
+		// opening a BCL input needs the exact chunk size. 
 		if(context->config.multi_best_reads>1) context -> config.reads_per_chunk /= context->config.multi_best_reads;
+		char * reads_per_chunk = getenv("CC_READS_PER_CHUNK");
+		char * remove_beighbour = getenv("CC_REMOVE_NEIGHBOUR");
+		if(remove_beighbour) context -> config.do_remove_neighbour_for_scRNA = remove_beighbour[0]-'0';
+		if(reads_per_chunk) context -> config.reads_per_chunk = atoi(reads_per_chunk);
 	}
 	print_in_box(80,0,0,"Check the input reads.");
 	subread_init_lock(&context->input_reads.input_lock);
-	if(core_geinput_open(context, &context->input_reads.first_read_file, 1,1)) {
-	//	sublog_printf(SUBLOG_STAGE_RELEASED, SUBLOG_LEVEL_ERROR,"Unable to open '%s' as input. Please check if it exists, you have the permission to read it, and it is in the correct format.\n", context->config.first_read_file);
+	if(core_geinput_open(context, &context->input_reads.first_read_file, 1)) {
+		sublog_printf(SUBLOG_STAGE_RELEASED, SUBLOG_LEVEL_ERROR,"Unable to open the input file '%s'\n", context->config.first_read_file);
 		return -1;
 	}
 
@@ -4080,7 +4083,7 @@ int load_global_context(global_context_t * context)
 
 	if(context->input_reads.is_paired_end_reads)
 	{
-		if(core_geinput_open(context, &context->input_reads.second_read_file, 2,1))
+		if(core_geinput_open(context, &context->input_reads.second_read_file, 2))
 		{
 			//sublog_printf(SUBLOG_STAGE_RELEASED, SUBLOG_LEVEL_ERROR,"Unable to open '%s' as input. Please check if it exists, you have the permission to read it, and it is in the correct format.\n", context->config.second_read_file);
 			return -1;
@@ -4101,7 +4104,7 @@ int load_global_context(global_context_t * context)
 	context -> config.max_vote_simples = max(context -> config.max_vote_simples ,  context -> config.reported_multi_best_reads);
 	context -> config.max_vote_combinations = max(context -> config.max_vote_combinations ,  context -> config.reported_multi_best_reads);
 
-	if(!context->config.is_BCL_input){
+	if(!context->config.scRNA_input_mode){
 		// if it is BCL input then these two parameters have been decided .
 		if(context->config.multi_best_reads>1) context->config.reads_per_chunk /= context->config.multi_best_reads;
 		if(context->input_reads.is_paired_end_reads) context->config.reads_per_chunk /= 2;
@@ -4113,7 +4116,8 @@ int load_global_context(global_context_t * context)
 	context->input_reads.first_read_file_size = ginp1_stat.st_size;
 
 	print_in_box(80,0,0,"Estimate the mean read length.");
-	context -> input_reads.avg_read_length = guess_reads_density_format(context->config.first_read_file , context->config.is_SAM_file_input?1:0, &min_phred_score, &max_phred_score , &guess_tested_reads);
+	context -> input_reads.avg_read_length = 100;
+	if(context->config.scRNA_input_mode != GENE_INPUT_SCRNA_BAM && context->config.scRNA_input_mode != GENE_INPUT_SCRNA_FASTQ) context -> input_reads.avg_read_length = guess_reads_density_format(context->config.first_read_file , context->config.is_SAM_file_input?1:0, &min_phred_score, &max_phred_score , &guess_tested_reads);
 	if(context -> input_reads.avg_read_length<0 )context -> input_reads.avg_read_length = 250;
 //	SUBREADprintf("QR=[%d,%d]; ALEN=%f\n",  min_phred_score, max_phred_score, context -> input_reads.avg_read_length);
 	if(max_phred_score>=0)
@@ -4152,7 +4156,7 @@ int load_global_context(global_context_t * context)
 		if(context -> config.is_BAM_output)
 		{
 			context -> output_bam_writer = malloc(sizeof(SamBam_Writer));
-			SamBam_writer_create(context -> output_bam_writer , tmp_fname, context -> config.is_input_read_order_required?1:context -> config.all_threads,  context -> config.sort_reads_by_coordinates, context -> config.temp_file_prefix);
+			SamBam_writer_create(context -> output_bam_writer , tmp_fname, context -> config.is_input_read_order_required?1:context -> config.all_threads,  context -> config.sort_reads_by_coordinates, context->config.scRNA_input_mode, context -> config.temp_file_prefix);
 			context -> output_sam_fp = NULL;
 		}
 		else
@@ -4173,7 +4177,7 @@ int load_global_context(global_context_t * context)
 		if(context -> config.is_BAM_output)
 		{
 			context -> output_bam_writer = malloc(sizeof(SamBam_Writer));
-			SamBam_writer_create(context -> output_bam_writer ,NULL, context -> config.is_input_read_order_required?1:context -> config.all_threads,  context -> config.sort_reads_by_coordinates,  context -> config.temp_file_prefix);
+			SamBam_writer_create(context -> output_bam_writer ,NULL, context -> config.is_input_read_order_required?1:context -> config.all_threads,  context -> config.sort_reads_by_coordinates, 0,  context -> config.temp_file_prefix);
 		}
 		context->output_sam_fp = NULL;
 	}
@@ -4211,7 +4215,7 @@ int load_global_context(global_context_t * context)
 		context->index_block_number ++;
 		if(context->index_block_number>=2 && context->config.max_indel_length > 16)
 		{
-			print_in_box(80,0,0,"ERROR You cannot use multi-block index for very-long indel detection!");
+			print_in_box(80,0,0,"ERROR You cannot use multi-block index for very-long indel detection.");
 			print_in_box(80,0,0,"Please set the maximum indel length <= 16.");
 			return -1;
 		}
@@ -4283,7 +4287,7 @@ int destroy_global_context(global_context_t * context)
 	if(context->output_sam_fp) {
 		if(context -> output_sam_is_full){
 			unlink(context->config.output_prefix);
-			SUBREADprintf("\nERROR: cannot finish the SAM file! Please check the disk space in the output directory.\nNo output file was generated.\n");
+			SUBREADprintf("\nERROR: cannot finish the SAM file. Please check the disk space in the output directory.\nNo output file was generated.\n");
 			ret = 1;
 		}
 		fclose(context -> output_sam_fp);
@@ -4298,7 +4302,7 @@ int destroy_global_context(global_context_t * context)
 		SamBam_writer_close(context->output_bam_writer);
 		if(context->output_bam_writer -> is_internal_error){
 			unlink(context->config.output_prefix);
-			SUBREADprintf("\nERROR: cannot finish the BAM file! Please check the disk space in the output directory.\nNo output file was generated.\n");
+			SUBREADprintf("\nERROR: cannot finish the BAM file. Please check the disk space in the output directory.\nNo output file was generated.\n");
 			ret = 1;
 		}
 		free(context->output_bam_writer);

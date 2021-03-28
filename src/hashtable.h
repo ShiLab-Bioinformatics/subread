@@ -54,6 +54,7 @@ typedef struct {
 	void * appendix1;
 } ArrayList;
 
+int ArrayListContainsPtr(ArrayList * list, void * who);
 ArrayList * ArrayListCreate(int init_capacity);
 ArrayList * ArrayListDuplicate(ArrayList * ori);
 void ArrayListDestroy(ArrayList * list);

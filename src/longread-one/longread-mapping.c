@@ -220,12 +220,21 @@ int LRMvalidate_and_init_context(LRMcontext_t ** context, int argc, char ** argv
 	return retv;
 }
 
-
+#ifndef MAKE_STANDALONE
+#define LRM_CLOCK_USE_GETTIME
+#endif
 double LRMmiltime(){
 	double ret;
+	#ifdef LRM_CLOCK_USE_GETTIME
+	struct timespec tsc;
+	clock_gettime(CLOCK_REALTIME, &tsc);
+	ret = tsc.tv_sec*1. + tsc.tv_nsec*1./1000/1000/1000;
+	#else
 	struct timeb trp;
 	ftime(&trp);
 	ret = trp.time*1.0+(trp.millitm*1.0/1000.0);
+	#endif
+
 	return ret;
 }
 

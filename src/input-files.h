@@ -30,6 +30,8 @@
 #define GENE_INPUT_FASTQ 1
 #define GENE_INPUT_FASTA 2
 #define GENE_INPUT_BCL   3
+#define GENE_INPUT_SCRNA_FASTQ 4
+#define GENE_INPUT_SCRNA_BAM 5
 #define GENE_INPUT_GZIP_FASTQ 51
 #define GENE_INPUT_GZIP_FASTA 52
 
@@ -202,7 +204,7 @@ int chars2color(char c1, char c2);
 int genekey2color(char last_base,char * key);
 
 // Convert a string key into an integer key
-int genekey2int(char key [], int space_type);
+int genekey2int(char * key, int space_type);
 
 // Open a read file. This function automatically decides its type.
 // Return 0 if successfully opened, or 1 if error occurred
@@ -318,15 +320,19 @@ void SAM_pairer_set_unsorted_notification(SAM_pairer_context_t * pairer, void (*
 
 int SAM_pairer_multi_thread_output( void * pairer, int thread_no, char * bin1, char * bin2 );
 int SAM_pairer_multi_thread_header (void * pairer_vp, int thread_no, int is_text, unsigned int items, char * bin, unsigned int bin_len);
-
+int SAP_pairer_skip_tag_body_len(char * tag_start);
 int SAM_pairer_writer_create( SAM_pairer_writer_main_t * bam_main , int all_threads, int has_dummy , int BAM_output, int BAM_compression_level, char * out_file);
 void SAM_pairer_writer_destroy( SAM_pairer_writer_main_t * bam_main ) ;
 int SAM_pairer_iterate_int_tags(unsigned char * bin, int bin_len, char * tag_name, int * saved_value);
 int SAM_pairer_iterate_tags(unsigned char * bin, int bin_len, char * tag_name, char * data_type, char ** saved_value);
 int SAM_pairer_warning_file_open_limit();
+int SAM_pairer_get_tag_bin_start(char * bin);
 void *delay_realloc(void * old_pntr, size_t old_size, size_t new_size);
 int is_comment_line(const char * l, int file_type, unsigned int lineno);
 void warning_hash_hash(HashTable * t1, HashTable * t2, char * msg);
 int geinput_preload_buffer(gene_input_t * input, subread_lock_t* read_lock);
+int geinput_open_scRNA_fqs(char * fnames,  gene_input_t * input, int reads_per_chunk, int threads );
+int geinput_open_scRNA_BAM(char * fnames,  gene_input_t * input, int reads_per_chunk, int threads );
 int geinput_open_bcl( const char * dir_name,  gene_input_t * input, int reads_in_chunk, int threads );
+char *strtokmm(char *str, const char *delim, char ** next);
 #endif

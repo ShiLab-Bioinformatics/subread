@@ -136,7 +136,7 @@ int main_read_repair(int argc, char ** argv)
 			SAM_pairer_writer_destroy(&writer_main);
 			SUBREADprintf("\n%s %.2f minutes\nTotal input reads: %llu ; Unpaired reads: %llu\n\n", has_error?"Program terminated WITH ERRORS!!! Used":"All finished in", (miltime()-t0)/60, pairer.total_input_reads, pairer.total_orphan_reads);
 			if(has_error){
-				SUBREADprintf("No output file was generated!!!\n");
+				SUBREADprintf("No output file was generated.\n");
 				unlink(out_BAM_file);
 				return -1;
 			}

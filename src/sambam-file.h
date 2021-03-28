@@ -21,12 +21,13 @@
 #define _SAMBAM_FILE_H_
 
 #include <zlib.h>
+#include "HelperFunctions.h"
 
 typedef unsigned char BS_uint_8;
 typedef unsigned short BS_uint_16;
 typedef unsigned int BS_uint_32;
 
-#define BAM_MAX_CHROMOSOME_NAME_LEN 100 
+#define BAM_MAX_CHROMOSOME_NAME_LEN 200 
 #define BAM_MAX_CIGAR_LEN (30000)
 #define BAM_MAX_READ_NAME_LEN 256
 #define BAM_MAX_READ_LEN 3000
@@ -38,18 +39,13 @@ typedef unsigned int BS_uint_32;
 #define BAM_FILE_STAGE_ALIGNMENT 20
 
 
-#define SAMBAM_COMPRESS_LEVEL Z_BEST_SPEED
+#define SAMBAM_COMPRESS_LEVEL_FASTEST Z_NO_COMPRESSION 
+#define SAMBAM_COMPRESS_LEVEL_NORMAL Z_BEST_SPEED
+
 #define SAMBAM_GZIP_WINDOW_BITS -15
 #define SAMBAM_INPUT_STREAM_SIZE 140000
 
 #define TEST_BAD_BAM_CHUNKS 9999925 
-
-typedef struct
-{
-	char chro_name[BAM_MAX_CHROMOSOME_NAME_LEN];
-	unsigned int chro_length;
-} SamBam_Reference_Info;
-
 
 typedef struct
 {
@@ -100,6 +96,16 @@ typedef struct
 	int is_bam_broken;
 } SamBam_FILE;
 
+struct SamBam_sorted_compressor_st{
+	char plain_text[66000];
+	char zipped_bin[70000];
+	int text_size, bin_size;
+	unsigned int CRC32_plain;
+	z_stream strm;
+	pthread_t thread_stub;
+	srInt_64 bam_block_no;
+	int last_job_done;
+};
 
 typedef struct
 {
@@ -117,7 +123,8 @@ typedef struct
 	long long chunk_buffer_max_size;
 	int writer_state;
 	int is_internal_error;
-	int keep_in_memory;
+	int sort_reads_by_coord;
+	int fastest_compression;
 	int sorted_batch_id;
 	unsigned int crc0;
 
@@ -131,8 +138,14 @@ typedef struct
 	HashTable * chromosome_name_table;
 	HashTable * chromosome_id_table;
 	HashTable * chromosome_len_table;
-
 	subread_lock_t thread_bam_lock;
+
+	worker_master_mutex_t sorted_notifier;
+	HashTable * block_no_p1_to_vpos_tab;
+	//int sorted_compress_plain_text_used;
+	int sorted_compress_this_thread_no;
+	srInt_64 this_bam_block_no;
+	struct SamBam_sorted_compressor_st * writer_threads;
 } SamBam_Writer;
 
 // This function reads the next BAM section from the bam_fp. The buffer has a variable length but should be at least 64K bytes.
@@ -181,7 +194,7 @@ int SamBam_feof(SamBam_FILE * fp);
  */
 char * SamBam_fgets(SamBam_FILE * fp , char * buff , int buff_len , int seq_needed);
 
-int SamBam_writer_create(SamBam_Writer * writer, char * BAM_fname, int threads, int keep_in_memory, char * tmpfname);
+int SamBam_writer_create(SamBam_Writer * writer, char * BAM_fname, int threads, int sort_reads_by_coord, int is_tmp_BAM, char * tmpfname);
 
 int SamBam_writer_close(SamBam_Writer * writer);
 
@@ -189,11 +202,19 @@ int SamBam_writer_add_header(SamBam_Writer * writer, char * header_text, int add
 
 int SamBam_writer_add_chromosome(SamBam_Writer * writer, char * chro_name, unsigned int chro_length, int add_header_too);
 
+int SamBam_writer_add_read_bin(SamBam_Writer * writer, int thread_no, char * rbin, int committable);
+
+int SamBam_writer_calc_cigar_span(char * bin);
+
+int SamBam_writer_add_read_fqs_scRNA(gzFile * outfp, char * bambin);
+
 int SamBam_writer_add_read(SamBam_Writer * writer, int threadno, char * read_name, unsigned int flags, char * chro_name, unsigned int chro_position, int mapping_quality, char * cigar, char * next_chro_name, unsigned int next_chro_pos, int temp_len, int read_len, char * read_text, char * qual_text, char * additional_columns, int can_submit);
+
+void SamBam_writer_optimize_bins(HashTable *bin_tab, ArrayList *bin_arr, HashTable ** new_tab, ArrayList ** new_arrs);
 
 int is_badBAM(char * fn);
 
-int SamBam_unzip(char * out , char * in , int inlen);
+int SamBam_unzip(char * out, int out_max_len , char * in , int inlen, int sync_only);
 
 int SamBam_fetch_next_chunk(SamBam_FILE *fp);
 

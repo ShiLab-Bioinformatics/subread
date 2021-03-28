@@ -40,8 +40,14 @@ srInt_64 long_random_val(){
 HashTable * ArrayListToLookupTable_Int(ArrayList * arr){
 	srInt_64 x1;
 	HashTable * ret = HashTableCreate( max(1,arr -> numOfElements / 6) );
-	for(x1 = 0; x1 < arr->numOfElements; x1++) HashTablePut(ret, ArrayListGet(arr, x1)+1, NULL+1);
+	for(x1 = 0; x1 < arr->numOfElements; x1++) HashTablePut(ret, ArrayListGet(arr, x1)+1, NULL+x1+1);
 	return ret;
+}
+
+int ArrayListContainsPtr(ArrayList * list, void * who){
+	srInt_64 x1;
+	for(x1 = 0; x1 < list->numOfElements; x1++) if(list->elementList [ x1 ]==who) return 1;
+	return 0;
 }
 
 void * ArrayListShift(ArrayList * list){
@@ -179,7 +185,10 @@ void ArrayListSort(ArrayList * list, int compare_L_minus_R(void * L_elem, void *
 	sortdata[0] = list;
 	sortdata[1] = compare_L_minus_R?compare_L_minus_R:ArrayListSort_comp_pntr;
 
-	merge_sort(sortdata, list -> numOfElements, ArrayListSort_compare, ArrayListSort_exchange, ArrayListSort_merge);
+	if(list -> numOfElements > 20)
+		merge_sort(sortdata, list -> numOfElements, ArrayListSort_compare, ArrayListSort_exchange, ArrayListSort_merge);
+	else
+		basic_sort(sortdata, list -> numOfElements, ArrayListSort_compare, ArrayListSort_exchange);
 }
 
 int ArrayListLLUComparison(void * L_elem, void * R_elem){

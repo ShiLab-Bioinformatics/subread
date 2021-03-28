@@ -60,8 +60,6 @@ void add_allvote_q(gene_allvote_t* allvote,int qid , int pos, gene_vote_number_t
 
 unsigned char get_next_char(FILE * fp);
 
-unsigned char * replica_index;
-
 extern double begin_ftime;
 
 void print_text_scrolling_bar(char * hint, float percentage, int width, int * internal_counter);

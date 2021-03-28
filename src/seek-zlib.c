@@ -1,6 +1,7 @@
 #include <assert.h> 
 #include "core.h"
 #include "seek-zlib.h"
+#include "input-files.h"
 #include "gene-algorithms.h"
 
 #define SEEKGZ_INIT_TEXT_SIZE (1024*1024)
@@ -13,7 +14,7 @@ unsigned long long seekgz_ftello(seekable_zfile_t * fp){
 }
 
 unsigned int crc_pos(char * bin, int len){
-	unsigned int crc0 = crc32(0, NULL, 0);
+	unsigned int crc0 = 0;//crc32(0, NULL, 0);
 	unsigned int CRC32 = crc32(crc0, (unsigned char *) bin, len);
 	return CRC32;
 }
@@ -177,7 +178,7 @@ void seekgz_seek(seekable_zfile_t * fp, seekable_position_t * pos){
 	fseeko(fp->gz_fp, pos -> block_gzfile_offset - (pos -> block_gzfile_bits?1:0), SEEK_SET);
 
 	if(Z_OK!=inflateReset(&fp->stem))
-		SUBREADprintf("FATAL: UNABLE TO INIT STREAM!\n\n\n");
+		SUBREADprintf("FATAL: UNABLE TO INIT STREAM.\n\n\n");
 	if(pos -> block_dict_window_size>0){
 		if(pos -> block_gzfile_bits){
 			char nch = fgetc(fp->gz_fp);
@@ -185,7 +186,7 @@ void seekgz_seek(seekable_zfile_t * fp, seekable_position_t * pos){
 			inflatePrime(&fp->stem, pos -> block_gzfile_bits, nch>>(8-pos -> block_gzfile_bits));
 		}
 		if(Z_OK != inflateSetDictionary(&fp->stem, (unsigned char *)pos -> dict_window, pos -> block_dict_window_size))
-			SUBREADprintf("FATAL: UNABLE TO RESET STREAM!\n\n\n");
+			SUBREADprintf("FATAL: UNABLE TO RESET STREAM.\n\n\n");
 	}
 
 	fp -> stem.avail_in = 0;
@@ -214,7 +215,7 @@ void seekgz_seek(seekable_zfile_t * fp, seekable_position_t * pos){
 }
 
 
-void  seekgz_find_linebreaks(seekable_zfile_t * fp, int empty_block_no){
+void seekgz_find_linebreaks(seekable_zfile_t * fp, int empty_block_no){
 	int lbks= 0, arrsize = 5000;
 	unsigned int * arr = malloc(sizeof(int) * arrsize);
 
@@ -438,7 +439,9 @@ int seekgz_preload_buffer( seekable_zfile_t * fp , subread_lock_t * read_lock){
 int seekgz_gets(seekable_zfile_t * fp, char * buff, int buff_len){
 	//if(fp -> blocks_in_chain<3)SUBREADprintf("GTS: %d BLK, %d AVI\n", fp -> blocks_in_chain, fp -> stem.avail_in);
 	int line_write_ptr = 0, is_end_line = 0;
-	if(fp->blocks_in_chain < 1 && seekgz_eof(fp)) return 0;
+	if(fp->blocks_in_chain < 1 && seekgz_eof(fp)){
+		return 0;
+	}
 	while(1){
 		int consumed_bytes;
 
@@ -486,8 +489,11 @@ int seekgz_gets(seekable_zfile_t * fp, char * buff, int buff_len){
 		fp-> current_block_txt_read_ptr += consumed_bytes;
 
 		if( fp-> current_block_txt_read_ptr >= cblk -> block_txt_size ){
+			//SUBREADprintf("CHAIN CONSUME_0 : %d ( - 1 ) %p\n", fp -> block_chain_current_no, cblk->block_txt);
 			free(cblk->block_txt);
+			//SUBREADprintf("CHAIN CONSUME_X : %d ( - 1 ) %p\n", fp -> block_chain_current_no, cblk->linebreak_positions);
 			free(cblk->linebreak_positions);
+			//SUBREADprintf("CHAIN CONSUME_Z : %d ( - 1 )\n", fp -> block_chain_current_no);
 			fp-> current_block_txt_read_ptr = 0;
 			fp -> block_chain_current_no++;
 			if(fp -> block_chain_current_no>= SEEKGZ_CHAIN_BLOCKS_NO) fp -> block_chain_current_no=0;
@@ -634,3 +640,177 @@ void autozip_rewind(autozip_fp * fp){
 	autozip_close(fp);
 	autozip_open(fname, fp);
 }
+
+void parallel_gzip_writer_init(parallel_gzip_writer_t * pzwtr, char * output_filename, int total_threads){
+	memset(pzwtr, 0, sizeof(parallel_gzip_writer_t));
+	pzwtr -> threads = total_threads;
+	pzwtr -> thread_objs = calloc(sizeof(parallel_gzip_writer_thread_t), total_threads);
+	
+	pzwtr -> os_file = f_subr_open(output_filename, "wb");
+	fputc(31, pzwtr -> os_file);
+	fputc(139, pzwtr -> os_file);
+	fputc(8, pzwtr -> os_file);
+	fputc(0, pzwtr -> os_file);
+	fputc(0, pzwtr -> os_file); // MTIME x 4
+	fputc(0, pzwtr -> os_file);
+	fputc(0, pzwtr -> os_file);
+	fputc(0, pzwtr -> os_file);
+	fputc(4, pzwtr -> os_file); // XFL : fastest
+	fputc(255, pzwtr -> os_file); // OS=unknown
+	int x1;
+	for(x1=0; x1<total_threads; x1++){
+		pzwtr -> thread_objs[x1].thread_no = x1;
+		deflateInit2(&pzwtr -> thread_objs[x1].zipper, SAMBAM_COMPRESS_LEVEL_NORMAL, Z_DEFLATED, SAMBAM_GZIP_WINDOW_BITS, 8, Z_DEFAULT_STRATEGY);
+	}
+	pzwtr -> CRC32 = crc32(0, NULL, 0);
+}
+
+void parallel_gzip_writer_add_text(parallel_gzip_writer_t * pzwtr, char * text, int tlen, int thread_no){
+	parallel_gzip_writer_thread_t *tho = pzwtr -> thread_objs + thread_no;
+	if(tlen + tho -> in_buffer_used >= PARALLEL_GZIP_TXT_BUFFER_SIZE){
+		SUBREADprintf("Insufficient gzip buffer.\n");
+		return;
+	}
+	memcpy(tho -> in_buffer + tho -> in_buffer_used, text, tlen);
+	tho -> in_buffer_used += tlen;
+}
+
+void parallel_gzip_zip_texts(parallel_gzip_writer_t * pzwtr, int thread_no, int eof_marker){
+	parallel_gzip_writer_thread_t *tho = pzwtr -> thread_objs + thread_no;
+	int write_txt_ptr = 0;
+
+	tho -> out_buffer_used = 0;
+	tho -> CRC32 = crc_pos(tho -> in_buffer, tho -> in_buffer_used);
+
+	while(tho -> in_buffer_used - write_txt_ptr > 0 || eof_marker){
+		tho -> zipper . next_in = (unsigned char*)tho -> in_buffer + write_txt_ptr;
+		tho -> zipper . avail_in = tho -> in_buffer_used - write_txt_ptr;
+		tho -> zipper . next_out = (unsigned char*)tho -> out_buffer + tho -> out_buffer_used;
+		tho -> zipper . avail_out = PARALLEL_GZIP_ZIPPED_BUFFER_SIZE - tho -> out_buffer_used;
+		int defret = deflate(&tho -> zipper, eof_marker?Z_FINISH:Z_FULL_FLUSH);
+		int consumed_input = tho -> in_buffer_used - write_txt_ptr - tho -> zipper . avail_in;
+		int generated_output = PARALLEL_GZIP_ZIPPED_BUFFER_SIZE - tho -> out_buffer_used - tho -> zipper.avail_out;
+
+		if(defret == Z_OK || defret == Z_STREAM_END ){
+			write_txt_ptr += consumed_input;
+			tho -> out_buffer_used += generated_output;
+		}else{
+			SUBREADprintf("Cannot compress the zipped output: %d with in_len=%d, consumed=%d and out_aval=%d\n", defret, tho -> in_buffer_used, consumed_input, tho -> zipper.avail_out);
+			break;
+		}
+		if(eof_marker)break;
+	}
+
+	tho -> plain_length = tho -> in_buffer_used;
+	tho -> in_buffer_used =0;
+}
+
+// because we have to keep sync between three fastq files, the flush function has to be manually called three times at the same time point.
+// otherwise R1, I2 and R2 files will have inconsistent read orders.
+// the outer program has to check if any of the three in_buffers is full.
+void parallel_gzip_writer_flush(parallel_gzip_writer_t * pzwtr, int thread_no){
+	parallel_gzip_writer_thread_t *tho = pzwtr -> thread_objs + thread_no;
+
+	if(tho -> out_buffer_used>0){
+		int fret = fwrite(tho -> out_buffer, 1, tho -> out_buffer_used, pzwtr -> os_file);
+		if(fret != tho ->out_buffer_used) SUBREADprintf("Cannot write the zipped output: %d\n", fret);
+
+		if(tho -> plain_length){
+			unsigned int CRCnew = crc32_combine( pzwtr -> CRC32, tho -> CRC32, tho -> plain_length );
+			pzwtr -> plain_length += tho -> plain_length;
+			pzwtr -> CRC32 = CRCnew;
+		}
+	}
+	tho -> out_buffer_used =0;
+	tho -> plain_length = 0;
+}
+
+void plgz_finish_in_buffers(parallel_gzip_writer_t * pzwtr){
+	int x1;
+	for(x1=0; x1<pzwtr -> threads; x1++){
+		if(pzwtr -> thread_objs[x1].in_buffer_used<1) continue;
+		parallel_gzip_zip_texts(pzwtr, x1, 0);
+		parallel_gzip_writer_flush(pzwtr, x1);
+	}
+}
+
+void parallel_gzip_writer_close(parallel_gzip_writer_t * pzwtr){
+	int x1;
+	plgz_finish_in_buffers(pzwtr);
+
+	// write the last "Z_FINISH" 0-len block to tell gzip that the zipped chunk end
+	pzwtr -> thread_objs[0].in_buffer_used = 0;
+	parallel_gzip_zip_texts(pzwtr, 0, 1);
+	parallel_gzip_writer_flush(pzwtr, 0);
+
+	for(x1=0; x1<pzwtr -> threads; x1++)
+		deflateEnd(&pzwtr -> thread_objs[x1].zipper);
+	
+	fwrite(&pzwtr -> CRC32,        4, 1, pzwtr -> os_file);
+	fwrite(&pzwtr -> plain_length, 4, 1, pzwtr -> os_file); // write the first (lowest) 4 bytes in a 64-bit integer -- as gzip file format required original (uncompressed) input data modulo 2^32.
+	fclose(pzwtr -> os_file);
+	free(pzwtr -> thread_objs);
+}
+
+
+int parallel_gzip_writer_add_read_fqs_scRNA(parallel_gzip_writer_t**outfps, char * bambin, int thread_no){
+	int reclen=0;
+	parallel_gzip_writer_t * outR1fp = outfps[0];
+	parallel_gzip_writer_t * outI1fp = outfps[1];
+	parallel_gzip_writer_t * outR2fp = outfps[2];
+
+	memcpy(&reclen, bambin,4);
+	int flag = 0, l_seq = 0, l_read_name = 0, n_cigar_ops = 0;
+	memcpy(&l_read_name, bambin+12,1);
+	memcpy(&n_cigar_ops, bambin+16,2);
+	memcpy(&flag, bambin+18,2);
+	memcpy(&l_seq, bambin+20,4);
+
+	int x1=0;
+
+	parallel_gzip_writer_add_text(outR2fp,"@",1,thread_no);
+	parallel_gzip_writer_add_text(outR1fp,"@",1,thread_no);
+	parallel_gzip_writer_add_text(outI1fp,"@",1,thread_no);
+	char * readname = bambin+36;
+	parallel_gzip_writer_add_text(outR1fp,readname, 12,thread_no);
+	parallel_gzip_writer_add_text(outR2fp,readname, 12,thread_no);
+	parallel_gzip_writer_add_text(outI1fp,readname, 12,thread_no);
+	parallel_gzip_writer_add_text(outR1fp,"\n",1,thread_no);
+	parallel_gzip_writer_add_text(outR2fp,"\n",1,thread_no);
+	parallel_gzip_writer_add_text(outI1fp,"\n",1,thread_no);
+
+	char * R1seq = bambin+36+13;
+	int R1len = 0;
+	for(R1len=0; R1seq[R1len] && R1seq[R1len]!='|' ;R1len++);
+	char * R1qual = R1seq + R1len + 1;
+	parallel_gzip_writer_add_text(outR1fp,R1seq, R1len,thread_no);
+	parallel_gzip_writer_add_text(outR1fp,"\n+\n",3,thread_no);
+	parallel_gzip_writer_add_text(outR1fp,R1qual, R1len,thread_no);
+	parallel_gzip_writer_add_text(outR1fp,"\n",1,thread_no);
+
+	char * I1seq = R1qual + R1len + 1;
+	int I1len = 0;
+	for(I1len=0; I1seq[I1len] && I1seq[I1len]!='|' ;I1len++);
+	char * I1qual = I1seq + I1len + 1;
+	parallel_gzip_writer_add_text(outI1fp,I1seq, I1len,thread_no);
+	parallel_gzip_writer_add_text(outI1fp,"\n+\n",3,thread_no);
+	parallel_gzip_writer_add_text(outI1fp,I1qual, I1len,thread_no);
+	parallel_gzip_writer_add_text(outI1fp,"\n",1,thread_no);
+
+	char oseq[l_seq+1];
+	int seqbase = 36+l_read_name+n_cigar_ops*4;
+	for(x1=0; x1<l_seq;x1++)oseq[x1]="=ACMGRSVTWYHKDBN"[(bambin[ seqbase+(x1/2)] >> (((x1%2)?0:1) *4) )&0xf];
+	oseq[l_seq]=0;
+	if(flag & 16) reverse_read(oseq,l_seq, GENE_SPACE_BASE);
+	parallel_gzip_writer_add_text(outR2fp, oseq, l_seq,thread_no);
+	parallel_gzip_writer_add_text(outR2fp,"\n+\n",3,thread_no);
+
+	seqbase = 36+l_read_name+n_cigar_ops*4 + ( l_seq+1 )/2;
+	for(x1=0; x1<l_seq;x1++)oseq[x1]=33+bambin[ seqbase+x1];
+	if(flag & 16)reverse_quality(oseq, l_seq);
+	oseq[l_seq]=0;
+	parallel_gzip_writer_add_text(outR2fp, oseq, l_seq,thread_no);
+	parallel_gzip_writer_add_text(outR2fp,"\n",1,thread_no);
+	return 0;
+}
+

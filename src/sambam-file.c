@@ -32,8 +32,11 @@
 #include <ctype.h>
 #include "subread.h"
 #include "core.h"
+#include "HelperFunctions.h"
 #include "gene-algorithms.h"
 #include "sambam-file.h"
+#include "input-files.h"
+#define Z_DEFAULT_MEM_LEVEL  8
 
 int SamBam_fetch_next_chunk(SamBam_FILE *fp)
 {
@@ -57,9 +60,9 @@ int SamBam_fetch_next_chunk(SamBam_FILE *fp)
 			int nchunk = 0;
 			ret = PBam_get_next_zchunk(fp -> os_file, in_buff, 65536, & real_len);
 			if(ret > 0)
-				nchunk = SamBam_unzip(fp -> input_binary_stream_buffer + fp->input_binary_stream_write_ptr - fp -> input_binary_stream_read_ptr + have , in_buff , ret);
+				nchunk = SamBam_unzip(fp -> input_binary_stream_buffer + fp->input_binary_stream_write_ptr - fp -> input_binary_stream_read_ptr + have, 65536 , in_buff , ret, 0);
 			else if(ret == -2){
-				SUBREADputs("ERROR: BAM format is broken!");
+				SUBREADputs("ERROR: BAM format is broken.");
 				return -2;
 			}
 
@@ -171,7 +174,7 @@ SamBam_FILE * SamBam_fopen(char * fname , int file_type)
 		{
 			free(ret->input_binary_stream_buffer);
 			free(ret);
-			SUBREADprintf("FEOF 0!\n");
+			SUBREADprintf("FEOF 0.\n");
 			return NULL;
 
 		}
@@ -184,7 +187,7 @@ SamBam_FILE * SamBam_fopen(char * fname , int file_type)
 		{
 			free(ret->input_binary_stream_buffer);
 			free(ret);
-			SUBREADprintf("FEOF 4 == %d!\n", magic_4);
+			SUBREADprintf("FEOF 4 == %d.\n", magic_4);
 			return NULL;
 		}
 
@@ -448,10 +451,12 @@ int PBam_get_next_zchunk(FILE * bam_fp, char * buffer, int buffer_length, unsign
 		int CDATA_READING = min(CDATA_LEN, buffer_length);
 		rrtv = fread(buffer, 1, CDATA_READING, bam_fp);
 		if(rrtv < CDATA_READING) return -1;
-		if(CDATA_READING<CDATA_LEN)
-			fseeko(bam_fp, CDATA_LEN-CDATA_READING, SEEK_CUR);
+		if(CDATA_READING<CDATA_LEN){
+			SUBREADputs("ERROR: buffer insufficient");
+			return -1;
+		}
 		fseeko(bam_fp, 4, SEEK_CUR);
-		rlen = fread(&real_len, 4, 1, bam_fp);
+		rlen = fread(&real_len, 4, 1, bam_fp);//Input SIZE (length of uncompressed data);uint32_t
 		if(rlen < 1) is_file_broken = 1;
 
 	//	SUBREADprintf("read_data=%u\n", CDATA_LEN);
@@ -1007,7 +1012,7 @@ int PBum_load_header(FILE * bam_fp, SamBam_Reference_Info** chro_tab, char * rem
 		if(rlen<0){
 			bam_is_broken = (rlen == -2);
 			if(bam_is_broken){
-				SUBREADprintf("BAM file format error!\n");
+				SUBREADprintf("BAM file format error.\n");
 				free(CDATA);
 				free(PDATA);
 				return -1;
@@ -1043,7 +1048,7 @@ int PBum_load_header(FILE * bam_fp, SamBam_Reference_Info** chro_tab, char * rem
 		memcpy(PDATA , PDATA + have - remainder_byte_len, remainder_byte_len);
 		if(ret<0)
 		{
-			SUBREADprintf("Header error!\n");
+			SUBREADprintf("Header error.\n");
 			free(CDATA);
 			free(PDATA);
 			return -1;
@@ -1089,17 +1094,18 @@ int test_bamview(int argc, char ** argv)
 	return 0;
 }
 
-int SamBam_writer_create(SamBam_Writer * writer, char * BAM_fname, int threads, int keep_in_memory, char * tmpfname)
+int SamBam_writer_create(SamBam_Writer * writer, char * BAM_fname, int threads, int sort_reads_by_coord, int is_temp_BAM_file, char * tmpfname)
 {
 	memset(writer, 0, sizeof(SamBam_Writer));
 
 	if(BAM_fname)
 	{
 		writer -> bam_fp = f_subr_open(BAM_fname, "wb");
-		if(keep_in_memory){
+		if(sort_reads_by_coord){
 			char tname[MAX_FILE_NAME_LENGTH];
 			sprintf(tname, "%s.bai", BAM_fname);
 			writer -> BAI_fp = f_subr_open(tname, "wb");
+			worker_master_mutex_init(&writer->sorted_notifier, threads);
 		}
 		if(!writer -> bam_fp) return -1;
 	}
@@ -1109,7 +1115,8 @@ int SamBam_writer_create(SamBam_Writer * writer, char * BAM_fname, int threads, 
 	#endif
 
 	writer -> threads = threads;
-	writer -> keep_in_memory = keep_in_memory;
+	writer -> sort_reads_by_coord = sort_reads_by_coord;
+	writer -> fastest_compression = is_temp_BAM_file;
 	writer -> compressed_chunk_buffer = malloc(70000); 
 	writer -> chunk_buffer = malloc(70000); 
 	writer -> chunk_buffer_max_size = 70000;
@@ -1192,18 +1199,24 @@ void SamBam_writer_add_chunk(SamBam_Writer * writer, int thread_no)
 	char * this_buffer = thread_no < 0 ? writer ->chunk_buffer: writer -> threads_chunk_buffer[thread_no];
 	char * this_compressed_chunk_buffer = thread_no < 0 ? writer ->compressed_chunk_buffer : writer -> threads_chunk_buffer_compressed[thread_no];
 
-	//if(thread_no>=0)SUBREADprintf("MTBAM : WRITE THR_%d ; LEN=%d\n", thread_no, *this_buffer_used);
+	if(*this_buffer_used < 1){
+		// magic block with 0 byte data(EOF)
+		subread_lock_occupy(&writer -> thread_bam_lock);
+		fwrite( "\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\xff\x06\x00\x42\x43\x02\x00\x1b\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00",1,28,writer -> bam_fp);
+		writer -> current_BAM_pos = ftello(writer -> bam_fp);
+		subread_lock_release(&writer -> thread_bam_lock);
+		return;
+	}
 
 	this_stream -> avail_out = 70000;
 	this_stream -> avail_in = (* this_buffer_used);
 	CRC32 = SamBam_CRC32(this_buffer , * this_buffer_used);
 
-	int Z_DEFAULT_MEM_LEVEL = 8;
 	this_stream -> zalloc = Z_NULL;
 	this_stream -> zfree = Z_NULL;
 	this_stream -> opaque = Z_NULL;
 
-	deflateInit2(this_stream, SAMBAM_COMPRESS_LEVEL, Z_DEFLATED,
+	deflateInit2(this_stream, writer -> fastest_compression? SAMBAM_COMPRESS_LEVEL_FASTEST : SAMBAM_COMPRESS_LEVEL_NORMAL, Z_DEFLATED,
 		SAMBAM_GZIP_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
 	
 	this_stream -> next_in = (unsigned char *)this_buffer;
@@ -1213,7 +1226,6 @@ void SamBam_writer_add_chunk(SamBam_Writer * writer, int thread_no)
 	deflateEnd(this_stream);
 
 	compressed_size = 70000 - this_stream -> avail_out;
-	//printf("ADDED BLOCK=%d; LEN=%d; S=%s\n", compressed_size, writer ->chunk_buffer_used,  writer ->chunk_buffer);
 
 	subread_lock_occupy(&writer -> thread_bam_lock);
 	SamBam_writer_chunk_header(writer, compressed_size);
@@ -1303,8 +1315,10 @@ int SamBam_writer_close(SamBam_Writer * writer)
 			SamBam_writer_write_header(writer);
 	} else SamBam_writer_finalise_one_thread(writer);
 
-	if(writer -> keep_in_memory)
+	if(writer -> sort_reads_by_coord){
 		SamBam_writer_sort_bins_to_BAM(writer);
+		worker_master_mutex_destroy(&writer->sorted_notifier);
+	}
 	
 	writer -> chunk_buffer_used = 0;
 	SamBam_writer_add_chunk(writer, -1);
@@ -1356,6 +1370,8 @@ int SamBam_writer_add_header(SamBam_Writer * writer, char * header_text, int add
 	writer -> header_plain_text_buffer_used += new_text_len;
 	strcpy(writer -> header_plain_text_buffer + writer -> header_plain_text_buffer_used, "\n");
 	writer -> header_plain_text_buffer_used ++;
+
+//	SUBREADprintf("ADJHEADERXCD BIN=%s\n", header_text);
 	if(add_chro && memcmp(header_text, "@SQ",3)==0)
 	{
 		char * chro = NULL;
@@ -1386,6 +1402,7 @@ int SamBam_writer_add_chromosome(SamBam_Writer * writer, char * chro_name, unsig
 {
 	unsigned int chro_id = writer -> chromosome_name_table -> numOfElements;
 
+	//SUBREADprintf("ADJHEADER_CHRO %s of %u\n", chro_name, chro_length);
 	//assert(strlen(chro_name) < 30);
 
 	char * chro_name_space = malloc(strlen(chro_name)+1);
@@ -1618,6 +1635,36 @@ char * duplicate_TAB_record_field(char * rline, int fno, int to_end){
 	return ret;
 }
 
+int SamBam_writer_add_read_bin(SamBam_Writer * writer, int thread_no, char * rbin, int committable){
+	char * this_chunk_buffer=NULL;
+	srInt_64 *this_chunk_buffer_used=NULL;
+	if(thread_no >= 0){
+		if(writer -> sort_reads_by_coord && writer -> threads_chunk_buffer_max_size[thread_no] < writer -> threads_chunk_buffer_used[thread_no] + 12000){
+			writer -> threads_chunk_buffer_max_size[thread_no] = writer -> threads_chunk_buffer_max_size[thread_no] * 7/4;
+			writer -> threads_chunk_buffer[ thread_no ] = realloc(writer -> threads_chunk_buffer[ thread_no ], writer -> threads_chunk_buffer_max_size[thread_no]);
+		}
+		this_chunk_buffer = writer -> threads_chunk_buffer[ thread_no ];
+		this_chunk_buffer_used = writer -> threads_chunk_buffer_used + thread_no;
+	}else{
+		if(writer -> sort_reads_by_coord && writer -> chunk_buffer_max_size < writer -> chunk_buffer_used + 12000){
+			//SUBREADprintf("0THR_REALLOCATE MEM : %d -> %d\n", writer -> chunk_buffer_max_size,  writer -> chunk_buffer_max_size * 7/4);
+			writer -> chunk_buffer_max_size = writer -> chunk_buffer_max_size * 7/4;
+			writer -> chunk_buffer = realloc(writer -> chunk_buffer, writer -> chunk_buffer_max_size);
+		}
+		this_chunk_buffer = writer -> chunk_buffer;
+		this_chunk_buffer_used = &writer -> chunk_buffer_used;
+	}
+	//SUBREADprintf("WRTXBIN: PTR %p of USED %lld at read %p\n", this_chunk_buffer, *this_chunk_buffer_used, rbin);
+	int reclen=0;
+	memcpy(&reclen, rbin,4);
+	memcpy(this_chunk_buffer+(*this_chunk_buffer_used), rbin, reclen+4);
+	(*this_chunk_buffer_used)+= reclen+4;
+
+	if((*this_chunk_buffer_used)>55000 && committable && !writer -> sort_reads_by_coord)
+		SamBam_writer_add_chunk(writer, thread_no);
+	//SUBREADprintf("WRTXBIN: FIN WTR %p of USED %lld\n", this_chunk_buffer, *this_chunk_buffer_used);
+	return 0;
+}
 int SamBam_writer_add_read_line(SamBam_Writer * writer, int thread_no, char * rline, int committable){
 	char * read_name, * flag_str, *chro_name, *chro_position_str, * mapping_quality_str, * cigar, * next_chro_name, *next_chro_position_str, *temp_len_str, *read_text, *qual_text, *additional_columns;
 	read_name = duplicate_TAB_record_field(rline, 0,0);
@@ -1673,17 +1720,17 @@ int SamBam_writer_add_read(SamBam_Writer * writer, int thread_no, char * read_na
 
 
 	char * this_chunk_buffer;
-	long long * this_chunk_buffer_used;
+	srInt_64 * this_chunk_buffer_used;
 
 	if(thread_no >= 0){
-		if(writer -> keep_in_memory && writer -> threads_chunk_buffer_max_size[thread_no] < writer -> threads_chunk_buffer_used[thread_no] + 12000){
+		if(writer -> sort_reads_by_coord && writer -> threads_chunk_buffer_max_size[thread_no] < writer -> threads_chunk_buffer_used[thread_no] + 12000){
 			writer -> threads_chunk_buffer_max_size[thread_no] = writer -> threads_chunk_buffer_max_size[thread_no] * 7/4;
 			writer -> threads_chunk_buffer[ thread_no ] = realloc(writer -> threads_chunk_buffer[ thread_no ], writer -> threads_chunk_buffer_max_size[thread_no]);
 		}
 		this_chunk_buffer = writer -> threads_chunk_buffer[ thread_no ];
 		this_chunk_buffer_used = writer -> threads_chunk_buffer_used + thread_no;
 	}else{
-		if(writer -> keep_in_memory && writer -> chunk_buffer_max_size < writer -> chunk_buffer_used + 12000){
+		if(writer -> sort_reads_by_coord && writer -> chunk_buffer_max_size < writer -> chunk_buffer_used + 12000){
 			//SUBREADprintf("REALLOCATE MEM : %d -> %d\n", writer -> chunk_buffer_max_size,  writer -> chunk_buffer_max_size * 7/4);
 			writer -> chunk_buffer_max_size = writer -> chunk_buffer_max_size * 7/4;
 			writer -> chunk_buffer = realloc(writer -> chunk_buffer, writer -> chunk_buffer_max_size);
@@ -1743,15 +1790,14 @@ int SamBam_writer_add_read(SamBam_Writer * writer, int thread_no, char * read_na
 	(*this_chunk_buffer_used) += additional_bin_len;
 
 
-	if((*this_chunk_buffer_used)>55000 && committable && !writer -> keep_in_memory)
+	if((*this_chunk_buffer_used)>55000 && committable && !writer -> sort_reads_by_coord)
 		SamBam_writer_add_chunk(writer, thread_no);
 
 	return 0;
 }
 
-int SamBam_unzip(char * out , char * in , int inlen)
+int SamBam_unzip(char * out, int outlen , char * in , int inlen, int sync_only)
 {
-	#define unzip_out_max_len 65537
 	z_stream strm;
 	strm.zalloc = Z_NULL;
 	strm.zfree = Z_NULL;
@@ -1765,16 +1811,17 @@ int SamBam_unzip(char * out , char * in , int inlen)
 	strm.avail_in = (unsigned int)inlen;
 	strm.next_in = (unsigned char *)in;
 
-	strm.avail_out = unzip_out_max_len;
+	strm.avail_out = outlen;
 	strm.next_out = (unsigned char *)out;
-	ret = inflate(&strm, Z_FINISH);
-	if(ret != Z_STREAM_END)
+	ret = inflate(&strm, sync_only?Z_SYNC_FLUSH:Z_FINISH);
+	if(ret != Z_STREAM_END && ret!=0)
 	{
 		inflateEnd(&strm);
 		SUBREADprintf("DATA ERROR! code=%d\n", ret);
+		assert(0);
 		return -1;
 	}
-	int have = unzip_out_max_len - strm.avail_out;
+	int have = outlen - strm.avail_out;
 
 	inflateEnd(&strm);
 	//SUBREADprintf("DECOMPRESS GENERATED=%d\n", have);
@@ -1792,10 +1839,6 @@ int SamBam_writer_sort_buff_one_compare(void * Lbin, void * Rbin, ArrayList * me
 // return total reads in bin.
 int SamBam_writer_sort_buff_one_write(SamBam_Writer * writer, char * bin, int binlen, int thread_id){
 	int bin_cursor = 0;
-	if(binlen<1){
-		SUBREADprintf("WONE : BINLEN=%d, TH=%d\n", binlen, thread_id);
-		assert(binlen >0);
-	}
 
 	ArrayList* sort_linear_pos = ArrayListCreate(1000000);
 	ArrayListSetDeallocationFunction(sort_linear_pos,  free);
@@ -1817,7 +1860,8 @@ int SamBam_writer_sort_buff_one_write(SamBam_Writer * writer, char * bin, int bi
 	}
 	ArrayListSort(sort_linear_pos, SamBam_writer_sort_buff_one_compare);
 
-	char * nbin = malloc(binlen);
+	char * nbin = NULL;
+	if(binlen >0 && binlen < 0x7fffffff)nbin=malloc(binlen);
 	int nb_cursor = 0, xx, wlen=0;
 	for(xx=0; xx<ii_reads;xx++){
 		int * binpos = ArrayListGet(sort_linear_pos, xx);
@@ -1837,11 +1881,11 @@ int SamBam_writer_sort_buff_one_write(SamBam_Writer * writer, char * bin, int bi
 	if(writer -> threads>1) subread_lock_release(&writer -> thread_bam_lock);
 	FILE * tofp  = fopen(tmpfname, "wb");
 	if(tofp){
-		wlen = fwrite(nbin, binlen,1, tofp);
+		if(binlen>0)wlen = fwrite(nbin, binlen,1, tofp);
 		fclose(tofp);
 	}
 	free(nbin);
-	if(wlen < 1) {
+	if(wlen < 1 && binlen>0) {
 		SUBREADprintf("ERROR: no space (%d bytes) in the temp directory (%s).\nThe program cannot run properly.\n", binlen, tmpfname);
 		writer ->is_internal_error = 1;
 		return -1;
@@ -1850,28 +1894,23 @@ int SamBam_writer_sort_buff_one_write(SamBam_Writer * writer, char * bin, int bi
 }
 
 unsigned long long SamBam_writer_sort_bins_to_BAM_FP_pos(FILE * fp){
-	int blklen = 0;
+	int intvals[3];
 	unsigned long long ret = 0;
-	int rlen = fread(&blklen, 4,1,fp);
-	if(rlen>0 && blklen<10000){
-		int chro_no=0, poss=0;
-		rlen = fread(&chro_no, 4,1,fp);
-		if(rlen < 1) return SUBREAD_MAX_ULONGLONG;
-		rlen = fread(&poss, 4,1,fp);
-		if(rlen < 1) return SUBREAD_MAX_ULONGLONG;
+	int rlen = fread(intvals, sizeof(int),3,fp);
+	if(rlen>0 && intvals[0]<10000){
+		int chro_no, poss;
+		chro_no=intvals[1];
+		poss=intvals[2];
 		ret =((1LLU*chro_no) << 32)| poss;
 		if(ret == SUBREAD_MAX_ULONGLONG) ret = ret- 10 ;
-
-		fseek(fp,-12, SEEK_CUR);
-		//SUBREADprintf("READPOS AT %ld BLK=%d V=%llu\n", blklen, ftell(fp), ret);
+		fseek(fp, -12, SEEK_CUR);
 		return ret;
-	}else if(rlen < 1) return SUBREAD_MAX_ULONGLONG;
-	assert(rlen >0 && blklen<10000);
+	}
 	return SUBREAD_MAX_ULONGLONG;
 }
 
 
-int SamBam_writer_calc_cigar_span(char * bin, int blen){
+int SamBam_writer_calc_cigar_span(char * bin){
 	int cops = 0, rname_len = 0, ret = 0;
 	memcpy(&cops, bin+12, 4);
 	memcpy(&rname_len, bin+8, 4);
@@ -1889,7 +1928,7 @@ int SamBam_writer_calc_cigar_span(char * bin, int blen){
 	return ret;
 }
 
-#define MAX_ALLOWED_GAP_IN_BAI_CHUNK 0x10000 
+#define MAX_ALLOWED_GAP_IN_BAI_CHUNK 5 // the number of blocks, not the file positions.
 
 void SamBam_writer_sort_bins_to_BAM_test_bins(SamBam_Writer * writer, HashTable * bin_tab, ArrayList * bin_list, ArrayList * win16k_list, int block_len, void ***last_chunk_ptr, int chro_no){
 	int inbin_pos = writer -> chunk_buffer_used - block_len ; // point to the byte AFTER "block_len" int.
@@ -1899,50 +1938,117 @@ void SamBam_writer_sort_bins_to_BAM_test_bins(SamBam_Writer * writer, HashTable 
 	memcpy(&bin_mq_nl, writer -> chunk_buffer + inbin_pos + 8,4);
 	binno = bin_mq_nl>>16;
 
-	int cigar_span = SamBam_writer_calc_cigar_span(writer -> chunk_buffer + inbin_pos, block_len);
+	int cigar_span = SamBam_writer_calc_cigar_span(writer -> chunk_buffer + inbin_pos);
 
 	int this_w16_no = (pos + cigar_span) >>14;	// WIN is calculated on 0-based pos.
-	unsigned long long this_Vpos = writer -> current_BAM_pos<<16 | (inbin_pos-4);
+	unsigned long long this_Vpos = writer -> this_bam_block_no<<16 | (inbin_pos-4);
 
-	if(0){
-		if(0 && binno == 10540 && chro_no == 0)
-				SUBREADprintf("IN_BIN_10540/chr0 : %s\n", writer -> chunk_buffer + inbin_pos + 32);
-
-		if(FIXLENstrcmp("V0112_0155:7:1302:1337:112281\nV0112_0155:7:1107:11281:15430\nV0112_0155:7:1103:16366:84183\nV0112_0155:7:1205:9418:2969", writer -> chunk_buffer + inbin_pos + 32) == 0){
-			SUBREADprintf("WRITE %s\tBINNO=%d\n", writer -> chunk_buffer + inbin_pos + 32, binno);
-			//SUBREADprintf("WRITE %s AT  %lld, %d    BINNO=%d   WINNO=%d\n", writer -> chunk_buffer + inbin_pos + 32, this_Vpos>>16,(int)(this_Vpos&0xffff), binno, this_w16_no);
-		}
-	}
-
+	// if this read is after the maximum coordinate in the win16k list: all elements before last one and this one starts at this read.
 	if(this_w16_no >=win16k_list->numOfElements){
 		int bbi;
 		for(bbi = win16k_list->numOfElements; bbi <=this_w16_no; bbi++)
 			ArrayListPush(win16k_list, NULL+ this_Vpos);
 	}
 
-	ArrayList * this_bin_chinks = HashTableGet(bin_tab, NULL+binno+1);
-	if(NULL == this_bin_chinks){
-		this_bin_chinks = ArrayListCreate(5);
-		HashTablePut(bin_tab, NULL+binno+1, this_bin_chinks);
+	// a read only belongs to ONE bin which is the smallest bin that can FULLY cover the full length of this read.
+	ArrayList * this_bin_chunks = HashTableGet(bin_tab, NULL+binno+1);
+	if(NULL == this_bin_chunks){
+		this_bin_chunks = ArrayListCreate(5);
+		HashTablePut(bin_tab, NULL+binno+1, this_bin_chunks);
 		ArrayListPush(bin_list, NULL+binno);
 	}
 
 	int found = 0;
-	if(this_bin_chinks -> numOfElements > 0){
-		//SUBREADprintf("RESLOCS : %ld == %ld\n", this_Vpos, this_bin_chinks -> elementList [ this_bin_chinks -> numOfElements - 1 ] - NULL);
+	// a bin is not necessarily continuous. Say, a top-level bin only contains a few reads (most reads a in low-level bins), but their locations are everywhere.
+	if(this_bin_chunks -> numOfElements > 0){
+		//SUBREADprintf("RESLOCS : %ld == %ld\n", this_Vpos, this_bin_chunks -> elementList [ this_bin_chunks -> numOfElements - 1 ] - NULL);
 		long long diff = this_Vpos >>16;
-		diff -=(this_bin_chinks -> elementList [ this_bin_chinks -> numOfElements - 1 ] - NULL)>>16;
+		diff -=(this_bin_chunks -> elementList [ this_bin_chunks -> numOfElements - 1] - NULL)>>16;
 		if(diff < MAX_ALLOWED_GAP_IN_BAI_CHUNK){
-			this_bin_chinks -> elementList [ this_bin_chinks -> numOfElements -1] = NULL+this_Vpos + block_len+4;
-			*last_chunk_ptr = this_bin_chinks -> elementList + this_bin_chinks -> numOfElements -1;
+			this_bin_chunks -> elementList [ this_bin_chunks -> numOfElements -1] = NULL+this_Vpos + block_len+4;
+			*last_chunk_ptr = this_bin_chunks -> elementList + this_bin_chunks -> numOfElements -1;
 			found = 1;
 		}
 	}
+
+	// if the last chunk in this bin isn't good to be extended (too far from the file location of the new read), a new chunk is created.
 	if(!found){
-		ArrayListPush(this_bin_chinks, NULL + this_Vpos);
-		ArrayListPush(this_bin_chinks, NULL + this_Vpos + block_len+4);
-		*last_chunk_ptr = this_bin_chinks -> elementList + this_bin_chinks -> numOfElements -1;
+		ArrayListPush(this_bin_chunks, NULL + this_Vpos);
+		ArrayListPush(this_bin_chunks, NULL + this_Vpos + block_len+4);
+		*last_chunk_ptr = this_bin_chunks -> elementList + this_bin_chunks -> numOfElements -1;
 	}
+}
+
+void * SamBam_writer_sorted_compress(void * vptr0){
+	void ** vptr = vptr0;
+	SamBam_Writer * writer = vptr[0];
+	int this_thread_no = vptr[1]-NULL;
+	subread_lock_t * initlock = vptr[2];
+
+	worker_thread_start(&writer->sorted_notifier, this_thread_no);
+	subread_lock_release(initlock);
+	free(vptr0);
+	struct SamBam_sorted_compressor_st * me = writer -> writer_threads + this_thread_no;
+
+	while(1){
+		int termed = worker_wait_for_job(&writer->sorted_notifier, this_thread_no);
+		if(termed)break;
+
+		me->CRC32_plain = SamBam_CRC32(me->plain_text,  me->text_size);
+		me->strm.next_in = (unsigned char*)me->plain_text;
+		me->strm.avail_in = me->text_size;
+		me->strm.next_out = (unsigned char*)me->zipped_bin;
+		me->strm.avail_out = 70000;
+		int deret = deflate(&me->strm,Z_FINISH);
+		if(deret >=0){
+			deflateReset(&me->strm);
+			me->bin_size = 70000 - me->strm.avail_out;
+			me->last_job_done = 1;
+		}else{
+			SUBREADprintf("Error: cannot compress BAM block #%d , which is %llu, had %d => 70000 [ %d ] bytes , return = %d\n", this_thread_no, me -> bam_block_no, me->text_size, me->bin_size, deret);
+		}
+	}
+	return NULL;
+}
+
+void SamBam_thread_wait_merge_write(SamBam_Writer * writer, int thread_no){
+	master_wait_for_job_done(&writer -> sorted_notifier, thread_no);
+
+	if(writer -> writer_threads[thread_no].last_job_done){
+		srInt_64 fpos = ftello(writer -> bam_fp);
+		HashTablePut(writer -> block_no_p1_to_vpos_tab, NULL+1+writer -> writer_threads[thread_no].bam_block_no, NULL+fpos);
+
+		SamBam_writer_chunk_header(writer, writer -> writer_threads[thread_no].bin_size);
+		int rlen = fwrite( writer -> writer_threads[thread_no].zipped_bin ,1, writer -> writer_threads[thread_no].bin_size, writer -> bam_fp);
+		if(rlen != writer -> writer_threads[thread_no].bin_size){
+			SUBREADprintf("ERROR: cannot write output files.\n");
+			assert(0);
+		}
+		rlen = fwrite(&writer -> writer_threads[thread_no].CRC32_plain , 4, 1, writer -> bam_fp);
+		rlen = fwrite(&writer -> writer_threads[thread_no].text_size , 4, 1, writer -> bam_fp);
+
+		writer -> writer_threads[thread_no].text_size = 0;
+		writer -> writer_threads[thread_no].bin_size = 0;
+		writer -> writer_threads[thread_no].bam_block_no = -1;
+		writer -> writer_threads[thread_no].last_job_done = 0;
+	}
+}
+
+void SamBam_thread_set_new_job(SamBam_Writer * writer, int thread_no){
+	memcpy(writer -> writer_threads[thread_no].plain_text, writer ->chunk_buffer, writer->chunk_buffer_used);
+	writer -> writer_threads[thread_no].text_size = writer->chunk_buffer_used;
+	writer -> writer_threads[thread_no].bam_block_no = writer -> this_bam_block_no;
+	writer -> chunk_buffer_used = 0;
+	master_notify_worker(&writer -> sorted_notifier, thread_no);
+}
+
+void SamBam_writer_submit_sorted_compressing_task(SamBam_Writer * writer){
+	SamBam_thread_wait_merge_write(writer, writer -> sorted_compress_this_thread_no);
+	SamBam_thread_set_new_job(writer, writer -> sorted_compress_this_thread_no);
+
+	writer -> sorted_compress_this_thread_no++;
+	if(writer -> sorted_compress_this_thread_no == writer -> threads) writer -> sorted_compress_this_thread_no=0;
+	writer -> this_bam_block_no ++;
 }
 
 void SamBam_writer_sort_bins_to_BAM_write_1R(SamBam_Writer * writer, FILE * fp, HashTable * bin_tab, ArrayList * bin_list, ArrayList * win16k_list, int chro_no){
@@ -1950,25 +2056,26 @@ void SamBam_writer_sort_bins_to_BAM_write_1R(SamBam_Writer * writer, FILE * fp, 
 	int rlen = fread(&block_len, 4,1,fp);
 	//SUBREADprintf("WBIN=%d\n", block_len);
 	if(rlen<1 || block_len >= 10000){
-		SUBREADprintf("ERROR: sorted bin files are brolen. RLEN=%d , BLKLEN=%d\n", rlen, block_len);
+		SUBREADprintf("ERROR: sorted bin files are broken. RLEN=%d , BLKLEN=%d\n", rlen, block_len);
 		assert(rlen >=1);
 	}
 
 	memcpy(writer -> chunk_buffer + writer -> chunk_buffer_used, &block_len, 4);
-	writer -> chunk_buffer_used += 4;
+	writer ->chunk_buffer_used += 4;
 	rlen = fread(writer -> chunk_buffer + writer -> chunk_buffer_used, 1, block_len ,fp);
 	if(rlen < block_len){
-		SUBREADprintf("ERROR: sorted bin files are brolen.\n");
+		SUBREADprintf("ERROR: sorted bin files are broken.\n");
 		assert(rlen >=block_len);
 	}
-	writer -> chunk_buffer_used += rlen;
+	writer -> chunk_buffer_used+= rlen;
 
 	void ** last_chunk_ptr = NULL;
 	SamBam_writer_sort_bins_to_BAM_test_bins(writer, bin_tab, bin_list, win16k_list, block_len, &last_chunk_ptr, chro_no);
 
-	if(writer -> chunk_buffer_used >55000)
-		SamBam_writer_add_chunk(writer, -1);
-	//if(last_chunk_ptr) (*last_chunk_ptr) = NULL + (writer -> current_BAM_pos << 16);
+	if(writer -> chunk_buffer_used>55000){
+		assert(writer -> chunk_buffer_used< 65000);
+		SamBam_writer_submit_sorted_compressing_task(writer);
+	}
 }
 
 #define SAMBAM_MERGE_MAX_FPS (350) 
@@ -1997,7 +2104,7 @@ void SamBam_writer_one_thread_merge_sortedbins(SamBam_Writer * writer){
 				current_min_fps[bii] = SUBREAD_MAX_ULONGLONG;
 
 				sprintf(tfpx , "%s-%06d.sortedbin", writer -> tmpf_prefix, bii + merge_i);
-				sb_fps[bii] = fopen(tfpx,"r");
+				sb_fps[bii] = fopen(tfpx,"rb");
 				current_min_fps[bii] = SamBam_writer_sort_bins_to_BAM_FP_pos(sb_fps[bii]);
 				if(current_min_fps[bii] < SUBREAD_MAX_ULONGLONG && current_min_fps[bii] < current_min){
 					current_min = current_min_fps[bii];
@@ -2181,9 +2288,66 @@ void SamBam_writer_optimize_bins(HashTable *bin_tab, ArrayList *bin_arr, HashTab
 	}
 }
 
+void SamBam_write_sorted_thread_collect(SamBam_Writer * writer){
+	int thread_i;
+	if(writer -> chunk_buffer_used>0) SamBam_writer_submit_sorted_compressing_task(writer);
+	for(thread_i = 0; thread_i < writer -> threads; thread_i++){
+		//SUBREADprintf("FINISHED %d-th CHRO, MERGING THR %d\n", old_chro_no, writer->sorted_compress_this_thread_no );
+		SamBam_thread_wait_merge_write(writer, writer->sorted_compress_this_thread_no);
+		writer->sorted_compress_this_thread_no ++;
+		if(writer->sorted_compress_this_thread_no == writer -> threads) writer->sorted_compress_this_thread_no = 0;
+	}
+}
+
+#define SAMBAM_Block2Vpos(v) (v)=((HashTableGet(writer -> block_no_p1_to_vpos_tab, NULL+(v>>16)+1)-NULL )<<16 )|(v & 0xffff);
+void SamBam_write_BAI_for_1chr(SamBam_Writer * writer, HashTable ** bin_chunks_table, ArrayList ** bins_list, ArrayList ** win16k_list){
+	SamBam_write_sorted_thread_collect(writer);
+
+	if(1){
+		HashTable * new_bin_tab = NULL;
+		ArrayList * new_bin_list = NULL;
+		SamBam_writer_optimize_bins(*bin_chunks_table ,*bins_list,&new_bin_tab,&new_bin_list);
+		*bin_chunks_table = new_bin_tab;
+		*bins_list = new_bin_list;
+	}
+
+	int n_bins = (*bins_list)->numOfElements;
+	int win16_nos = (*win16k_list)->numOfElements;
+	//SUBREADprintf("WIN_ITEMS=%d\t\t\tOLD_CHRO=%d  NEW_CHRO=%d  CURR_BATCH=%d\n", win16_nos, old_chro_no, chro_no , current_min_batch);
+
+	fwrite(&n_bins, 4, 1, writer -> BAI_fp);
+	int bini;
+	for(bini = 0; bini < n_bins; bini ++){
+		int bin_no = ArrayListGet(*bins_list, bini)-NULL;
+		ArrayList * chunks_list = HashTableGet(*bin_chunks_table, NULL+ bin_no+1);
+
+		int n_chunks = chunks_list -> numOfElements/2;
+		fwrite(&bin_no, 4, 1, writer -> BAI_fp);
+		fwrite(&n_chunks, 4, 1, writer -> BAI_fp);
+		int chunk_i;
+		for(chunk_i = 0; chunk_i < 2* n_chunks; chunk_i +=2){
+			long long int Voff_st = ArrayListGet(chunks_list, chunk_i) - NULL;
+			long long int Voff_en = ArrayListGet(chunks_list, chunk_i+1) - NULL;
+			SAMBAM_Block2Vpos(Voff_st);
+			SAMBAM_Block2Vpos(Voff_en);
+			fwrite(&Voff_st, 8, 1, writer -> BAI_fp);
+			fwrite(&Voff_en, 8, 1, writer -> BAI_fp);
+		}
+	}
+
+	fwrite(&win16_nos, 4, 1, writer -> BAI_fp);
+	for(bini = 0; bini < win16_nos; bini++){
+		long long int Voff = ArrayListGet(*win16k_list , bini) - NULL;
+		SAMBAM_Block2Vpos(Voff);
+		fwrite(&Voff, 8, 1, writer -> BAI_fp);
+	}
+
+}
+
+#define SAMBAM_reset_sorting_writer { HashTableRemoveAll( writer -> block_no_p1_to_vpos_tab ); }
+
 // MUST be called by THREAD 0!
 void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
-	print_in_box(80,0,0,"Sort the reads...");
 	SamBam_writer_one_thread_merge_sortedbins(writer);
 
 	FILE ** sb_fps = malloc(sizeof(FILE *) * writer -> sorted_batch_id);
@@ -2198,7 +2362,7 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 		current_min_fps[bii] = SUBREAD_MAX_ULONGLONG;
 
 		sprintf(tfp , "%s-%06d.sortedbin", writer -> tmpf_prefix, bii);
-		sb_fps[bii] = fopen(tfp,"r");
+		sb_fps[bii] = fopen(tfp,"rb");
 		if(sb_fps[bii]!=NULL){
 			current_min_fps[bii] = SamBam_writer_sort_bins_to_BAM_FP_pos(sb_fps[bii]);
 			if(current_min_fps[bii] < SUBREAD_MAX_ULONGLONG && current_min_fps[bii] < current_min){
@@ -2208,9 +2372,9 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 		}
 	}
 
-	HashTable * bin_chunks_table = NULL; // bin_NO => ArrayList [ chunk0_Voff_start, chunk0_Voff_end, chunk1_Voff_start, chunk1_Voff_end, ... ]
 	ArrayList * bins_list = NULL; //	[Bin_Number_0, Bin_Number_1, ...]
 	ArrayList * win16k_list = NULL;	// [ Voffset_0, Voffset_1, ... ]
+	HashTable * bin_chunks_table=NULL;
 	SAMBAM_renew_BAItabs;
 
 	int chro_no = (int)(current_min >> 32);
@@ -2218,55 +2382,41 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 
 	int wlen = fwrite("BAI\1", 4, 1, writer -> BAI_fp);
 	if(wlen < 1) assert(wlen >0);
-	int n_ref = writer -> chromosome_name_table -> numOfElements;
+	int thread_i, n_ref = writer -> chromosome_name_table -> numOfElements;
+	subread_lock_t initlocks[writer -> threads];
 	wlen = fwrite(&n_ref, 4, 1, writer -> BAI_fp);
-	SAMBAM_write_empty_chros(0, chro_no)
+	SAMBAM_write_empty_chros(0, chro_no);
 
+	writer -> block_no_p1_to_vpos_tab = HashTableCreate(100000);
+	writer -> writer_threads = calloc(sizeof(struct SamBam_sorted_compressor_st), writer -> threads);
+	for(thread_i = 0; thread_i < writer -> threads; thread_i++){
+		memset(&(writer -> writer_threads[thread_i].strm),0,sizeof(z_stream));
+		deflateInit2(&(writer -> writer_threads[thread_i].strm), writer -> fastest_compression? SAMBAM_COMPRESS_LEVEL_FASTEST : SAMBAM_COMPRESS_LEVEL_NORMAL , Z_DEFLATED,
+			SAMBAM_GZIP_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
+		subread_init_lock(initlocks+thread_i);
+		subread_lock_occupy(initlocks+thread_i);
+
+		void ** thparam = malloc(sizeof(void*)*3);
+		thparam[0] = writer;
+		thparam[1] = NULL + thread_i;
+		thparam[2] = initlocks+thread_i;
+		pthread_create(&writer -> writer_threads[thread_i].thread_stub, NULL,SamBam_writer_sorted_compress,thparam);
+	}
+	for(thread_i = 0; thread_i < writer -> threads; thread_i++){
+		subread_lock_occupy(initlocks+thread_i);
+		subread_destroy_lock(initlocks+thread_i);
+	}
+
+	SAMBAM_reset_sorting_writer;
 	while(1){ // GO THROUGH EACH READ and write into BAM
-		if(old_chro_no >=0 && (chro_no != old_chro_no || current_min_batch < 0)){ // if there is old_chro && if has to write 
-			if(1){
-				HashTable * new_bin_tab = NULL;
-				ArrayList * new_bin_list = NULL;
-				SamBam_writer_optimize_bins(bin_chunks_table , bins_list,&new_bin_tab,&new_bin_list);
-				bin_chunks_table = new_bin_tab;
-				bins_list = new_bin_list;
-			}
-			int n_bins = bins_list->numOfElements;
-			int win16_nos = win16k_list->numOfElements;
-			//SUBREADprintf("WIN_ITEMS=%d\t\t\tOLD_CHRO=%d  NEW_CHRO=%d  CURR_BATCH=%d\n", win16_nos, old_chro_no, chro_no , current_min_batch);
-
-			fwrite(&n_bins, 4, 1, writer -> BAI_fp);
-			int bini;
-			for(bini = 0; bini < n_bins; bini ++){
-				int bin_no = ArrayListGet(bins_list, bini)-NULL;
-				ArrayList * chunks_list = HashTableGet(bin_chunks_table, NULL+ bin_no+1);
-
-				int n_chunks = chunks_list -> numOfElements/2;
-				fwrite(&bin_no, 4, 1, writer -> BAI_fp);
-				fwrite(&n_chunks, 4, 1, writer -> BAI_fp);
-				int chunk_i;
-				for(chunk_i = 0; chunk_i < 2* n_chunks; chunk_i +=2){
-					long long int Voff_st = ArrayListGet(chunks_list, chunk_i) - NULL;
-					long long int Voff_en = ArrayListGet(chunks_list, chunk_i+1) - NULL;
-					fwrite(&Voff_st, 8, 1, writer -> BAI_fp);
-					fwrite(&Voff_en, 8, 1, writer -> BAI_fp);
-				}
-			}
-
-			fwrite(&win16_nos, 4, 1, writer -> BAI_fp);
-			for(bini = 0; bini < win16_nos; bini++){
-				long long int Voff = ArrayListGet(win16k_list , bini) - NULL;
-				fwrite(&Voff, 8, 1, writer -> BAI_fp);
-			}
+		//if(current_min_batch<0)SUBREADprintf("FINALTEST: OLD/NEW = %d , %d\n", old_chro_no ,chro_no);
+		if(old_chro_no >=0 && chro_no != old_chro_no){ // if there is old_chro && if has to write. Note: old_chro_no<0 means we reached the "unmapped" part of the sorted temp files
+			//SUBREADprintf("\n====== W1CHR %d =====\n", old_chro_no);
+			SamBam_write_BAI_for_1chr(writer, &bin_chunks_table, &bins_list, &win16k_list);
 			last_written_BAI_chro = old_chro_no;
-			SAMBAM_write_empty_chros(old_chro_no +1, chro_no)
-			SAMBAM_renew_BAItabs
-		}
-
-		if(current_min_batch<0 && chro_no < 0 && n_ref >0 && last_written_BAI_chro < n_ref ){
-			int bini;
-			for(bini = last_written_BAI_chro; bini < n_ref; bini++)
-				fwrite("\0\0\0\0\0\0\0\0\0\0\0\0", 4, 2, writer -> BAI_fp);
+			SAMBAM_write_empty_chros(old_chro_no +1, chro_no < 0?n_ref:chro_no);
+			SAMBAM_renew_BAItabs;
+			SAMBAM_reset_sorting_writer;
 		}
 
 		if(current_min_batch>-1){
@@ -2275,7 +2425,11 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 			current_min = SUBREAD_MAX_ULONGLONG;
 			current_min_batch = -1;
 			old_chro_no = chro_no;
-		}else break; // all finished. quit.
+		}else{
+			SamBam_write_sorted_thread_collect(writer);
+			break; // all finished. quit.
+		}
+		
 
 		for(bii = 0; bii < writer -> sorted_batch_id; bii++){
 			if(current_min_fps[bii] < SUBREAD_MAX_ULONGLONG && current_min_fps[bii] < current_min){
@@ -2285,7 +2439,6 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 		}
 		chro_no = (int)(current_min >> 32);
 	}
-	if(writer -> chunk_buffer_used >0)SamBam_writer_add_chunk(writer, -1);
 
 	for(bii = 0; bii < writer -> sorted_batch_id; bii++){
 		if(!sb_fps[bii]) continue;
@@ -2300,22 +2453,40 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 		ArrayListDestroy(bins_list);
 		ArrayListDestroy(win16k_list);
 	}
+
+	terminate_workers(&writer->sorted_notifier);
+	for(thread_i = 0; thread_i < writer -> threads; thread_i++){
+		pthread_join(writer -> writer_threads[thread_i].thread_stub, NULL);
+		deflateEnd(&(writer -> writer_threads[thread_i].strm));
+	}
+	HashTableDestroy(writer -> block_no_p1_to_vpos_tab);
+	
+	free(writer->writer_threads);
 	free(current_min_fps);
 	free(sb_fps);
-}
+} 
 
 void SamBam_writer_finalise_thread(SamBam_Writer * writer, int thread_id){
-	if(writer -> keep_in_memory){
-		SamBam_writer_sort_buff_one_write(writer, writer -> threads_chunk_buffer[thread_id], writer -> threads_chunk_buffer_used[thread_id], thread_id);
-		writer -> threads_chunk_buffer_used [thread_id] = 0;
+	if(writer -> threads < 2){
+		if(writer -> sort_reads_by_coord){
+			SamBam_writer_sort_buff_one_write(writer, writer ->chunk_buffer, writer -> chunk_buffer_used, -1);
+			writer -> chunk_buffer_used= 0;
+		}else{
+			if(writer -> chunk_buffer_used) SamBam_writer_add_chunk(writer, thread_id);
+		}
 	}else{
-		if(writer -> threads_chunk_buffer_used[thread_id]) SamBam_writer_add_chunk(writer, thread_id);
+		if(writer -> sort_reads_by_coord){
+			SamBam_writer_sort_buff_one_write(writer, writer -> threads_chunk_buffer[thread_id], writer -> threads_chunk_buffer_used[thread_id], thread_id);
+			writer -> threads_chunk_buffer_used [thread_id] = 0;
+		}else{
+			if(writer -> threads_chunk_buffer_used[thread_id]) SamBam_writer_add_chunk(writer, thread_id);
+		}
 	}
 }
 
 void SamBam_writer_finalise_one_thread(SamBam_Writer * writer){
 	if(writer -> threads < 2){
-		if(writer -> keep_in_memory){
+		if(writer -> sort_reads_by_coord){
 			if(writer -> chunk_buffer_used>0){
 				SamBam_writer_sort_buff_one_write(writer, writer -> chunk_buffer, writer -> chunk_buffer_used, -1);
 				writer -> chunk_buffer_used = 0;

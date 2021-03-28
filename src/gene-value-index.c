@@ -454,8 +454,6 @@ void match_indel_table_to_front_in(HashTable * indel_table , char * read, int re
 
 	if(level >9)return;
 
-	if(0&&memcmp(read + test_len - 1 - 30, TEST_TARGET +strlen(TEST_TARGET) -1 - 30, 30)==0)
-		printf("FRONT-IN: %d ; LEV=%d ; FBP=%u\n", test_len, level, first_base_pos);
 	for(xi = 1; xi < test_len; xi++)
 	{
 		indel_record_t found_records[20];
@@ -505,21 +503,6 @@ void match_indel_table_to_front_in(HashTable * indel_table , char * read, int re
 
 	if(onepiece_matched_bases + sofar_matched_bases > *best_matching_bases)
 	{
-
-	if(0&&memcmp(read + test_len - 1 - 30, TEST_TARGET + strlen(TEST_TARGET) - 31, 30)==0)
-	{
-		for(xk=0; xk<level; xk++)
-		{
-			printf("%+d@%d ; ", indels[xk], indel_poses[xk]);
-		}
-
-
-		printf("FRONT FINAL LEVEL %d : MATCHED=%d+%d=%d\n", level, onepiece_matched_bases , sofar_matched_bases, onepiece_matched_bases + sofar_matched_bases );
-	}
-
-
-
-
 		if(best_indels)
 		{
 			memcpy(best_indels, indels, sizeof(short)*10);

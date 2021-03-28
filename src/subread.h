@@ -33,6 +33,11 @@
 
 #include "hashtable.h" 
 
+#define MAX_SCRNA_FASTQ_FILES 256 
+#define SCRNA_FASTA_SPLIT1 "|Rsd:cCounts:mFQs|"
+#define SCRNA_FASTA_SPLIT2 "|Rsd:cCounts:1mFQ|"
+
+
 #define SAM_FLAG_PAIRED_TASK	0x01
 #define SAM_FLAG_FIRST_READ_IN_PAIR 0x40
 #define SAM_FLAG_SECOND_READ_IN_PAIR 0x80
@@ -219,9 +224,12 @@ typedef short gene_vote_number_t;
 //#define base2int(c) ((c)=='A'?0:((c)=='T'?3:((c)=='C'?2:1)))
 #define base2int(c) ((c)<'G'?((c)=='A'?0:2):((c)=='G'?1:3))
 
+/*
+#define base2int(c) (("\x3\x3\x3\x3\x3\x3\x3\x3" "\x3\x3\x3\x3\x3\x3\x3\x3"  "\x3\x3\x3\x3\x3\x3\x3\x3"  "\x3\x3\x3\x3\x3\x3\x3\x3"  "\x3\x3\x3\x3\x3\x3\x3\x3"  "\x3\x3\x3\x3\x3\x3\x3\x3"  "\x3\x3\x3\x3\x3\x3\x3\x3"  "\x3\x3\x3\x3\x3\x3\x3\x3"    "\x3"\
+	 "\x0\x3\x2\x3\x3\x3\x1\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3")[(int)(c)])
+         // A  B  C  D  E  F  G
+*/
 
-                     // A  B  C  D  E  F  G
-//#define base2int(c) ("\x0\x0\x2\x0\x0\x0\x1\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3\x3"[(c)-'A'])
 //#define int2base(c) ((c)==1?'G':((c)==0?'A':((c)==2?'C':'T')))
 //#define int2base(c) ("AGCT"[(c)]) 
 #define int2base(c) (1413695297 >> (8*(c))&0xff)
@@ -394,7 +402,8 @@ struct thread_input_buffer {
 
 #define SEEKGZ_CHAIN_BLOCKS_NO 15
 #define SEEKGZ_ZLIB_WINDOW_SIZE (32*1024)
-
+#define PAIRER_GZIP_WINDOW_BITS -15
+#define PAIRER_DEFAULT_MEM_LEVEL 8
 
 typedef struct {
 	unsigned long long block_start_in_file_offset;
@@ -475,6 +484,17 @@ typedef struct {
 	int is_EOF;
 } input_BLC_t;
 
+typedef struct{
+	union{
+		srInt_64 pos_file1, pos_file2, pos_file3;
+		seekable_position_t zpos_file1;
+	};
+	seekable_position_t zpos_file2;
+	seekable_position_t zpos_file3;
+	int current_file_no;
+	srInt_64 current_read_no;
+} input_mFQ_pos_t;
+
 typedef struct {
 	char filename[MAX_FILE_NAME_LENGTH+1];
 
@@ -484,6 +504,52 @@ typedef struct {
 	int is_first_chars;
 	unsigned char first_chars[2];
 } autozip_fp;
+
+
+
+typedef struct {
+	char ** files1;
+	char ** files2;
+	char ** files3;
+	int total_files;
+	int current_file_no;
+	int current_guessed_lane_no;
+	srInt_64 current_read_no;
+	autozip_fp autofp1;
+	autozip_fp autofp2;
+	autozip_fp autofp3;
+} input_mFQ_t;
+
+
+typedef struct
+{
+        char chro_name[MAX_CHROMOSOME_NAME_LEN];
+        unsigned int chro_length;
+} SamBam_Reference_Info;
+
+
+typedef struct{
+	int current_BAM_file_no;
+	srInt_64 section_start_pos;
+	int in_section_offset;
+	srInt_64 current_read_no;
+} input_scBAM_pos_t;
+
+typedef struct {
+	FILE * os_file;
+	char * BAM_file_names[MAX_SCRNA_FASTQ_FILES];
+	char section_buff[66000];
+	char align_buff[FC_LONG_READ_RECORD_HARDLIMIT];
+	int current_BAM_file_no;
+	int total_BAM_files;
+	int in_section_offset;
+	int section_bin_bytes;
+	int chro_table_size;
+	SamBam_Reference_Info * chro_table;
+	srInt_64 section_start_pos;
+	srInt_64 current_read_no;
+	subread_lock_t read_lock;
+} input_scBAM_t;
 
 typedef struct {
 	int read_no_in_chunk;
@@ -512,22 +578,13 @@ typedef struct {
 	int is_EOF;
 } cache_BCL_t;
 
-
-typedef struct {
-	char filename [300];
-	int space_type ;
-	int file_type ;
-	void * input_fp;   // can be system (FILE * sam or fastq or fasta), (seekable_zfile_t *)
-	char gzfa_last_name[MAX_READ_NAME_LEN];
-	unsigned long long read_chunk_start;
-	cache_BCL_t bcl_input;
-} gene_input_t;
-
 typedef struct{
 	union{
 		unsigned long long simple_file_position;
 		seekable_position_t seekable_gzip_position;
 		input_BLC_pos_t BCL_position;
+		input_mFQ_pos_t mFQ_position;
+		input_scBAM_pos_t scBAM_position;
 	};
 	char gzfa_last_name[MAX_READ_NAME_LEN];
 } gene_inputfile_position_t;
@@ -569,6 +626,21 @@ typedef struct{
 	unsigned int pos;
 	short type;	
 } VCF_temp_read_t;
+
+typedef struct {
+	char filename [MAX_FILE_NAME_LENGTH * MAX_SCRNA_FASTQ_FILES * 3];
+	int space_type ;
+	int file_type ;
+	void * input_fp;   // can be system (FILE * sam or fastq or fasta), (seekable_zfile_t *)
+	char gzfa_last_name[MAX_READ_NAME_LEN];
+	unsigned long long read_chunk_start;
+	union{
+		cache_BCL_t bcl_input;
+		input_mFQ_t scRNA_fq_input;
+		input_scBAM_t scBAM_input;
+	};
+} gene_input_t;
+
 
 
 struct explorer_section_t

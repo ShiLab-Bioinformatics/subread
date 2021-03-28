@@ -366,6 +366,43 @@ int is_read(char * in_buff)
 	return space_type;
 }
 
+char *strtokmm(char *str, const char *delim, char ** next) {
+    char *tok;
+    char *m;
+
+    if (delim == NULL) return NULL;
+
+    tok = (str) ? str : (*next);
+    if (tok == NULL) return NULL;
+
+    m = strstr(tok, delim);
+
+    if (m) {
+	(*next) = m + strlen(delim);
+	*m = '\0';
+    } else {
+	(*next) = NULL;
+    }
+
+    return tok;
+}
+
+int geinput_open_scRNA_BAM(char * rfnames,  gene_input_t * input, int reads_per_chunk, int threads ){
+	strcpy(input->filename,rfnames);
+	int rv = input_scBAM_init(&input -> scBAM_input, rfnames);
+	input -> file_type = GENE_INPUT_SCRNA_BAM;
+	input -> space_type = GENE_SPACE_BASE;
+	return rv;
+}
+
+int geinput_open_scRNA_fqs(char * rfnames,  gene_input_t * input, int reads_per_chunk, int threads ){
+	strcpy(input->filename,rfnames);
+	int rv = input_mFQ_init_by_one_string(&input -> scRNA_fq_input, rfnames);
+	input -> file_type = GENE_INPUT_SCRNA_FASTQ;
+	input -> space_type = GENE_SPACE_BASE;
+	return rv;
+}
+
 int geinput_open_bcl( const char * dir_name,  gene_input_t * input, int reads_per_chunk, int threads){
 	int rv = cacheBCL_init(&input -> bcl_input , (char*) dir_name, reads_per_chunk, threads );
 	strcpy(input->filename, dir_name);
@@ -644,7 +681,11 @@ unsigned int read_numbers(gene_input_t * input)
 }
 
 void geinput_tell(gene_input_t * input, gene_inputfile_position_t * pos){
-	if(input -> file_type == GENE_INPUT_BCL){
+	if(input -> file_type == GENE_INPUT_SCRNA_BAM){
+		scBAM_tell(&input -> scBAM_input, &pos -> scBAM_position);
+	}else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ){
+		input_mFQ_tell(&input -> scRNA_fq_input, &pos -> mFQ_position);
+	}else if(input -> file_type == GENE_INPUT_BCL){
 		assert(input -> file_type != GENE_INPUT_BCL);
 	}else if(input -> file_type == GENE_INPUT_GZIP_FASTQ || input -> file_type == GENE_INPUT_GZIP_FASTA){
 		seekgz_tell(( seekable_zfile_t *)input -> input_fp, &pos -> seekable_gzip_position);
@@ -656,7 +697,11 @@ void geinput_tell(gene_input_t * input, gene_inputfile_position_t * pos){
 }
 
 void geinput_seek(gene_input_t * input, gene_inputfile_position_t * pos){
-	if(input -> file_type == GENE_INPUT_BCL){
+	if(input -> file_type == GENE_INPUT_SCRNA_BAM){
+		scBAM_seek(&input -> scBAM_input, &pos -> scBAM_position);
+	}else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ){
+		input_mFQ_seek(&input -> scRNA_fq_input, &pos -> mFQ_position);
+	}else if(input -> file_type == GENE_INPUT_BCL){
 		assert(input -> file_type != GENE_INPUT_BCL);
 	}else if(input -> file_type == GENE_INPUT_GZIP_FASTQ || input -> file_type == GENE_INPUT_GZIP_FASTA){
 		seekgz_seek(( seekable_zfile_t *)input -> input_fp, &pos -> seekable_gzip_position);
@@ -729,6 +774,16 @@ int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_s
 {
 	if(input -> file_type == GENE_INPUT_BCL) {
 		int rv = cacheBCL_next_read(&input -> bcl_input, read_name, read_string, quality_string, NULL);
+		if(rv<=0) return -1;
+		if(trim_5 || trim_3) rv = trim_read_inner(read_string, quality_string, rv, trim_5, trim_3);
+		return rv;
+	} else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ) {
+		int rv = input_mFQ_next_read(&input -> scRNA_fq_input, read_name, read_string, quality_string);
+		if(rv<=0) return -1;
+		if(trim_5 || trim_3) rv = trim_read_inner(read_string, quality_string, rv, trim_5, trim_3);
+		return rv;
+	} else if(input -> file_type == GENE_INPUT_SCRNA_BAM) {
+		int rv = scBAM_next_read(&input -> scBAM_input, read_name, read_string, quality_string);
 		if(rv<=0) return -1;
 		if(trim_5 || trim_3) rv = trim_read_inner(read_string, quality_string, rv, trim_5, trim_3);
 		return rv;
@@ -927,9 +982,9 @@ int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_s
 			if(nch != '@') {
 				if(input->file_type == GENE_INPUT_FASTQ){
 					srInt_64 lineno = tell_current_line_no(input);
-					SUBREADprintf("ERROR: a format issue %d is found on the %lld-th line in input file '%s'!\nProgram aborted!\n", nch, lineno, input -> filename); 
+					SUBREADprintf("ERROR: a format issue %d is found on the %lld-th line in input file '%s'.\nProgram aborted.\n", nch, lineno, input -> filename); 
 				} else {
-					SUBREADprintf("ERROR: a format issue %d is found on the input file '%s'!\nProgram aborted!\n", nch, input -> filename); 
+					SUBREADprintf("ERROR: a format issue %d is found on the input file '%s'.\nProgram aborted.\n", nch, input -> filename); 
 					SUBREADprintf("The lines after the error point:\n");
 					read_line_noempty(MAX_READ_LENGTH, input, read_string, 0);
 					SUBREADprintf("%s\n", read_string);
@@ -968,9 +1023,9 @@ int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_s
 		if(nch != '+'){
 			if(input->file_type == GENE_INPUT_FASTQ){
 				srInt_64 lineno = tell_current_line_no(input);
-				SUBREADprintf("ERROR: a format issue %c is found on the %lld-th line in input file '%s'!\nProgram aborted!\n", nch, lineno, input -> filename); 
+				SUBREADprintf("ERROR: a format issue %c is found on the %lld-th line in input file '%s'.\nProgram aborted.\n", nch, lineno, input -> filename); 
 			}else{
-				SUBREADprintf("ERROR: a format issue %d  (should be +) is found on the input file '%s'!\nProgram aborted!\n", nch, input -> filename); 
+				SUBREADprintf("ERROR: a format issue %d  (should be +) is found on the input file '%s'.\nProgram aborted.\n", nch, input -> filename); 
 				read_line_noempty(MAX_READ_LENGTH, input, read_string, 0);
 				SUBREADprintf("%s\n", read_string);
 				read_line_noempty(MAX_READ_LENGTH, input, read_string, 0);
@@ -1022,7 +1077,11 @@ int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_s
 
 void geinput_close(gene_input_t * input)
 {
-	if(input -> file_type == GENE_INPUT_BCL)
+	if(input -> file_type == GENE_INPUT_SCRNA_BAM)
+		input_scBAM_close(&input -> scBAM_input);
+	else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ)
+		input_mFQ_close(&input -> scRNA_fq_input);
+	else if(input -> file_type == GENE_INPUT_BCL)
 		cacheBCL_close(&input -> bcl_input);
 	else if(input -> file_type == GENE_INPUT_GZIP_FASTQ || input -> file_type == GENE_INPUT_GZIP_FASTA)
 		seekgz_close((seekable_zfile_t * ) input->input_fp);
@@ -1151,18 +1210,17 @@ int genekey2intX(char * key,int space_type)
 }
 
 
-int genekey2int(char key [],int space_type)
+int genekey2int(char *key,int space_type)
 {
 	int i;
 	int ret;
 
 	ret = 0;
 	if(space_type == GENE_SPACE_BASE)
-		for (i=0; i<16; i++)
+		for (i=30; i>=0; i-=2)
 		{
-			//SUBREADprintf("KV=%c\n", key[i]);
-			//ret = ret << 2;
-			ret |= (base2int(key[i]))<<(2*(15-i));
+			char c1 = *(key++);
+			ret |= base2int(c1)<<i;
 		}
 	else
 		for (i=0; i<16; i++)
@@ -1170,8 +1228,6 @@ int genekey2int(char key [],int space_type)
 			ret = ret << 2;
 			ret |= color2int (key[i]);
 		}
-	
-	//SUBREADprintf("RET=%u\n",ret);
 	return ret;
 }
 
@@ -1468,7 +1524,7 @@ FILE * get_temp_file_pointer(char *temp_file_name, HashTable* fp_table, int * cl
 		temp_file_pointer = f_subr_open(key_name,"ab");
 
 		if(!temp_file_pointer){
-			SUBREADprintf("File cannot be opened: '%s' !!\nPlease increase the maximum open files by command 'ulimit -n'.\nThis number should be set to at least 500 for human genome, and more chromosomes require more opened files.\n\n", key_name);
+			SUBREADprintf("File cannot be opened: '%s'.\nPlease increase the maximum open files by command 'ulimit -n'.\nThis number should be set to at least 500 for human genome, and more chromosomes require more opened files.\n\n", key_name);
 			return NULL;
 		}
 
@@ -1555,7 +1611,7 @@ int get_known_chromosomes(char * in_SAM_file, chromosome_t * known_chromosomes)
 			while(known_chromosomes[chro_numb].chromosome_name[0]!=0) chro_numb++;
 			if(chro_numb > XOFFSET_TABLE_SIZE-1)
 			{
-				SUBREADprintf("FATAL ERROR: the number of chromosomes excessed %d\n. Program terminated.\n", XOFFSET_TABLE_SIZE);
+				SUBREADprintf("FATAL ERROR: the number of chromosomes excessed %d\n", XOFFSET_TABLE_SIZE);
 				return -1;
 			}
 			known_chromosomes[chro_numb].known_length = 0;
@@ -1835,7 +1891,7 @@ int break_SAM_file(char * in_SAM_file, int is_BAM_file, char * temp_file_prefix,
 
 			if(chro_numb > XOFFSET_TABLE_SIZE-1)
 			{
-				SUBREADprintf("FATAL ERROR: the number of chromosomes excessed %d\n. Program terminated.\n", XOFFSET_TABLE_SIZE);
+				SUBREADprintf("FATAL ERROR: the number of chromosomes excessed %d\n", XOFFSET_TABLE_SIZE);
 				return -1;
 			}
 
@@ -2267,7 +2323,7 @@ void delete_with_prefix(char * prefix){
 		//SUBREADprintf("SCANDEL: %s, PREFIX %s, SUFFIX %s\n", del2, prefix, del_suffix);
 		if(strlen(del_suffix)>8)
 		{
-			DIR           *d;
+			DIR	   *d;
 			struct dirent *dir;
 
 			d = opendir(del2);
@@ -2305,9 +2361,6 @@ void do_SIGINT_remove(char * prefix, int param) {
 
 
 void * old_sig_TERM = NULL, * old_sig_INT = NULL;
-
-#define PAIRER_GZIP_WINDOW_BITS -15
-#define PAIRER_DEFAULT_MEM_LEVEL 8
 
 int SAM_pairer_writer_create( SAM_pairer_writer_main_t * bam_main , int all_threads , int has_dummy, int BAM_input, int c_level, char * out_file){
 	int x1;
@@ -2392,7 +2445,7 @@ int SAM_pairer_multi_thread_compress(SAM_pairer_writer_main_t * bam_main ,  SAM_
 		nstrm.avail_in = 0;
 		nstrm.next_in = Z_NULL;
 	
-		deflateInit2(&nstrm, SAMBAM_COMPRESS_LEVEL, Z_DEFLATED,
+		deflateInit2(&nstrm, SAMBAM_COMPRESS_LEVEL_NORMAL, Z_DEFLATED,
 			PAIRER_GZIP_WINDOW_BITS, PAIRER_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
 
 		nstrm.avail_in = 0;
@@ -2459,7 +2512,7 @@ int SAM_pairer_warning_file_open_limit(){
 	getrlimit(RLIMIT_NOFILE, & limit_st);
 
 	if(min(limit_st.rlim_cur, limit_st.rlim_max  ) < MIN_FILE_POINTERS_ALLOWED){
-		SUBREADprintf(" ERROR: the maximum file open number (%d) is too low. Please increase this number to a number larger than 50 by using the 'ulimit -n' command. This program has to terminate now.\n\n",(int)(min(limit_st.rlim_cur, limit_st.rlim_max)));
+		SUBREADprintf(" ERROR: the maximum file open number (%d) is too low. Please increase this number to a number larger than 50 by using the 'ulimit -n' command.\n\n",(int)(min(limit_st.rlim_cur, limit_st.rlim_max)));
 		return 1;
 	}
 #endif
@@ -2720,7 +2773,7 @@ void SAM_pairer_fill_BIN_buff(SAM_pairer_context_t * pairer ,  SAM_pairer_thread
 				if(feof(pairer -> input_fp) && last_read_len != -1 ){
 					pairer -> is_bad_format |= (last_read_len > 2);
 					pairer -> is_incomplete_BAM |= (last_read_len > 2);
-					//SUBREADprintf("BAM-FINISHED, CORRECT=%d (%d)\n", !pairer -> is_bad_format, last_read_len);
+					if(pairer -> is_incomplete_BAM)SUBREADprintf("ERROR: the BAM file seems incomplete : this %d, last %d.\n", this_size , last_read_len );
 				}
 				*is_finished = 1;
 				break;
@@ -2803,8 +2856,7 @@ int SAM_pairer_fetch_BAM_block(SAM_pairer_context_t * pairer , SAM_pairer_thread
 			int test_read_bin = SAM_pairer_find_start(pairer, thread_context);
 			if(test_read_bin<1 && thread_context -> input_buff_BIN_used >= 32  ){
 				pairer -> is_bad_format = 1;
-			//	#warning "BADFORMAT-DEBUG"
-			//	SUBREADprintf("ABBO : BAD_FMT 01\n");
+				SUBREADprintf("ERROR: cannot find the start of the next BAM block.\n");
 			}
 		}
 		//SUBREADprintf("FETCHED BLOCK DECOMP=%d FROM COMP=%d\n", have, used_BAM);
@@ -2880,7 +2932,8 @@ int SAM_pairer_get_next_read_BIN( SAM_pairer_context_t * pairer , SAM_pairer_thr
 					BAM_next_nch;
 					header_txt [x1] = nch;
 				}
-				int is_OK = pairer -> output_header(pairer, thread_context -> thread_id, 1, pairer -> BAM_l_text , header_txt , pairer -> BAM_l_text );
+				int is_OK = 0;
+				if(pairer -> output_header)pairer -> output_header(pairer, thread_context -> thread_id, 1, pairer -> BAM_l_text , header_txt , pairer -> BAM_l_text );
 
 				BAM_next_u32(pairer -> BAM_n_ref);
 				unsigned int ref_bin_len = 0;
@@ -2910,7 +2963,7 @@ int SAM_pairer_get_next_read_BIN( SAM_pairer_context_t * pairer , SAM_pairer_thr
 					ref_bin_len += 4;
 				}
 
-				is_OK = is_OK || pairer -> output_header(pairer, thread_context -> thread_id, 0, pairer -> BAM_n_ref , header_txt ,  ref_bin_len );
+				is_OK = is_OK || (pairer -> output_header?pairer -> output_header(pairer, thread_context -> thread_id, 0, pairer -> BAM_n_ref , header_txt ,  ref_bin_len ):0);
 				//SUBREADprintf("TFMT:HEADER REFS=%d TXTS=%d SIGN=%u\n", pairer -> BAM_n_ref, pairer->BAM_l_text, bam_signature);
 
 				if(header_txt) free(header_txt);
@@ -2967,8 +3020,7 @@ int SAM_pairer_get_next_read_BIN( SAM_pairer_context_t * pairer , SAM_pairer_thr
 	//			#warning "=========== CHECK IF '0 && ' IS CORRECT ==========="
 				if(record_len < 32 || (0 && record_len > min(MAX_BIN_RECORD_LENGTH,60000))|| seq_len >= pairer -> long_read_minimum_length){
 					if(seq_len >= pairer -> long_read_minimum_length) pairer -> is_single_end_mode = 1;
-			//		#warning "BADFORMAT-DEBUG"
-			//		SUBREADprintf("BADFMT: THID=%d; rlen %d; seqlen %d; BIN_PTR=%d\n",  thread_context -> thread_id,  record_len, seq_len, thread_context -> input_buff_BIN_ptr);
+					SUBREADprintf("ERROR: sequence length in the BAM record is out of the expected region: %d, %d\n", record_len , seq_len );
 					pairer -> is_bad_format = 1;
 					return 0;
 				}
@@ -2993,7 +3045,7 @@ int SAM_pairer_get_next_read_BIN( SAM_pairer_context_t * pairer , SAM_pairer_thr
 
 				if(NULL == line_ptr){
 					passed_read_SBAM_ptr = line_ptr - thread_context -> input_buff_SBAM;
-					//SUBREADprintf("FATAL: the header is too large to the buffer!\n");
+					//SUBREADprintf("FATAL: the header is too large to the buffer.\n");
 					break;
 				}else{
 					//SUBREADprintf("LINELEN=%d, PTR=%d, FIRST=%c\n", line_len, thread_context -> input_buff_SBAM_ptr , line_ptr[0]);
@@ -3080,7 +3132,7 @@ int SAM_pairer_get_next_read_BIN( SAM_pairer_context_t * pairer , SAM_pairer_thr
 }
 
 int online_register_contig(SAM_pairer_context_t * pairer , SAM_pairer_thread_t * thread_context, char * ref){
-	SUBREADprintf("ERROR: Unable to find chromosome '%s' in the SAM header!\n", ref);
+	SUBREADprintf("ERROR: Unable to find chromosome '%s' in the SAM header.\n", ref);
 	assert(0);
 	int reflen = strlen(ref);
 	char * header_sec = malloc(reflen + 20);
@@ -3365,6 +3417,30 @@ int reduce_SAM_to_BAM(SAM_pairer_context_t * pairer , SAM_pairer_thread_t * thre
 	return bin_ptr;
 }
 
+int SAP_pairer_skip_tag_body_len(char *bin){
+	int skip_content = 0;
+	if(bin[2]=='i' || bin[2]=='I' || bin[2]=='f')
+		skip_content = 4;
+	else if(bin[2]=='s' || bin[2]=='S')
+		skip_content = 2;
+	else if(bin[2]=='c' || bin[2]=='C' ||  bin[2]=='A')
+		skip_content = 1;
+	else if(bin[2]=='Z' || bin[2]=='H'){
+		while(bin[skip_content + 3]) skip_content++;
+		skip_content ++;
+	} else if(bin[2]=='B'){
+		char cell_type = tolower(bin[3]);
+		memcpy(&skip_content, bin + 4, 4);
+		if(cell_type == 's')skip_content *=2;
+		else if(cell_type == 'i' || cell_type == 'f')skip_content *= 4;
+		skip_content += 4+1; // 32-bit count, 1 byte type
+	}else{
+		SUBREADprintf("UnknownTag=%c\n", bin[2]);
+		assert(0);
+	}
+	return skip_content+3;
+}
+
 int SAM_pairer_iterate_tags(unsigned char * bin, int bin_len, char * tag_name, char * data_type, char ** saved_value){
 	int found = 0;
 	int bin_cursor = 0;
@@ -3384,34 +3460,9 @@ int SAM_pairer_iterate_tags(unsigned char * bin, int bin_len, char * tag_name, c
 			found = 1;
 			break;
 		}
-		int skip_content = 0;
-		//SUBREADprintf("NextTag=%c; ", bin[bin_cursor+2]);
-		if(bin[bin_cursor+2]=='i' || bin[bin_cursor+2]=='I' || bin[bin_cursor+2]=='f')
-			skip_content = 4;
-		else if(bin[bin_cursor+2]=='s' || bin[bin_cursor+2]=='S')
-			skip_content = 2;
-		else if(bin[bin_cursor+2]=='c' || bin[bin_cursor+2]=='C' ||  bin[bin_cursor+2]=='A')
-			skip_content = 1;
-		else if(bin[bin_cursor+2]=='Z' || bin[bin_cursor+2]=='H'){
-			while(bin[bin_cursor+skip_content + 3]){
-				//SUBREADprintf("ACHAR=%c\n", (bin[skip_content + 3]));
-				skip_content++;
-			}
-			skip_content ++;
-		} else if(bin[bin_cursor+2]=='B'){
-			char cell_type = tolower(bin[bin_cursor+3]);
-			
-			memcpy(&skip_content, bin + bin_cursor + 4, 4);
-		//	SUBREADprintf("Array Type=%c, cells=%d\n", cell_type, skip_content);
-			if(cell_type == 's')skip_content *=2;
-			else if(cell_type == 'i' || cell_type == 'f')skip_content *= 4;
-			skip_content += 4 + 1;
-		}else{
-			SUBREADprintf("UnknownTag=%c\n", bin[bin_cursor+2]);
-			assert(0);
-		}
-		//SUBREADprintf("SKIP=%d\n", skip_content);
-		bin_cursor += skip_content + 3;
+
+		int skip_content = SAP_pairer_skip_tag_body_len((char*)bin+bin_cursor);
+		bin_cursor += skip_content ;
 	}
 	return found;
 }
@@ -3539,10 +3590,19 @@ int SAM_pairer_multi_thread_header (void * pairer_vp, int thread_no, int is_text
 	return 0;
 }
 
+int SAM_pairer_get_tag_bin_start(char * bin1){
+	int seq_len = 0;
+	int cigar_opts = 0;
+	int len_name = (unsigned char)bin1[12];
+	memcpy(&seq_len, bin1 + 20,4);
+	memcpy(&cigar_opts, bin1 + 16, 2);
+	return 36 + len_name + seq_len + (seq_len+1)/2 + 4 * cigar_opts;
+}
+
 void SAM_pairer_make_dummy(char * rname, char * bin1, char * out_bin2, int need_RG_tag){
 	char * realname = bin1 + 36;
 	int block1len =-1;
-	int len_name = strlen(realname);
+	int len_name = (unsigned char)bin1[12] -1;
 	int old_read_chro =-1;
 	int old_read_pos =-1;
 	int new_dummy_chro =-1;
@@ -3744,7 +3804,7 @@ int SAM_pairer_multi_thread_output(void * pairer_vp, int thread_no, char * bin1,
 	}
 
 	if( bin_len1 + bin_len2 >= SAM_PAIRER_WRITE_BUFFER){
-		SUBREADprintf("ERROR: BAM Record larger than a BAM block!\n");
+		SUBREADprintf("ERROR: BAM Record larger than a BAM block.\n");
 		return 1;
 	}
 
@@ -4555,7 +4615,10 @@ int SAM_pairer_verify_read_bin_ONE(SAM_pairer_context_t * pairer, SAM_pairer_thr
 	int block_len = 9;
 	int ret = is_read_bin_ONE(bin, binlen, pairer -> BAM_n_ref, &block_len);
 
-	if(ret != 1 || block_len+4 != binlen) ret = -1;
+	if(ret != 1 || block_len+4 != binlen){
+		SUBREADprintf("ERROR: cannot retrieve a read from the BAM file: %d, %d\n", block_len+4, ret);
+		ret = -1;
+	}
 	//SUBREADprintf("FINAL_BIN_MATCH VERIFY : %d\n", ret);
 	return ret;
 }
@@ -4743,7 +4806,7 @@ int  fix_write_block(FILE * out, char * bin, int binlen, z_stream * strm){
 			nstrm.avail_in = 0;
 			nstrm.next_in = Z_NULL;
 		
-			deflateInit2(&nstrm, SAMBAM_COMPRESS_LEVEL, Z_DEFLATED,
+			deflateInit2(&nstrm, SAMBAM_COMPRESS_LEVEL_NORMAL, Z_DEFLATED,
 				PAIRER_GZIP_WINDOW_BITS, PAIRER_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
 	
 			nstrm.avail_in = 0;
@@ -4955,7 +5018,7 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 				if(0 && x1 == 32 && block_size > 60000 ){
 					print_in_box(80,0,0,"");
 					print_in_box(80,0,0,"   ERROR: Alignment record is too long.");
-					print_in_box(80,0,0,"          Please use the long read mode.");
+					print_in_box(80,0,0,"	  Please use the long read mode.");
 					return -1;
 				}
 
@@ -5217,7 +5280,7 @@ int SAM_nosort_decompress_next_block(SAM_pairer_context_t * pairer){
 	} else (* BIN_buff_used) = 0;
 	(* BIN_buff_ptr) = 0;
 
-	int binlen = SamBam_unzip(BIN_buff + (* BIN_buff_used), SBAM_buff , SBAM_used);
+	int binlen = SamBam_unzip(BIN_buff + (* BIN_buff_used), 65536, SBAM_buff , SBAM_used, 0);
 	//assert(binlen == decompressed_len);
 	if(binlen < 0) return -1;
 	(* BIN_buff_used) += binlen;
@@ -5230,7 +5293,7 @@ int SAM_nosort_decompress_next_block(SAM_pairer_context_t * pairer){
 #define NOSORT_SAM_next_line {NOSORT_SAM_eof  = fgets(line_ptr, NOSORT_SBAM_BUFF_SIZE, pairer -> input_fp);}
 
 #if FEATURECOUNTS_BUFFER_SIZE < ( 12*1024*1024 )
-#error "FEATURECOUNTS_BUFFER_SIZE MUST BE GREATER THAN 12MB!!"
+#error "FEATURECOUNTS_BUFFER_SIZE MUST BE GREATER THAN 12MB!."
 #endif
 
 #define NOSORT_REFILL_LOWBAR ( 3 * 1024 * 1024 ) 
@@ -5322,7 +5385,7 @@ void SAM_nosort_run_once(SAM_pairer_context_t * pairer){
 						NOSORT_BAM_next_u32(record_len);
 						if(record_len < 32 || record_len > 500000){
 							if(record_len!=-1)
-								SUBREADprintf("Unexpected record length: %d, program will terminate now.\n", record_len);
+								SUBREADprintf("Unexpected record length: %d.\n", record_len);
 							pairer -> is_finished = 1;
 							break;
 						}
@@ -5356,7 +5419,7 @@ void SAM_nosort_run_once(SAM_pairer_context_t * pairer){
 			if(NULL== header_start && line_ptr[0] == '@') header_start = line_ptr;
 
 			if(NULL == line_ptr){
-				SUBREADprintf("FATAL: the header is too large to the buffer!\n");
+				SUBREADprintf("FATAL: the header is too large to the buffer.\n");
 				break;
 			}else{
 				//SUBREADprintf("LINELEN=%d, PTR=%d, FIRST=%c\n", line_len, thread_context -> input_buff_SBAM_ptr , line_ptr[0]);
@@ -5635,7 +5698,7 @@ int SAM_pairer_run( SAM_pairer_context_t * pairer){
 			if(pairer -> is_bad_format || pairer -> is_internal_error)
 				return -1;
 			SAM_pairer_reset(pairer);
-			pairer -> reset_output_function(pairer);
+			if(pairer -> reset_output_function)pairer -> reset_output_function(pairer);
 			pairer_increase_SAMBAM_buffer(pairer);
 
 			if(pairer -> long_cigar_mode) return SAM_pairer_long_cigar_run(pairer);
@@ -5775,14 +5838,14 @@ int sort_SAM_finalise(SAM_sort_writer * writer)
 
 					if(read_len<2)
 					{
-						SUBREADprintf("Cannot determain read length from the tmp file!\n");
+						SUBREADprintf("Cannot determain read length from the tmp file.\n");
 						assert(0);
 					}
 
 
 					if( new_line_mem[0]==0 || new_line_mem[1]==0)
 					{
-						SUBREADprintf("Cannot load read part from the tmp file!\n");
+						SUBREADprintf("Cannot load read part from the tmp file.\n");
 						assert(0);
 					}
 
@@ -5994,7 +6057,7 @@ int sort_SAM_finalise(SAM_sort_writer * writer)
 
 						if((!first_read_text[0])||(!first_read_text[1]))
 						{
-							SUBREADprintf("unable to recover the first read! : '%s' , flags = %d\n", first_read_name, mate_flags);
+							SUBREADprintf("unable to recover the first read : '%s' , flags = %d\n", first_read_name, mate_flags);
 							assert(0);
 						}
 
@@ -6180,13 +6243,13 @@ int sort_SAM_add_line(SAM_sort_writer * writer, char * SAM_line, int line_len)
 
 		if(line_len < 2)
 		{
-			SUBREADprintf("unable to put the first read!\n");
+			SUBREADprintf("unable to put the first read.\n");
 			assert(0);
 		}
 
 		if(second_col_pos[0]==0 || second_col_pos[1]==0)
 		{
-			SUBREADprintf("unable to put the first read TEXT!\n");
+			SUBREADprintf("unable to put the first read TEXT.\n");
 			assert(0);
 		}
 
@@ -6212,6 +6275,7 @@ int is_SAM_unsorted(char * SAM_line, char * tmp_read_name, short * tmp_flag, srI
 {
 	char read_name[MAX_READ_NAME_LEN];
 	int flags = 0, line_cursor = 0, field_cursor = 0, tabs=0;
+	read_name[0] =0;
 
 	while(1)
 	{
@@ -6283,8 +6347,8 @@ int warning_file_type(char * fname, int expected_type)
 	if(ret_pipe_file)
 	{
 		print_in_box(80,0,0,"WARNING file '%s' is not a regular file.", fname);
-		print_in_box(80,0,0,"        No alignment can be done on a pipe file.");
-		print_in_box(80,0,0,"        If the FASTQ file is gzipped, please use gzFASTQinput option.");
+		print_in_box(80,0,0,"	No alignment can be done on a pipe file.");
+		print_in_box(80,0,0,"	If the FASTQ file is gzipped, please use gzFASTQinput option.");
 		print_in_box(80,0,0,"");
 		return 1;
 	}
@@ -6318,11 +6382,11 @@ int warning_file_type(char * fname, int expected_type)
 		else if(read_type==FILE_TYPE_GZIP_FASTA) real_fmt = "gzip FASTA";
 
 		print_in_box(80,0,0,"WARNING format issue in file '%s':", fname);
-		print_in_box(80,0,0,"        The required format is : %s", req_fmt); 
+		print_in_box(80,0,0,"	The required format is : %s", req_fmt); 
 		if(read_type == FILE_TYPE_UNKNOWN)
-			print_in_box(80,0,0,"        The file format is unknown.");
+			print_in_box(80,0,0,"	The file format is unknown.");
 		else
-			print_in_box(80,0,0,"        The real format seems to be : %s", real_fmt);
+			print_in_box(80,0,0,"	The real format seems to be : %s", real_fmt);
 		print_in_box(80,0,0,"A wrong format may result in wrong results or crash the program.");
 		print_in_box(80,0,0,"Please refer to the manual for file format options.");
 		print_in_box(80,0,0,"If the file is in the correct format, please ignore this message.");
@@ -6703,7 +6767,7 @@ int main(int argc, char ** argv)
 	ifp = f_subr_open(argv[1],"r");
 	SAM_sort_writer writer;
 	if(sort_SAM_create(&writer, argv[2], ".")){
-		printf("ERROR: unable to create the writer!\n");
+		printf("ERROR: unable to create the writer.\n");
 		return -1;
 	}
 
@@ -6732,7 +6796,7 @@ int main(int argc, char ** argv)
 		case FILE_TYPE_FASTA: printf("Type: FASTA\n"); break;
 		case FILE_TYPE_SAM  : printf("Type: SAM\n"); break;
 		case FILE_TYPE_BAM  : printf("Type: BAM\n"); break;
-		default: printf("Unknown type!\n");
+		default: printf("Unknown type.\n");
 	}
 }
 

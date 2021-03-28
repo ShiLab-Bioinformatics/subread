@@ -134,7 +134,7 @@ int propMapped(propMapped_context * context)
 	SamBam_FILE * in_fp = SamBam_fopen(context -> input_file_name  ,context -> is_BAM_input?SAMBAM_FILE_BAM:SAMBAM_FILE_SAM); 
 	if(!in_fp)
 	{
-		SUBREADprintf("Unable to open file '%s'!\nProgram terminated.\n", context -> input_file_name);
+		SUBREADprintf("Unable to open file '%s'.\n", context -> input_file_name);
 		return -1;
 	}
 
@@ -329,7 +329,7 @@ int split_PE_sambam(propMapped_context * context)
 	SamBam_FILE * in_fp = SamBam_fopen(context -> input_file_name  ,context -> is_BAM_input?SAMBAM_FILE_BAM:SAMBAM_FILE_SAM); 
 	if(!in_fp)
 	{
-		SUBREADprintf("Unable to open file '%s'!\nProgram terminated.\n", context -> input_file_name);
+		SUBREADprintf("Unable to open file '%s'.\n", context -> input_file_name);
 		return -1;
 	}
 
@@ -521,7 +521,7 @@ int propmapped(int argc, char ** argv)
 	else if(is_bam < 0)
 	{
 		ret = -1;
-		SUBREADprintf("Unable to open input file '%s' or the input file is empty!\n", context -> input_file_name);
+		SUBREADprintf("Unable to open input file '%s' or the input file is empty.\n", context -> input_file_name);
 	}
 	if(context -> verbose) SUBREADprintf("The input file is opened as a %cAM file.\nThe %ss in the input file are being counted.\n", context -> is_BAM_input?'B':'S', context -> is_fragments_counted?"fragment":"read");
 

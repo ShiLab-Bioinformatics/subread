@@ -7,6 +7,8 @@ OPT_LEVEL = 3
 include makefile.version
 -include ~/.R/DBPZ_debug_makefile
 
+CXXFLAGS=
+CFLAGS=
 CCFLAGS = -mtune=core2 ${MACOS} -O${OPT_LEVEL} -DMAKE_FOR_EXON  -D MAKE_STANDALONE -D SUBREAD_VERSION=\"${SUBREAD_VERSION}\"  -D_FILE_OFFSET_BITS=64 ${WARNING_LEVEL} 
 LDFLAGS = ${STATIC_MAKE} -pthread -lz ${MACOS} -O${OPT_LEVEL} -DMAKE_FOR_EXON -D MAKE_STANDALONE -lm
 CC = ${CC_EXEC}  ${CCFLAGS}  -fmessage-length=0  -ggdb 
