@@ -1,0 +1,1535 @@
+\documentclass[12pt]{report}
+\usepackage{graphicx,fancyvrb,url,comment,longtable,color,ccaption,hyperref}
+\usepackage{amsmath}
+
+\textwidth=6.6in
+\textheight=8.7in
+\oddsidemargin=-0.1in
+\evensidemargin=-0.1in
+\headheight=0in
+\headsep=0in
+\topmargin=-0.1in
+
+\DefineVerbatimEnvironment{Rcode}{Verbatim}{fontsize=\footnotesize}
+\newcommand{\code}[1]{{\small\texttt{#1}}}
+\newcommand{\Subread}{\textsf{Subread}}
+\newcommand{\Subjunc}{\textsf{Subjunc}}
+\newcommand{\Sublong}{\textsf{Sublong}}
+\newcommand{\Rsubread}{\textsf{Rsubread}}
+\newcommand{\ExactSNP}{\textsf{ExactSNP}}
+\newcommand{\limma}{\textsf{limma}}
+\newcommand{\edgeR}{\textsf{edgeR}}
+\newcommand{\DGEList}{\textsf{DGEList}}
+\newcommand{\voom}{\textsf{voom}}
+\newcommand{\featureCounts}{\textsf{featureCounts}}
+\newcommand{\repair}{\textsf{repair}}
+\newcommand{\R}{\textsf{R}}
+\newcommand{\C}{\textsf{C}}
+\newcommand{\Rpackage}[1]{\textsf{#1}}
+\excludecomment{hide}
+
+\makeindex
+\begin{document}
+
+\begin{titlepage}
+
+\begin{center}
+{\Huge\bf Rsubread/Subread Users Guide}\\
+\vspace{1 cm}
+{\centering\large Subread v2.0.2/Rsubread v2.4.3\\}
+\vspace{1 cm}
+\centering 29 March 2021\\
+\vspace{5 cm}
+\Large Wei Shi and Yang Liao\\
+\vspace{1 cm}
+\small
+{\large Olivia Newton-John Cancer Research Institute\\
+Melbourne, Australia\\}
+\vspace{7 cm}
+\centering Copyright \small{\copyright}  2011 - 2021\\
+\end{center}
+
+\end{titlepage}
+
+\tableofcontents
+
+\chapter{Introduction}
+
+The Subread/Rsubread packages comprise a suite of high-performance software programs for processing next-generation sequencing data.
+Included in these packages are \code{Subread} aligner, \code{Subjunc} aligner, \code{Sublong} long-read aligner, \code{Subindel} long indel detection program, \code{featureCounts} read quantification program, \code{exactSNP} SNP calling program and other utility programs.
+This document provides a detailed description to the programs included in the packages.
+
+\code{Subread} and \code{Subjunc} aligners adopt a mapping paradigm called ``seed-and-vote'' \cite{liao}.
+This is an elegantly simple multi-seed strategy for mapping reads to a reference genome. 
+This strategy chooses the mapped genomic location for the read directly from the seeds.
+It uses a relatively large number of short seeds (called subreads) extracted from each read and allows all the seeds to vote on the optimal location.
+When the read length is $<$160 bp, overlapping subreads are used.
+More conventional alignment algorithms are then used to fill in detailed mismatch and indel information between the subreads that make up the winning voting block.
+The strategy is fast because the overall genomic location has already been chosen before the detailed alignment is done.
+It is sensitive because no individual subread is required to map exactly, nor are individual subreads constrained to map close by other subreads.
+It is accurate because the final location must be supported by several different subreads. The strategy extends easily to find exon junctions, by locating reads that contain sets of subreads mapping to different exons of the same gene.
+It scales up efficiently for longer reads.
+
+\code{Subread} is a general-purpose read aligner.
+It can be used to align reads generated from both genomic DNA sequencing and RNA sequencing technologies.
+It has been successfully used in a number of high-profile studies \cite{TangNC2013,ManNI2013,SpangenbergSCR2013,tang,ezh2}.
+\code{Subjunc} is specifically designed to detect exon-exon junctions and to perform full alignments for RNA-seq reads.
+Note that \code{Subread} performs local alignments for RNA-seq reads, whereas \code{Subjunc} performs global alignments for RNA-seq reads.
+\code{Subread} and \code{Subjunc} comprise a read re-alignment step in which reads are re-aligned using genomic variation data and junction data collected from the initial mapping.
+
+The \code{Subindel} program carries out local read assembly to discover long insertions and deletions.
+Read mapping should be performed before running this program.
+
+The {\featureCounts} program is designed to assign mapped reads or fragments (paired-end data) to genomic features such as genes, exons and promoters.
+It is a light-weight read counting program suitable for count both gDNA-seq and RNA-seq reads for genomic features\cite{fcounts}.
+The \textsf{Subread-featureCounts-limma/voom} pipeline has been found to be one of the best-performing pipelines for the analyses of RNA-seq data by the SEquencing Quality Control (SEQC) study, the third stage of the well-known MicroArray Quality Control (MAQC) project \cite{seqc}.
+
+Also included in this software suite is a very efficient SNP caller -- {\ExactSNP}.
+{\ExactSNP} measures local background noise for each candidate SNP and then uses that information to accurately call SNPs.
+
+These software programs support a variety of sequencing platforms. 
+They are released in two packages -- SourceForge \emph{Subread} package and Bioconductor \emph{Rsubread} package\cite{Rsubread}.
+
+\chapter{Preliminaries}
+
+\section{Citation}
+
+If you use {\Rsubread}, you can cite:
+
+\begin{quote}
+Liao Y, Smyth GK and Shi W (2019). 
+The R package Rsubread is easier, faster, cheaper and better for alignment and quantification of RNA sequencing reads. 
+\emph{Nucleic Acids Research}, 47(8):e47.
+\\
+{\color{blue}{\url{http://www.ncbi.nlm.nih.gov/pubmed/30783653}} }
+\end{quote}
+
+If you use \featureCounts, you can cite:
+
+\begin{quote}
+Liao Y, Smyth GK and Shi W (2014). 
+featureCounts: an efficient general purpose program for assigning sequence reads to genomic features. 
+\emph{Bioinformatics}, 30(7):923-30.
+\\
+{\color{blue}{\url{http://www.ncbi.nlm.nih.gov/pubmed/24227677}}}
+\end{quote}
+
+If you use {\Subread} or {\Subjunc} aligners, you can cite:
+
+\begin{quote}
+Liao Y, Smyth GK and Shi W (2013). 
+The Subread aligner: fast, accurate and scalable read mapping by seed-and-vote. 
+\emph{Nucleic Acids Research}, 41(10):e108.
+\\
+{\color{blue}{\url{http://www.ncbi.nlm.nih.gov/pubmed/23558742}} }
+\end{quote}
+
+\newpage
+
+\section{Download and installation}
+
+\subsection{Install Bioconductor {\Rsubread} package}
+
+{\R} software needs to be installed on my computer before you can install this package.
+Launch {\R} and issue the following command to install {\Rsubread}:
+
+\begin{Rcode}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("Rsubread")
+\end{Rcode}
+
+Alternatively you may download it from {\Rsubread} web page {\color{blue}{\url{http://bioconductor.org/packages/release/bioc/html/Rsubread.html}}} and install it manually.
+
+\subsection{Install SourceForge {\Subread} package}
+
+\subsubsection{Install from a binary distribution}
+
+This is the easiest way to install the SourceForge {\Subread} package.
+Binary distributions are available for Linux, Macintosh and Windows operating systems and they can be downloaded from {\color{blue}{\url{http://subread.sourceforge.net}}}.
+The Linux binary distribution can be run on multiple Linux variants including Debian, Ubuntu, Fedora and Cent OS.
+
+To install {\Subread} package on FreeBSD or Solaris, you will have to install from source.
+
+\subsubsection{Install from source on a Unix or Macintosh computer}
+
+Download {\Subread} source package to your working directory from SourceForge \\
+{\color{blue}{\url{http://subread.sourceforge.net}}}, and type the following command to uncompress it:\\
+
+\code{tar zxvf subread-1.x.x.tar.gz}\\
+
+Enter \code{src} directory of the package and issue the following command to install it on a Linux operating system: \\
+
+\code{make -f Makefile.Linux}\\
+
+To install it on a Mac OS X operating system, issue the following command:\\
+
+\code{make -f Makefile.MacOS}\\
+
+To install it on a FreeBSD operating system, issue the following command:\\
+
+\code{make -f Makefile.FreeBSD}\\
+
+To install it on Oracle Solaris or OpenSolaris computer operating systems, issue the following command:\\
+
+\code{make -f Makefile.SunOS}\\
+
+A new directory called \code{bin} will be created under the home directory of the software package, and the executables generated from the compilation are saved to that directory.
+To enable easy access to these executables, you may copy them to a system directory such as \code{/usr/bin} or add the path to them to your search path (your search path is usually specified in the environment variable \code{`PATH'}).
+
+\subsubsection{Install from source on a Windows computer}
+
+The MinGW software tool  (http://www.mingw.org/) needs to installed to compile Subread.
+
+\section{How to get help}
+
+Bioconductor support site (\url{https://support.bioconductor.org/}) or Google Subread group (\url{https://groups.google.com/forum/#!forum/subread}) are the best place to post questions or make suggestions.
+
+
+\chapter{The seed-and-vote mapping paradigm}
+
+\section{Seed-and-vote}
+
+We have developed a new read mapping paradigm called ``seed-and-vote" for efficient, accurate and scalable read mapping \cite{liao}.
+The seed-and-vote strategy uses a number of overlapping seeds from each read, called \emph{subreads}.
+Instead of trying to pick the best seed, the strategy allows all the seeds to vote on the optimal location for the read.
+The algorithm then uses more conventional alignment algorithms to fill in detailed mismatch and indel information between the subreads that make up the winning voting block. 
+The following figure illustrates the proposed seed-and-vote mapping approach with an toy example.
+
+\begin{center}
+\includegraphics[scale=0.3]{seed-and-vote.png}
+\end{center}
+
+Two aligners have been developed under the seed-and-vote paradigm, including \code{Subread} and \code{Subjunc}.
+\code{Subread} is a general-purpose read aligner, which can be used to map both genomic DNA-seq and RNA-seq read data.
+Its running time is determined by the number of \emph{subreads} extracted from each read, not by the read length.
+Thus it has an excellent maping scalability, ie. its running time has only very modest increase with the increase of read length.
+
+\code{Subread} uses the largest mappable region in the read to determine its mapping location, therefore it automatically determines whether a global alignment or a local alignment should be found for the read.
+For the exon-spanning reads in a RNA-seq dataset, \code{Subread} performs local alignments for them to find the target regions in the reference genome that have the largest overlap with them.
+Note that \code{Subread} does not perform global alignments for the exon-spanning reads and it soft clips those read bases which could not be mapped.
+However, the \code{Subread} mapping result is sufficient for carrying out the gene-level expression analysis using RNA-seq data, because the mapped read bases can be reliably used to assign reads, including both exonic reads and exon-spanning reads, to genes.
+
+To get the full alignments for exon-spanning RNA-seq reads, the \code{Subjunc} aligner can be used.
+\code{Subjunc} is designd to discover exon-exon junctions from using RNA-seq data, but it performs full alignments for all the reads at the same time. 
+The \code{Subjunc} mapping results should be used for detecting genomic variations in RNA-seq data, allele-specific expression analysis and exon-level gene expression analysis.
+The Section~\ref{sec:junction} describes how exon-exon junctions are discovered and how exon-spanning reads are aligned using the seed-and-vote paradigm.
+
+\section{Detection of short indels}
+
+\begin{center}
+\includegraphics[scale=0.3]{indel.png}
+\end{center}
+
+The seed-and-vote paradigm is very powerful in detecting short indels (insertions and deletions).
+The figure below shows how we use the \emph{subreads} to confidently detect short indels.
+When there is an indel existing in a read, mapping locations of subreads extracted after the indel will be shifted to the left (insertion) or to the right (deletion), relative to the mapping locations of subreads at the left side of the indel.
+Therefore, indels in the reads can be readily detected by examining the difference in mapping locations of the extracted subreads.
+Moreover, the number of bases by which the mapping location of subreads are shifted gives the precise length of the indel.
+Since no mismatches are allowed in the mapping of the subreads, the indels can be detected with a very high accuracy.
+
+
+\section{Detection of exon-exon junctions}
+\label{sec:junction}
+
+Figure below shows the schematic of exon-exon junction under seed-and-vote paradigm.
+The first scan detects all possible exon-exon junctions using the mapping locations of the subreads extracted from each read.
+Exons as short as 16bp can be detected in this step.
+The second scan verifies the putative exon-exon junctions discovered from the first scan by read re-alignment.
+
+This approach is implemented in the \code{Subjunc} program.
+The output of \code{Subjunc} includes a list of discovered junctions, in addition to the mapping results.
+By default, \code{Subjunc} only reports canonical exon-exon junctions that contain canonical donor and receptor sites (`GT' and `AG' respectively).
+It was reported that such exon-exon junctions account for $>$98\% of all junctions.
+Orientation of donor and receptor sites is indicated by `XA' tag in the SAM/BAM output.
+\code{Subjunc} will report both canonical and non-canonical junctions when `--allJunctions' option is turned on.
+
+Accuracy of junction detection generally improves when external gene annotation data is provided.
+The annotation data should include chromosomal coordinates of known exons of each gene.
+\code{Subjunc} infers exon-exon junctions from the provided annotation data by connecting each pair of neighboring exons from the same gene.
+This should cover majority of known exon-exon junctions and the other junctions are expected to be discovered by the program.
+Note that although \code{Subread} aligner does not report exon-exon junctions, providing this annotation is useful for it to map junction reads more accurately.
+See `-a' parameter in Table 2 for more details.
+
+
+\begin{center}
+\includegraphics[scale=0.5]{junction.png}
+\end{center}
+
+
+\section{Detection of structural variants (SVs)}
+
+\code{Subread} and \code{Subjunc} can be used detect SV events including long indel, duplication, inversion and translocation, in RNA-seq and genomic DNA-seq data.
+
+Detection of long indels is conducted by performing local read assembly.
+When the specified indel length (`-I' option in SourceForge \code{C} or `indels' paradigm in \code{Rsubread}) is greater than 16, \code{Subread} and \code{Subjunc} will automatically start the read assembly process to detect long indels (up to 200bp).
+
+Breakpoints detected from SV events will be saved to a text file (`.breakpoint.txt'), which includes chromosomal coordinates of breakpoints and also the number of reads supporting each pair of breakpoints found from the same SV event.
+
+For the reads that were found to contain SV breakpoints, extra tags will be added for them in mapping output.
+These tags include CC(chromosome name), CP(mapping position), CG(CIGAR string) and CT(strand), and they describe the secondary alignment of the read (the primary alignment is described in the main fields).
+
+
+\section{Two-scan read alignment}
+
+\code{Subread} and \code{Subjunc} aligners employ a two-scan approach for read mapping.
+In the first scan, the aligners use seed-and-vote method to identify candidate mapping locations for each read and also discover short indels, exon-exon junctions and structural variants.
+In the second scan, they carry out final alignment for each read using the variant and junction information.
+Variant and junction data (including chromosomal coordinates and number of supporting reads) will be output along with the read mapping results.
+To the best of our knowledge, \code{Subread} and \code{Subjunc} are the first to employ a two-scan mapping strategy to achieve a superior mapping accuracy.
+This strategy was later seen in other aligners as well (called `two-pass').
+
+
+\section{Multi-mapping reads}
+
+Multi-mapping reads are those reads that map to more than one genomic location with the same similarity score (eg. number of mis-mismatched bases).
+\code{Subread} and \code{Subjunc} aligners can effectively detect multi-mapping reads by closely examining candidate locations which receive the highest number of votes or second highest number of votes.
+Numbers of mis-matched bases and matched bases are counted for each candidate location during the final re-alignment step and they are used for identifying multi-mapping reads.
+For RNA-seq data, a read is called as a multi-mapping read if it has two or more candidate mapping locations that have the same number of mis-matched bases and this number is the smallest in all candidate locations being considered.
+For genomic DNA-seq data, a read is called as a multi-mapping read if it has two or more candidate locations that have the same number of matched bases and this number is the largest among all candidate locations being considered.
+Note that for both RNA-seq and genomic DNA-seq data, any alignment reported for a multi-mapping read must not have more than threshold number of mis-matched bases (as specified in `-M' parameter).
+
+For the reporting of a multi-mapping read, users may choose to not report any alignments for the read (by default) or report up to a pre-defined number of alignments (`--multiMapping' and `-B' options).
+
+
+\section{Mapping of paired-end reads}
+
+For the mapping of paired-end reads, we use the following formula to obtain a list of candidate mapping locations for each read pair:
+
+$$PE_{score} = w * (V_1 + V_2) $$
+
+where $V_1$ and $V_2$ are the number of votes received from two reads from the same pair, respectively.
+$w$ has a value of 1.3 if mapping locations of the two reads are within the nominal paired-end distance (or nominal fragment length), and has a value of 1 otherwise.
+
+Up to 4,096 posssible alignments will be examined for each read pair and a maximum of three candidate alignments with the highest $PE_{score}$ will be chosen for final re-alignment.
+Total number of matched bases (for genomic DNA-seq data) or mis-matched bases (for RNA-seq data) will be used to determine the best mapping in the final re-alignment step.
+
+
+
+\chapter{Mapping reads generated by genomic DNA sequencing technologies}
+\label{chapter:subread-dnaseq}
+
+\section{A quick start for using SourceForge {\Subread} package}
+
+An index must be built for the reference first and then the read mapping can be performed.\\
+
+{\noindent\bf Step 1: Build an index}\\
+
+\noindent Build a base-space index (default). You can provide a list of FASTA files or a single FASTA file including all the reference sequences. The files can be gzipped.\\
+
+\code{subread-buildindex -o my\_index chr1.fa chr2.fa ...}\\
+
+{\noindent\bf Step 2: Align reads}\\
+
+\noindent Map single-end genomic DNA sequencing reads using 5 threads (only uniquely mapped reads are reported):\\
+\code{subread-align -t 1 -T 5 -i my\_index -r reads.txt.gz -o subread\_results.bam}\\
+
+\noindent Map paired-end reads:\\
+\code{subread-align -t 1 -d 50 -D 600 -i my\_index -r reads1.txt -R reads2.txt \newline -o subread\_results.bam}\\
+
+\noindent Detect indels of up to 16bp:\\
+\code{subread-align -t 1 -I 16 -i my\_index -r reads.txt -o subread\_results.bam}\\
+
+\noindent Report up to three best mapping locations:\\
+\code{subread-align -t 1 --multiMapping -B 3 -i my\_index -r reads.txt -o subread\_results.bam}\\
+
+
+\section{A quick start for using Bioconductor {\Rsubread} package}
+
+An index must be built for the reference first and then the read mapping can be performed.\\
+
+{\noindent\bf Step 1: Building an index}\\
+
+\noindent To build the index, you must provide a single FASTA file (eg. ``genome.fa'') which includes all the reference sequences.
+
+\begin{Rcode}
+library(Rsubread)
+buildindex(basename="my_index",reference="genome.fa")
+\end{Rcode}
+
+{\noindent\bf Step 2: Aligning the reads}\\
+
+\noindent Map single-end reads using 5 threads:
+\begin{Rcode}
+align(index="my_index",readfile1="reads.txt.gz",type="dna",output_file="rsubread.bam",nthreads=5)
+\end{Rcode}
+
+\noindent Detect indels of up to 16bp:
+\begin{Rcode}
+align(index="my_index",readfile1="reads.txt.gz",type="dna",output_file="rsubread.bam",indels=16)
+\end{Rcode}
+
+\noindent Report up to three best mapping locations:
+\begin{Rcode}
+align(index="my_index",readfile1="reads.txt.gz",type="dna",output_file="rsubread.bam",
+unique=FALSE,nBestLocations=3)
+\end{Rcode}
+
+\noindent Map paired-end reads:
+\begin{Rcode}
+align(index="my_index",readfile1="reads1.txt.gz",readfile2="reads2.txt.gz",type="dna",
+output_file="rsubread.bam",minFragLength=50,maxFragLength=600)
+\end{Rcode}
+
+
+\section{Index building}
+\label{sec:index}
+
+The \code{subread-buildindex} (\code{buildindex} function in \Rsubread) program builds an index for reference genome by creating a hash table in which keys are 16bp mers (subreads) extracted from the genome and values are their chromosomal locations.
+
+A full index or a gapped index can be built for a reference genome.
+In a full index, subreads are extracted from every location in the genome.
+In a gapped index, subreads are extracted in every three bases in the genome (ie. there is a 2bp gap between two subreads next to each other).
+When a full index is used in read mapping, only one set of subreads are extracted from a read.
+However three sets of subreads need to be extracted from a read when a gapped index is used for mapping.
+The first set starts from the first base of the read, the second set starts from the second base and the third set starts from the third base.
+This makes sure that a mapped read can always have a set of subreads that match those stored in the index.
+
+A full index is larger than a gapped index.
+However the full index enables faster mapping speed to be achieved.
+When a one-block full index is used for mapping, the maximum mapping speed is achieved.
+Size of one-block full index built for the human reference genome (GRCh38) is 17.8 GB.
+The \code{subread-buildindex} function needs 15 GB of memory to build this index.
+Size of a gapped index built for GRCh38 is less than 9 GB and \code{subread-buildindex} needs 5.7 GB of memory to build it.
+Options are available to generate index of any size.
+In \Rsubread, a one-block full index is built by default.
+
+The reference sequences should be in FASTA format.
+The \code{subread-buildindex} function divides each reference sequence name (which can be found in the header lines) into multiple substrings by using separators including `\code{|}', ` '(space) and `\code{<tab>}', and it uses the first substring as the name for the reference sequence during its index building.
+The first substrings must be distinct for different reference sequences (otherwise the index cannot be built).
+Note that the starting `\code{>}' character in the header line is not included in the first substrings.
+
+Sequences of reference genomes can be downloaded from public databases.
+For instance, the primary assembly of human genome GRCh38 or mouse genome GRCm38 can be downloaded from the GENCODE database via the following links:\\
+
+\noindent\href{ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_28/GRCh38.primary_assembly.genome.fa.gz}{\color{blue}\url{ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_28/GRCh38.primary_assembly.genome.fa.gz}}\\
+
+\noindent\href{ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M18/GRCm38.primary_assembly.genome.fa.gz}{\color{blue}\url{ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M18/GRCm38.primary_assembly.genome.fa.gz}}\\
+
+Table 1 describes the arguments used by the \code{subread-buildindex} program.
+
+\newpage
+
+\begin{table}[!tpb]
+\raggedright{Table 1: Arguments used by the \code{subread-buildindex} program (\code{buildindex} function in \Rsubread) in alphabetical order.
+Arguments in parenthesis in the first column are used by \code{buildindex}.\newline\\}
+\begin{tabular}{|p{4cm}|p{12cm}|}
+\hline
+Arguments & Description \\
+\hline
+chr1.fa, chr2.fa, ... \newline (\code{reference}) & Give names of chromosome files. Note for {\Rsubread} only a single FASTA file including all reference sequences should be provided. The files can be gzipped.\\
+\hline
+-B \newline (\code{indexSplit=FALSE}) & Create one block of index. The built index will not be split into multiple pieces. The more blocks an index has, the slower the mapping speed. This option will override `-M' option when it is also provided.\\
+\hline
+-c \newline (\code{colorspace}) & Build a color-space index.\\
+\hline
+-f $<int>$ \newline (\code{TH\_subread}) & Specify the threshold for removing uninformative subreads (highly repetitive 16bp mers). Subreads will be excluded from the index if they occur more than threshold number of times in the reference genome. Default value is 100.\\
+\hline
+-F \newline (\code{gappedIndex=FALSE}) & Build a full index for the reference genome. 16bp mers (subreads) will be extracted from every position of a reference genome.\\
+\hline
+-M $<int>$ \newline (\code{memory}) & Specify the size of computer memory(RAM) in megabytes that will be used to store the index during read mapping, 8000MB by default. If the index size  is greater than the specified value, the index will be split into multiple blocks. Only one block will be loaded into memory at anytime during the read alignment.\\
+\hline
+-o $<string>$ \newline (\code{basename}) & Specify the base name of the index to be created.\\
+\hline
+-v & Output version of the program. \\
+\hline
+\end{tabular}
+\end{table}
+
+\newpage
+
+\section{Read mapping}
+
+The {\Subread} aligner (\texttt{subread-align} program in SourceForge {\Subread} package or \code{align} function in Bioconductor {\Rsubread} package) extracts a number of subreads from each read and then uses these subreads to vote for the mapping location of the read.
+It uses the the ``seed-and-vote'' paradigm for read mapping and reports the largest mappable region for each read.
+Table 2 describes the arguments used by {\Subread} aligner (also {\Subjunc} and {\Sublong} aligners).
+Arguments used in Bioconductor \code{Rsubread} package are included in parenthesis.\\
+
+
+\begin{longtable}{|p{5.5cm}|p{10.5cm}|}
+\multicolumn{2}{p{16cm}}{Table 2: Arguments used by the \code{subread-align}/\code{subjunc}/\code{sublong} programs included in the SourceForge {\Subread} package in alphabetical order.
+Arguments in parenthesis in the first column are the equivalent arguments used in Bioconductor {\Rsubread} package.
+\newline
+($^{1}$\code{subread-align} arguments,
+$^{2}$\code{subjunc} arguments and
+$^{3}$\code{sublong} arguments)
+\newline
+}
+\endfirsthead
+\hline
+Arguments & Description \\
+\hline
+$^{1,2}$ -a $<string>$\newline (\code{useAnnotation, annot.inbuilt, annot.ext}) & Name of a gene annotation file that includes chromosomal coordinates of exons from each gene. GTF/GFF format by default. See -F option for supported formats. Users may use the inbuilt annotations included in this package (SAF format) for human and mouse data. Exon-exon junctions are inferred by connecting each pair of neighboring exons from the same gene. Gzipped file is accepted. \\
+\hline
+$^{1,2}$ -A $<string>$\newline (\code{chrAliases}) & Name of a comma-delimited text file that includes aliases of chromosome names. This file should contain two columns. First column contains names of chromosomes included in the SAF or GTF annotation and second column contains corresponding names of chromosomes in the reference genome. No column headers should be provided. Also note that chromosome names are case sensitive. This file can be used to match chromosome names between the annotation and the reference genome.\\
+\hline
+$^{1,2}$ -b \newline (\code{color2base=TRUE}) & Output base-space reads instead of color-space reads in mapping output for color space data (eg. LifTech SOLiD data). Note that the mapping itself will still be performed at color-space.\\
+\hline
+$^{1,2}$ -B $<int>$ \newline (\code{nBestLocations}) & Specify the maximal number of equally-best mapping locations to be reported for a read. 1 by default.  In the mapping output, the `NH' tag is used to indicate how many alignments are reported for the read and the `HI' tag is used for numbering the alignments reported for the same read. This option should be used together with the `$--$multiMapping' option.  \\
+\hline
+$^{1,2}$ -d $<int>$ \newline (\code{minFragLength}) & Specify the minimum fragment/template length, 50 by default.  Note that if the two reads from the same pair do not satisfy the fragment length criteria, they will be mapped individually as if they were single-end reads.\\
+\hline
+$^{1,2}$ -D $<int>$ \newline (\code{maxFragLength}) & Specify the maximum fragment/template length, 600 by default.\\
+\hline
+$^{1,2}$ -F $<string>$ \newline (\code{isGTF}) & Specify format of the provided annotation file. Acceptable formats include `GTF' (or compatible GFF format) and `SAF'. Default format in SourceForge {\Subread} is `GTF'. Default format in {\Rsubread} is `SAF'.   \\
+\hline
+$^{1,2,3}$ -i $<string> \newline (\code{index}) $ & Specify the base name of the index. The index used by \code{sublong} aligner must be a full index and has only one block, ie. `-F' and `-B' options must be specified when building index with \code{subread-buildindex}.\\
+\hline
+$^{1,2}$ -I $<int>$ \newline (\code{indels}) & Specify the number of INDEL bases allowed in the mapping. 5 by default. Indels of up to 200bp long can be detected.\\
+\hline
+$^{1,2}$ -m  $<int>$ \newline (\code{TH1}) & Specify the consensus threshold, which is the minimal number of consensus subreads required for reporting a hit. The consensus subreads are those subreads which vote for the same location in the reference genome for the read. If pair-end read data are provided, at least one of the two reads from the same pair must satisfy this criteria. The default value is 3 for \code{subread-align}, or 1 for \code{subjunc} and \code{sublong}.\\
+\hline
+$^{1,2}$ -M $<int>$ \newline (\code{maxMismatches}) & Specify the maximum number of mis-matched bases allowed in the alignment. 3 by default. Mis-matches found in soft-clipped bases are not counted.\\
+\hline
+$^{1,2}$ -n $<int>$ \newline (\code{nsubreads}) & Specify the number of subreads extracted from each read for mapping. The default value is 10 for \code{subread-align}, or 14 for \code{subjunc}. For \code{sublong}, this is number of subreads (85 by default) extracted from each readlet. A readlet is a 100bp sequence extracted from a long read.\\
+\hline
+$^{1,2,3}$ -o $<string>$ \newline (\code{output\_file}) & Give the name of output file. The default output format is BAM. All reads are included in mapping output, including both mapped and unmapped reads, and they are in the same order as in the input file.\\
+\hline
+$^{1,2}$ -p $<int>$ \newline (\code{TH2}) & Specify the minimum number of consensus subreads both reads from the same pair must have. This argument is only applicable for paired-end read data. The value of this argument should not be greater than that of `-m' option, so as to rescue those read pairs in which one read has a high mapping quality but the other does not. 1 by default.\\
+\hline
+$^{1,2}$ -P $<3:6>$ \newline (\code{phredOffset}) & Specify the format of Phred scores used in the input data, '3' for phred+33 and '6' for phred+64. '3' by default. For \code{align} function in \Rsubread, the possible values are `33' (for phred+33) and `64' (for phred+64). `33' by default.\\
+\hline
+$^{1,2,3}$ -r $<string>$ \newline (\code{readfile1}) & Give the name of an input file (multiple files are allowed to be provided to \code{align} and \code{subjunc} functions in {\Rsubread}). For paired-end read data, this gives the first read file and the other read file should be provided via the -R option. Supported input formats include FASTQ/FASTA (uncompressed or gzip compressed)(default), SAM and BAM.\\
+\hline
+$^{1,2}$ -R $<string>$ \newline (\code{readfile2}) & Provide name of the second read file from paired-end data. The program will switch to paired-end read mapping mode if this file is provided. (multiple files are allowed to be provided to \code{align} and \code{subjunc} functions in {\Rsubread}).\\
+\hline
+$^{1,2}$ -S $<ff:fr:rf>$ \newline (\code{PE\_orientation}) & Specify the orientation of the two reads from the same pair. It has three possible values including `fr', `ff' and `'rf. Letter `f' denotes the forward strand and letter `r' the reverse strand. `fr' by default (ie. the first read in the pair is on the forward strand and the second read on the reverse strand).\\
+\hline
+$^1$ -t $<int>$ \newline (\code{type}) & Specify the type of input sequencing data. Possible values include \code{0}, denoting RNA-seq data, or \code{1}, denoting genomic DNA-seq data. User must specify the value. Character values including `rna' and `dna' can also be used in the {\R} function.  For genomic DNA-seq data, the aligner takes into account both the number of matched bases and the number of mis-matched bases to determine the the best mapping location after applying the `seed-and-vote' approach for read mapping. For RNA-seq data, only the number of mis-matched bases is considered for determining the best mapping location. \\
+\hline
+$^{1,2,3}$ -T $<int>$ \newline (\code{nthreads}) & Specify the number of threads/CPUs used for mapping. The value should be between 1 and 32. 1 by default.\\
+%\hline
+%-u \newline (\code{unique=TRUE}) & Output uniquely mapped reads only. Reads that were found to have more than one best mapping location will not be reported.\\
+\hline
+$^{2}$$--$allJunctions \newline (\code{reportAllJunctions} \newline \code{=TRUE}) & This option should be used with \code{subjunc} for detecting canonical exon-exon junctions (with `GT/AG' donor/receptor sites), non-canonical exon-exon junctions and structural variants (SVs) in RNA-seq data. detected junctions will be saved to a file with suffix name ``.junction.bed". Detected SV breakpoints will be saved to a file with suffix name ``.breakpoints.txt", which includes chromosomal coordinates of detected SV breakpoints and also number of supporting reads. In the read mapping output, each breakpoint-containing read will contain the following extra fields for the description of its secondary alignment: CC(Chr), CP(Position),CG(CIGAR) and CT(strand). The primary alignment (described in the main field) and secondary alignment give respectively the mapping results for the two segments from the same read that were seperated by the breakpoint. Note that each breakpoint-containing read occupies only one row in mapping output. The mapping output includes mapping results for all the reads.\\
+\hline
+$^{1,2}$$--$BAMinput \newline (\code{input\_format="BAM"}) & Specify that the input read data are in BAM format.\\
+\hline
+$^{1,2}$$--$complexIndels & Detect multiple short indels that occur concurrently in a small genomic region (these indels could be as close as 1bp apart).\\
+\hline
+$^{1,2}$$--$DPGapExt $<int>$ \newline (\code{DP\_GapExtPenalty}) & Specify the penalty for extending the gap when performing the Smith-Waterman dynamic programming. 0 by default.\\
+\hline
+$^{1,2}$$--$DPGapOpen $<int>$ \newline (\code{DP\_GapOpenPenalty}) & Specify the penalty for opening a gap when applying the Smith-Waterman dynamic programming to detecting indels. -2 by default.\\
+\hline
+$^{1,2}$$--$DPMismatch $<int>$ \newline (\code{DP\_MismatchPenalty}) & Specify the penalty for mismatches when performing the Smith-Waterman dynamic programming.  0 by default.\\
+\hline
+$^{1,2}$$--$DPMatch $<int>$ \newline (\code{DP\_MatchScore}) & Specify the score for the matched base when performing the Smith-Waterman dynamic programming.  2 by default.\\
+\hline
+$^{1,2}$$--$gtfFeature $<string>$ \newline (\code{GTF.featureType}) & Specify the type of features that will be extracted from a GTF annotation. `exon' by default. Feature types can be found in the 3rd column of a GTF annotation.\\
+\hline
+$^{1,2}$$--$gtfAttr $<string>$ \newline (\code{GTF.attrType}) & Specify the type of attributes in a GTF annotation that will be used to group features. `gene\_id' by default. Attributes can be found in the 9th column of a GTF annotation.\\
+\hline
+$^{1,2}$$--$keepReadOrder \newline (\code{keepReadOrder} \newline \code{=FALSE}) & Output reads in the same order as in the input read file. This option only applies to BAM output. Note that in the output, reads from the same pair are always placed next to each other no matter this option is provided or not. \\
+\hline
+$^{1,2}$$--$multiMapping \newline (\code{unique=FALSE}) & Multi-mapping reads will also be reported in the mapping output. Number of alignments reported for each multi-mapping read is determined by the `-B' option. If the total number of equally best mapping locations found for a read is greater than the number specified by `-B', then random mapping locations  (total number of these locations is the same as `-B' value) will be selected. For example, if value of `-B' is 1, then one random location will be reported. \\
+\hline
+$^{1,2}$$--$rg $<string>$ \newline (\code{readGroup}) & Add a $<tag:value>$ to the read group (RG) header in the mapping output. \\
+\hline
+$^{1,2}$$--$rg-id $<string>$ \newline (\code{readGroupID}) & Specify the read group ID. If specified, the read group ID will be added to the read group header field and also to each read in the mapping output. \\
+\hline
+$^{1,2}$$--$SAMinput \newline (\code{input\_format="SAM"}) & Specify that the input read data are in SAM format.\\
+\hline
+$^{1,2,3}$$--$SAMoutput \newline (\code{output\_format="SAM"}) & Specify that mapping results are saved into a SAM format file. \\
+\hline
+$^{1,2}$$--$sortReadsByCoordinates \newline (\code{sortReadsByCoordinates} \newline \code{=FALSE}) & If specified, reads will be sorted by their mapping coordinates in the mapping output. This option is applicable for BAM output only. A BAI index file will also be generated for each BAM file so the BAM files can be directly loaded into a genome browser such as IGB or IGV.\\
+\hline
+$^1$$--$sv \newline (\code{detectSV=TRUE}) & This option should be used with \code{subread-align} for detecting structural variants (SVs) in genomic DNA sequencing data. Detected SV breakpoints will be saved to a file with suffix name ``.breakpoints.txt", which includes chromosomal coordinates of detected SV breakpoints and also number of supporting reads for each SV event. In the read mapping output, each breakpoint-containing read will contain the following extra fields for the description of its secondary alignment: CC(Chr), CP(Position),CG(CIGAR) and CT(strand). The primary alignment (described in the main field) and secondary alignment give respectively the mapping results for the two segments from the same read that were seperated by the breakpoint. Note that each breakpoint-containing read occupies only one row in mapping output. The mapping output includes mapping results for all the reads.\\
+\hline
+$^{1,2}$$--$trim5 $<int>$ \newline (\code{nTrim5}) & Trim off $<int>$ number of bases from 5' end of each read. 0 by default.\\
+\hline
+$^{1,2}$$--$trim3 $<int>$ \newline (\code{nTrim3}) & Trim off $<int>$ number of bases from 3' end of each read. 0 by default.\\
+\hline
+$^{1,2,3}$ -v & Output version of the program. \\
+\hline
+\end{longtable}
+
+\newpage
+
+\section{Memory use and speed}
+\label{sec:memoryspeed}
+
+\code{subread-buildindex} (\code{buildindex} function in \Rsubread) needs 15GB of memory to build a full index for human/mouse genome. 
+With this index, \code{subread-align} (\code{align} in \Rsubread) require 17.8GB of memory for read mapping.
+This enables fastest mapping speed, but it is recommended that the full index should be on a unix server due to relatively large memory use.
+Mapping rate is $\sim$14 million reads per minute (10 CPU threads) when full index is used.
+
+A gapped index is recommended for use on a personal computer, which typically has 16GB of memory or less. 
+\code{subread-buildindex} (\code{buildindex} function in \Rsubread) only needs 5.7GB of memory to build a gapped index for human/mouse genome. 
+\code{subread-align} (\code{align} in \Rsubread) needs 8.2GB of memory for mapping with the gapped index.
+
+It takes \code{subread-buildindex} (\code{buildindex} function in \Rsubread) about 40 minutes to build a full index for human/mouse genome, and building a gapped index takes about 15 minutes.
+
+Memory use for index building and read mapping can be further reduced by building a split index using the \code{-B} and \code{-M} options in \code{subread-buildindex} (\code{indexSplit} and \code{memory} options in \code{buildindex} function in \Rsubread).
+
+
+\section{Mapping quality scores}
+
+{\Subread} and {\Subjunc} aligners determine the final mapping location of each read by taking into account vote number, number of mis-matched bases, number of matched bases and mapping distance between two reads from the same pair (for paired-end reads only) .
+They then assign a mapping quality score (MQS) to each mapped read to indicate the confidence of mapping using the following formula:\\
+
+\[ MQS = \left\{
+\begin{array}{l l}
+\frac{40}{(N_c + N_{mm})} & \quad \text{if only one best location found}\\
+& \\
+& \\
+0 & \quad \text{if $>1$ equally best locations were found}\\
+\end{array} \right.\] \\
+
+\noindent where $N_c$ is the number of candidate locations considered at the re-alignment step (note that no more than three candidate locations are considered at this step).
+$N_{mm}$ is the number of mismatches present in the final reported alignment for the read.
+
+
+\section{Mapping output}
+
+Read mapping results for each library will be saved to a BAM or SAM format file.
+Short indels detected from the read data will be saved to a text file (`.indel').
+If `$--$sv' is specified when running \code{subread-align}, breakpoints detected from structural variant events will be output to a text file for each library as well (`.breakpoints.txt').
+Screen output includes a brief mapping summary, including percentage of uniquely mapped reads, percentage of multi-mapping reads and percentage of unmapped reads.
+
+
+\section{Mapping of long reads}
+
+We developed a new long-read aligner, called {\Sublong}, for the mapping of long reads that were generated by long-read sequencing technologies such as Nanopore and PacBio sequencers.
+{\Sublong} is also based on the seed-and-vote mapping strategy.
+Parameters of {\Sublong} program can be found in Table 2.
+
+\newpage
+
+
+\chapter{Mapping reads generated by RNA sequencing technologies}
+
+\section{A quick start for using SourceForge {\Subread} package}
+
+\label{sec:rnaseq-subread}
+An index must be built for the reference first and then the read mapping and/or junction detection can be carried out.\\
+
+{\noindent\bf Step 1: Building an index}\\
+
+\noindent The following command can be used to build a base-space index.
+You can provide a list of FASTA files or a single FASTA file including all the reference sequences.
+The files can be gzipped.\\
+
+\code{subread-buildindex -o my\_index chr1.fa chr2.fa ...}\\
+
+\noindent For more details about index building, see Section~\ref{sec:index}.\\
+
+{\noindent\bf Step 2: Aligning the reads}\\
+
+\noindent{{\Subread}}\\
+
+\noindent If the purpose of an RNA-seq experiment is to quantify gene-level expression and discover differentially expressed genes, the {\Subread} aligner is recommended.
+{\Subread} carries out local alignments for RNA-seq reads.
+The commands used by {\Subread} to align RNA-seq reads are the same as those used to align gDNA-seq reads.
+Below is an example of using {\Subread} to map single-end RNA-seq reads.\\
+
+\code{subread-align -t 0 -i my\_index -r rnaseq-reads.txt -o subread\_results.bam}\\
+
+\noindent Another RNA-seq aligner included in this package is the {\Subjunc} aligner.
+{\Subjunc} not only performs read alignments but also detects exon-exon junctions.
+The main difference between {\Subread} and {\Subjunc} is that {\Subread} does not attempt to detect exon-exon junctions in the RNA-seq reads.
+For the alignments of the exon-spanning reads, {\Subread} just uses the largest mappable regions in the reads to find their mapping locations.
+This makes {\Subread} more computationally efficient.
+The largest mappable regions can then be used to reliably assign the reads to their target genes by using a read summarization program (eg. \featureCounts, see Section~\ref{sec:featureCounts}), and differential expression analysis can be readily performed based on the read counts yielded from read summarization.
+Therefore, {\Subread} is sufficient for read mapping if the purpose of RNA-seq analysis is to perform a differential expression analysis. 
+Also, {\Subread} could report more mapped reads than {\Subjunc}.
+For example, the exon-spanning reads that are not aligned by {\Subjunc} due to the lack of canonical GT/AG splicing signals can be aligned by {\Subread} as long as they have a good match with the reference sequence.\\
+
+\noindent{{\Subjunc}}\\
+
+For other purposes of the RNA-seq data anlayses such as exon-exon junction detection, alternative splicing analysis and genomic mutation detection, {\Subjunc} aligner should be used because exon-spanning reads need to be fully aligned.
+Below is an example command of using {\Subjunc} to perform global alignments for paired-end RNA-seq reads.
+Note that there are two files produced after mapping: one is a BAM-format file including mapping results and the other a BED-format file including discovered exon-exon junctions.\\
+
+\code{subjunc -i my\_index -r rnaseq-reads1.txt -R rnaseq-reads2.txt -o subjunc\_result}
+
+\section{A quick start for using Bioconductor {\Rsubread} package}
+
+An index must be built for the reference first and then the read mapping can be performed.\\
+
+{\noindent\bf Step 1: Building an index}\\
+
+\noindent To build the index, you must provide a single FASTA file (eg. ``genome.fa'') which includes all the reference sequences.
+The FASTA file can be a gzipped file.
+
+\begin{Rcode}
+library(Rsubread)
+buildindex(basename="my_index",reference="genome.fa")
+\end{Rcode}
+
+{\noindent\bf Step 2: Aligning the reads}\\
+
+Please refer to Section~\ref{sec:rnaseq-subread} for difference between {\Subread} and {\Subjunc} in mapping RNA-seq data.
+Below is an example for mapping a single-end RNA-seq dataset using {\Subread}.
+Useful information about \code{align} function can be found in its help page (type \code{?align} in your {\R} prompt).
+
+\begin{Rcode}
+align(index="my_index",readfile1="rnaseq-reads.txt.gz",output_file="subread_results.bam")
+\end{Rcode}
+
+Below is an example for mapping a single-end RNA-seq dataset using {\Subjunc}.
+Useful information about \code{subjunc} function can be found in its help page (type \code{?subjunc} in your {\R} prompt).
+
+\begin{Rcode}
+subjunc(index="my_index",readfile1="rnaseq-reads.txt.gz",output_file="subjunc_results.bam")
+\end{Rcode}
+
+
+\section{Index building}
+
+Please refer to Section~\ref{sec:index}.
+Same index is used for the mapping of RNA and DNA sequencing reads. 
+
+\section{Local read alignment}
+
+The \code{Subread} and \code{Subjunc} can both be used to map RNA-seq reads to the reference genome.
+If the goal of the RNA-seq data is to perform expression analysis, eg. finding genes expressing differentially between different conditions, then \code{Subread} is recommended.
+\code{Subread} performs fast local alignments for reads and reports the mapping locations that have the largest overlap with the reads.
+These reads can then be assigned to genes for expression analysis.
+For this type of analysis, global alignments for the exon-spanning reads are not required because local aligments are sufficient to get reads to be accurately assigned to genes.
+
+However, for other types of RNA-seq data analyses such as exon-exon junction discovery, genomic mutation detection and allele-specific gene expression analysis, global alignments are required.
+The next section describes the {\Subjunc} aligner, which performs global aligments for RNA-seq reads.
+ 
+\section{Global read alignment}
+
+{\Subjunc} aligns each exon-spanning read by firstly using a large number of subreads extracted from the read to identify multiple target regions matching the selected subreads, and then using the splicing signals (donor and receptor sites) to precisely determine the mapping locations of the read bases.
+It also includes a verification step to compare the quality of mapping reads as exon-spanning reads with the quality of mapping reads as exonic reads to finally decide how to best map the reads.
+Reads may be re-aligned if required.
+
+Output of {\Subjunc} aligner includes a list of discovered exon-exon junction locations and also the complete alignment results for the reads.
+Table 2 describes the arguments used by the {\Subjunc} program.\\
+
+\section{Memory use and speed}
+
+Memory use and running time of \code{subread-buildindex} and \code{subread-align} (\code{buildindex} and \code{align} in \Rsubread) are the same as their memory use and running time in the analysis of DNA sequencing data (see Section~\ref{sec:memoryspeed}).
+
+Compared to \code{subread-align} (\code{align} in \Rsubread), \code{subjunc} uses the same amount of memory when a full index is used and it uses slightly more memory (8.8GB of memory for human/mouse data) when a gapped index is used. 
+\code{subjunc} is also slightly slower than \code{subread-align}.
+
+
+\section{Mapping output}
+
+Read mapping results for each library will be saved to a BAM/SAM file.
+Detected exon-exon junctions will be saved to a BED file for each library (`.junction.bed').
+Detected short indels will be saved to a text file (`.indel').
+Screen output includes a brief mapping summary, including percentage of uniquely mapped reads, percentage of multi-mapping reads and percentage of unmapped reads.
+
+\section{Mapping microRNA sequencing reads (miRNA-seq)}
+
+To use {\Subread} aligner to map miRNA-seq reads, a full index must be built for the reference genome before read mapping can be carried out.
+For example, the following command builds a full index for mouse reference genome \emph{mm10}:
+
+\code{\\
+subread-buildindex -F -B -o mm10\_full\_index mm10.fa \\
+}
+
+The full index includes 16bp mers extracted from every genomic location in the genome.
+Note that if \code{-F} is not specified, \code{subread-buildindex} builds a gapped index which includes 16bp mers extracted every three bases in the reference genome, ie. there is a 2bp gap between each pair of neighbouring 16bp mers.
+
+After the full index was built, read alignment can be performed.
+Reads do not need to be trimmed before feeding them to {\Subread} aligner since {\Subread} soft clips sequences in the reads that can not be properly mapped.
+The parameters used for mapping miRNA-seq reads need to be carefully designed due to the very short length of miRNA sequences ($\sim$22bp).
+The total number of subreads (16bp mers) extracted from each read should be the read length minus 15, which
+is the maximum number of subreads that can be possibly extracted from a read.
+The reason why we need to extract the maximum number of subreads is to achieve a high sensitivity in detecting the short miRNA sequences.
+
+The threshold for the number of consensus subreads required for reporting a hit should be within the range of 2 to 7 consensus subreads inclusive.
+The larger the number of consensus subreads required, the more stringent the mapping will be.
+Using a threshold of 2 consensus subreads allows the detection of miRNA sequences of as short as 17bp, but the mapping error rate could be relatively high.
+With this threshold, there will be at least 17 perfectly matched bases present in each reported alignment.
+If a threshold of 4 consensus subreads was used, length of miRNA sequences that can be detected is 19 bp or longer.
+With this threshold, there will be at least 19 perfectly matched bases present in each reported alignment.
+When a threshold of 7 consensus subreads was used, only miRNA sequences of 22bp or longer can be detected (at least 22 perfectly matched bases will be present in each reported alignment).
+
+We found that there was a significant decrease in the number of mapped reads when the requried number of consensus subreads increased from 4 to 5 when we tried to align a mouse miRNA-seq dataset, suggesting that there are a lot of miRNA sequences that are only 19bp long.
+We therefore used a threshold of 4 consensus subreads to map this dataset.
+However, what we observed might not be the case for other datasets that were generated from different cell types and different species.
+
+Below is an example of mapping 50bp long reads (adaptor sequences were included in the reads in addition to the miRNA sequences), with at least 4 consensus subreads required in the mapping.
+Note that `-t' option should have a value of 1 since miRNA-seq reads are more similar to gDNA-seq reads than mRNA-seq reads from the read mapping point of vew.
+
+\code{\\
+subread-align -t 1 -i mm10\_full\_index -n 35 -m 4 -M 3 -T 10 -I 0
+--multiMapping -B 10 -r miRNA\_reads.fastq -o result.bam\\
+}
+
+The `-B 10' parameter instructs {\Subread} aligner to report up to 10 best mapping locations (equally best) in the mapping results.
+The multiple locations reported for the reads could be useful for investigating their true origin, but they might need to be filtered out when assigning mapped reads to known miRNA genes to ensure a high-quality quantification of miRNA genes.
+The miRBase database (\url{http://www.mirbase.org/}) is a useful resource that includes annotations for miRNA genes in many species.
+The {\featureCounts} program can be readily used for summarizing reads to miRNA genes.
+
+
+
+\chapter{Read summarization}
+
+\section{Introduction}
+
+Sequencing reads often need to be assigned to genomic features of interest after they are mapped to the reference genome.
+This process is often called \emph{read summarization} or \emph{read quantification}.
+Read summarization is required by a number of downstream analyses such as gene expression analysis and histone modification analysis.
+The output of read summarization is a count table, in which the number of reads assigned to each feature in each library is recorded.
+
+A particular challenge to the read summarization is how to deal with those reads that overlap more than one feature (eg. an exon) or meta-feature (eg. a gene).
+Care must be taken to ensure that such reads are not over-counted or under-counted.
+Here we describe the {\featureCounts} program, an efficient and accurate read quantifier.
+{\featureCounts} has the following features:
+\begin{itemize}
+\item It carries out precise and accurate read assignments by taking care of indels, junctions and structural variants in the reads.
+\item It takes only half a minute to summarize 20 million reads.
+\item It supports GTF and SAF format annotation.
+\item It supports strand-specific read counting.
+\item It can count reads at feature (eg. exon) or meta-feature (eg. gene) level.
+\item Highly flexible in counting multi-mapping and multi-overlapping reads. Such reads can be excluded, fully counted or fractionally counted.
+\item It gives users full control on the summarization of paired-end reads, including allowing them to check if both ends are mapped and/or if the fragment length falls within the specified range.
+\item Reduce ambiguity in assigning read pairs by searching features that overlap with both reads from the pair.
+\item It allows users to specify whether chimeric fragments should be counted.
+\item Automatically detect input format (SAM or BAM).
+\item Automatically sort paired-end reads. Users can provide either location-sorted or name-sorted bams files to featureCounts. Read sorting is implemented on the fly and it only incurs minimal time cost.
+\end{itemize}
+
+\section{featureCounts}
+\label{sec:featureCounts}
+
+\subsection{Input data}
+
+The data input to {\featureCounts} consists of (i) one or more files of aligned reads (short or long reads) in either SAM or BAM format and (ii) a list of genomic features in either Gene Transfer Format (GTF) or General Feature Format (GFF) or Simplified Annotation Format (SAF). The format of input reads is automatically detected (SAM or BAM).
+
+If the input contains location-sorted paired-end reads, {\featureCounts} will automatically re-order the reads to place next to each other the reads from the same pair before counting them.
+Sometimes name-sorted paired-end input reads are not compatible with featureCounts (due to for example reporting of multi-mapping results) and in this case {\featureCounts} will also automatically re-order them.
+We provide an utility program {\repair} to allow users to pair up the reads before feeding them to {\featureCounts}.
+
+Both read alignment and read counting should use the same reference genome. For each read, the BAM/SAM file gives the name of the reference chromosome or contig the read mapped to, the start position of the read on the chromosome or contig/scaffold, and the so-called CIGAR string giving the detailed alignment information including insertions and deletions and so on relative to the start position.
+
+The genomic features can be specified in either GTF/GFF or SAF format. The SAF format is the simpler and includes only five required columns for each feature (see next section). In either format, the feature identifiers are assumed to be unique, in accordance with commonly used Gene Transfer Format (GTF) refinement of GFF.
+
+{\featureCounts} supports strand-specific read counting if strand-specific information is provided. Read mapping results usually include mapping quality scores for mapped reads. Users can optionally specify a minimum mapping quality score that the assigned reads must satisfy.
+
+\subsection{Annotation format}
+\label{sec:annotation}
+
+The genomic features can be specified in either GTF/GFF or SAF format.
+A definition of the GTF format can be found at UCSC website (\url{http://genome.ucsc.edu/FAQ/FAQformat.html#format4}).
+The SAF format includes five required columns for each feature: feature identifier, chromosome name, start position, end position and strand.
+Both start and end positions are inclusive.
+These five columns provide the minimal sufficient information for read quantification purposes.
+Extra annotation data are allowed to be added from the sixth column. 
+
+A SAF-format annotation file should be a tab-delimited text file.
+It should also include a header line.
+An example of a SAF annotation is shown as below:
+
+\code{\\
+GeneID	Chr	Start	End	Strand\\
+497097	chr1	3204563	3207049	-\\
+497097	chr1	3411783	3411982	-\\
+497097	chr1	3660633	3661579	-\\
+100503874	chr1	3637390	3640590	-\\
+100503874	chr1	3648928	3648985	-\\
+100038431	chr1	3670236	3671869	-\\
+...
+}
+
+\code{GeneID} column includes gene identifiers that can be numbers or character strings.
+Chromosomal names included in the \code{Chr} column must match the chromosomal names of reference sequences to which the reads were aligned.
+
+\subsection{In-built annotations}
+
+In-built gene annotations for genomes \emph{hg38}, \emph{hg19}, \emph{mm10} and \emph{mm9} are included in both Bioconductor {\Rsubread} package and SourceForge {\Subread} package.
+These annotations were downloaded from NCBI RefSeq database and then adapted by merging overlapping exons from the same gene to form a set of disjoint exons for each gene.
+Genes with the same Entrez gene identifiers were also merged into one gene.
+
+Each row in the annotation represents an exon of a gene. There are five columns in the annotation data including Entrez gene identifier (\emph{GeneID}), chromosomal name (\emph{Chr}), chromosomal start position(\emph{Start}), chromosomal end position (\emph{End}) and strand (\emph{Strand}).
+
+In {\Rsubread}, users can access these annotations via the {\textsf{getInBuiltAnnotation}} function.
+In {\Subread}, these annotations are stored in directory `annotation' under home directory of the package.
+
+
+\subsection{Single and paired-end reads}
+
+Reads may be paired or unpaired.
+If paired reads are used, then each pair of reads defines a DNA or RNA fragment bookended by the two reads.
+In this case, {\featureCounts} can be instructed to count fragments rather than reads.
+{\featureCounts} automatically sorts reads by name if paired reads are not in consecutive positions in the SAM or BAM file, with minimal cost.
+Users do not need to sort their paired reads before providing them to {\featureCounts}.
+
+\subsection{Assign reads to features and meta-features}
+
+{\featureCounts} is a general-purpose read summarization function, which assigns mapped reads (RNA-seq reads or genomic DNA-seq reads) to genomic features or meta-features.
+A feature is an interval (range of positions) on one of the reference sequences.
+A meta-feature is a set of features that represents a biological construct of interest.
+For example, features often correspond to exons and meta-features to genes. Features sharing the same feature identifier in the GTF or SAF annotation are taken to belong to the same meta-feature. {\featureCounts} can summarize reads at either the feature or meta-feature levels.
+
+We recommend to use unique gene identifiers, such as NCBI Entrez gene identifiers, to cluster features into meta-features. Gene names are not recommended to use for this purpose because different genes may have the same names. Unique gene identifiers were often included in many publicly available GTF annotations which can be readily used for summarization. The Bioconductor {\Rsubread} package also includes NCBI RefSeq annotations for human and mice. Entrez gene identifiers are used in these annotations.
+
+{\featureCounts} preforms precise read assignment by comparing mapping location of every base in the read with the genomic region spanned by each feature.
+It takes account of any gaps (insertions, deletions, exon-exon junctions or structural variants) that are found in the read.
+It calls a hit if any overlap is found between read and feature.
+
+Users may use `--minOverlap (\code{minOverlap} in \R)' and `--fracOverlap (\code{fracOverlap} in \R)' options to specify the minimum number of overlapping bases and minimum fraction of overlapping bases requried for assigning a read to a feature, respectively.
+The `--fracOverlap' option might be particularly useful for counting reads with variable lengths.
+
+When counting reads at meta-feature level, a hit is called for a meta-feature if the read overlaps any component feature of the meta-feature.
+Note that if a read hits a meta-feature, it is always counted once no matter how many features in the meta-feature this read overalps with.
+For instance, an exon-spanning read overlapping with more than one exon within the same gene only contributes 1 count to the gene.
+
+When assigning reads to genes or exons, most reads can be successfully assigned without ambiguity.
+However if reads are to be assigned to transcripts, due to the high overlap between transcripts from the same gene, many reads will be found to overlap more than one transcript and therefore cannot be uniquely assigned. 
+Specialized transcript-level quantification tools are recommended for counting reads to transcripts.
+Such tools use model-based approaches to deconvolve reads overlapping with multiple transcripts.
+
+
+\subsection{Count multi-mapping reads and multi-overlapping reads}
+
+A multi-mapping read is a read that maps to more than one location in the reference genome.
+There are multiple options for counting such reads.
+Users can specify the `-M' option (set \code{countMultiMappingReads} to \code{TRUE} in \R) to fully count every alignment reported for a multi-mapping read (each alignment carries 1 count), or specify both `-M' and `--fraction' options (set both \code{countMultiMappingReads} and \code{fraction} to \code{TRUE} in \R) to count each alignment fractionally  (each alignment carries $1/x$ count where $x$ is the total number of alignments reported for the read), or do not count such reads at all (this is the default behavior in SourceForge {\Subread} package; In \R, you need to set \code{countMultiMappingReads} to \code{FALSE}).
+
+A multi-overlapping read is a read that overlaps more than one meta-feature when counting reads at meta-feature level or overlaps more than one feature when counting reads at feature level.
+The decision of whether or not to counting these reads is often determined by the experiment type. We recommend that reads or fragments overlapping more than one gene are not counted for RNA-seq experiments, because any single fragment must originate from only one of the target genes but the identity of the true target gene cannot be confidently determined. 
+On the other hand, we recommend that multi-overlapping reads or fragments are counted for ChIP-seq experiments because for example epigenetic modifications inferred from these reads may regulate the biological functions of all their overlapping genes.
+
+By default, {\featureCounts} does not count multi-overlapping reads.
+Users can specify the `-O' option (set \code{allowMultiOverlap} to \code{TRUE} in \R) to fully count them for each overlapping meta-feature/feature (each overlapping meta-feature/feature receives a count of 1 from a read), or specify both `-O' and `--fraction' options (set both \code{allowMultiOverlap} and \code{fraction} to \code{TRUE} in \R) to assign a fractional count to each overlapping meta-feature/feature (each overlapping meta-feature/feature receives a count of $1/y$ from a read where $y$ is the total number of meta-features/features overlapping with the read).
+
+If a read is both multi-mapping and multi-overlapping, then when `-O', `-M', and `--fraction' are all specified each overlapping meta-feature/feature will receive a fractional count of $1/(x*y)$.
+Note that each alignment reported for a multi-mapping read is assessed separately for overlapping with multiple meta-features/features.
+
+When multi-mapping reads are reported with primary and secondary alignments and both `-M' and `--primary' are specified, only primary alignments will be considered in counting and secondary alignments will be ignored.
+If `-M' is specified but `--primary' is not specified, both primary and secondary alignments will be considered in counting.
+Note that all the alignments reported for a multi-mapping read are expected to have a `NH' tag and whether an alignment is primary or secondary is determined by using bit {0x100} in the FLAG field of the alignment record.
+
+
+\subsection{Read filtering}
+\label{sec:read_filtering}
+
+{\featureCounts} implements a variety of read filters to facilitate flexible read counting, which should satisfy the requirement of most downstream analyses.
+The order of these filters being applied is as following (from first to last):
+unmapped
+$>$ read type
+$>$ singleton
+$>$ mapping quality
+$>$ chimeric fragment
+$>$ fragment length 
+$>$ duplicate
+$>$ multi-mapping
+$>$ secondary alignment
+$>$ split reads (or nonsplit reads)
+$>$ no overlapping features
+$>$ overlapping length
+$>$ assignment ambiguity.
+
+Number of reads that were excluded from counting by each filter is reported in the program output, in addition to the reported read counts (see Section~\ref{sec:program_output}). 
+The `read type' filter removes those reads that have an unexpected read type and also cannot be counted with confidence.
+For example, if there are single end reads included in a paired end read dataset (such data can be produced from a read trimming program for instance) and reads are required to be counted in a strand-specific manner, then all the single end reads will be excluded from counting because their strandness cannot be determined.
+However if such reads are to be counted in an unstranded manner then all the single end reads will be considered for counting.
+
+
+\subsection{Read manipulation}
+
+Reads can be shifted (\code{--readShiftType} and \code{--readShiftSize}), extended (\code{--readExtension5} and \code{--readExtension3}) or reduced to an end base (\code{--read2pos}), before being assigned to features/meta-features.
+These read manipulations are carried out by {\featureCounts} in the following order: shift $>$ extension $>$ reduction. 
+
+
+\subsection{Program output}
+\label{sec:program_output}
+
+The output of {\featureCounts} program includes a count table and a summary of counting results.
+For SourceForge {\Subread}, the output data are saved to two tab-delimited files: one file contains read counts (file name is specified by the user) and the other file includes summary of counting results (file name is the name of read count file added with `.summary').
+For {\Rsubread}, all the output data are saved to an {\R} `List' object (for more details see the help page for {\featureCounts} function in {\Rsubread} package). 
+
+The read count table includes annotation columns (`Geneid', `Chr', `Start', `End', `Strand' and `Length') and data columns (eg. read counts for genes for each library).
+When counting reads to meta-features (eg. genes) columns `Chr', `Start', `End' and `Strand' may each contain multiple values (separated by semi-colons), which correspond to individual features included in the same meta-feature. 
+Column `Length' always contains one single value which is the total number of non-overlapping bases included in a meta-feature (or a feature), regardless of counting at meta-feature level or feature level.
+When counting RNA-seq reads to genes, the `Length' column typically contains the total number of non-overlapping bases in exons belonging to the same gene for each gene.
+
+The counting summary includes total number of alignments that were successfully assigned and also number of alignments that failed to be assigned due to various filters.
+Note that the counting summary includes the number of alignments, not the number of reads.
+Number of alignments will be higher than the number of reads when multi-mapping reads are included since each multi-mapping read contains more than one alignment.
+Number and percentage of successfully assigned alignments are also shown in featureCounts screen output.
+
+Filters supported by {\featureCounts} can be found in the list below:
+
+\begin{itemize}
+\item Unassigned\_Unmapped: unmapped reads cannot be assigned.
+\item Unassigned\_Read\_Type: reads that have an unexpected read type (eg. being a single end read included in a paired end dataset) and also cannot be counted with confidence (eg. due to stranded counting). Such reads are typically generated from a read trimming program.
+\item Unassigned\_Singleton: read pairs that have only one end mapped. 
+\item Unassigned\_MappingQuality: alignments with a mapping quality score lower than the threshold.
+\item Unassigned\_Chimera: two ends in a paired end alignment are located on different chromosomes or have unexpected orientation.
+\item Unassigned\_FragementLength: fragment length inferred from paired end alignment does not meet the length criteria.
+\item Unassigned\_Duplicate: alignments marked as duplicate (indicated in the FLAG field).
+\item Unassigned\_MultiMapping: alignments reported for multi-mapping reads (indicated by `NH' tag).
+\item Unassigned\_Secondary: alignments reported as secondary alignments (indicated in the FLAG field). 	
+\item Unassigned\_Split (or Unassigned\_NonSplit): alignments that contain junctions (or do not contain junctions).
+\item Unassigned\_NoFeatures: alignments that do not overlap any feature.
+\item Unassigned\_Overlapping\_Length: alignments that do not overlap any feature (or meta-feature) with the minimum required overlap length.
+\item Unassigned\_Ambiguity: alignments that overlap two or more features (feature-level summarization) or meta-features (meta-feature-level summarization).
+\end{itemize}
+
+In the counting summary these filters are listed in the same order as they were applied in counting process (see Section~\ref{sec:read_filtering}).
+An unassigned alignment might fall into more than one category as listed above, however it will only be allocated to one category which is the category corresponding to the first filter that filtered this alignment out. 
+
+
+\subsection{Program usage}
+
+Table 3 describes the parameters used by the {\featureCounts} program.
+
+\pagebreak
+
+\begin{longtable}{|p{5cm}|p{11cm}|}
+\multicolumn{2}{p{16cm}}{Table 3: Arguments used by the {\featureCounts} program included in the SourceForge {\Subread} package in alphabetical order.
+Arguments included in parenthesis are the equivalent parameters used by {\featureCounts} function in Bioconductor {\Rsubread} package.}
+\endfirsthead
+\hline
+Arguments & Description \\
+\hline
+input\_files \newline (\code{files}) & Give the names of input read files that include the read mapping results. The program automatically detects the file format (SAM or BAM). Multiple files can be provided at the same time. Files are allowed to be provided via $<stdin>$. \\
+\hline
+-a $<string>$ \newline (\code{annot.ext, annot.inbuilt})  & Provide name of an annotation file. See \code{-F} option for file format. Gzipped file is accepted.\\
+\hline
+-A \newline (\code{chrAliases}) & Provide a chromosome name alias file to match chr names in annotation with those in the reads. This should be a two-column comma-delimited text file. Its first column should include chr names in the annotation and its second column should include chr names in the reads. Chr names are case sensitive. No column header should be included in the file.\\
+\hline
+-B \newline (\code{requireBothEndsMapped}) & If specified, only fragments that have both ends successfully aligned will be considered for summarization. This option should be used together with \code{-p} (or \code{isPairedEnd} in {\Rsubread} {\featureCounts}).\\
+\hline
+-C \newline (\code{countChimericFragments}) & If specified, the chimeric fragments (those fragments that have their two ends aligned to different chromosomes) will NOT be counted. This option should be used together with \code{-p} (or \code{isPairedEnd} in {\Rsubread} {\featureCounts}).\\
+\hline
+-d $<int>$ \newline (\code{minFragLength}) & Minimum fragment/template length, 50 by default. This option must be used together with \code{-p} and \code{-P}.\\
+\hline
+-D $<int>$ \newline (\code{maxFragLength}) & Maximum fragment/template length, 600 by default. This option must be used together with \code{-p} and \code{-P}.\\
+\hline
+-f \newline (\code{useMetaFeatures}) & If specified, read summarization will be performed at feature level (eg. exon level). Otherwise, it is performed at meta-feature level (eg. gene level).\\
+\hline
+-F \newline (\code{isGTFAnnotationFile}) & Specify the format of the annotation file. Acceptable formats include `GTF' and `SAF' (see Section~\ref{sec:annotation} for details). By default, {\C} version of {\featureCounts} program accepts a GTF format annotation and R version accepts a SAF format annotation. In-built annotations in SAF format are provided.\\
+\hline
+-g $<string>$ \newline (\code{GTF.attrType}) & Specify the attribute type used to group features (eg. exons) into meta-features (eg. genes) when GTF annotation is provided. `gene\_id' by default. This attribute type is usually the gene identifier. This argument is useful for the meta-feature level summarization.\\
+\hline
+-G $<string>$ \newline (\code{genome}) & Provide the name of a FASTA-format file that contains the reference sequences used in
+read mapping that produced the provided SAM/BAM files. This optional argument can be used with `-J' option to improve read counting for junctions.\\
+\hline
+-J \newline (\code{juncCounts}) & Count the number of reads supporting each exon-exon junction. Junctions are identified from those exon-spanning reads (containing `N' in CIGAR string) in input data (note that options `--splitOnly' and `--nonSplitOnly' are not considered by this parameter). The output result includes names of primary and secondary genes that overlap at least one of the two splice sites of a junction. Only one primary gene is reported, but there might be more than one secondary gene reported. Secondary genes do not overlap more splice sites than the primary gene. When the primary and secondary genes overlap same number of splice sites, the gene with the smallest leftmost base position is selected as the primary gene. Also included in the output result are the position information for the left splice site (`Site1') and the right splice site (`Site2') of a junction. These include chromosome name, coordinate and strand of the splice site. In the last columns of the output, number of supporting reads is provided for each junction for each library.\\
+\hline
+-L \newline (\code{isLongRead}) & Turn on long-read counting mode. This option should be used when counting long reads such as Nanopore or PacBio reads.\\
+\hline
+-M \newline (\code{countMultiMappingReads}) & If specified, multi-mapping reads/fragments will be counted. The program uses the `NH' tag to find multi-mapping reads. Each alignment reported for a multi-mapping read will be counted individually. Each alignment will carry \code{1} count or a fractional count (\code{--fraction}). See section ``Count multi-mapping reads and multi-overlapping reads'' for more details.\\
+\hline
+-o $<string>$ & Give the name of the output file. The output file contains the number of reads assigned to each meta-feature (or each feature if \code{-f} is specified). Note that the {\featureCounts} function in {\Rsubread} does not use this parameter. It returns a \code{list} object including read summarization results and other data. \\
+\hline
+-O \newline (\code{allowMultiOverlap}) & If specified, reads (or fragments if \code{-p} is specified) will be allowed to be assigned to more than one matched meta-feature (or feature if \code{-f} is specified). Reads/fragments overlapping with more than one meta-feature/feature will be counted more than once. Note that when performing meta-feature level summarization, a read (or fragment) will still be counted once if it overlaps with multiple features within the same meta-feature (as long as it does not overlap with other meta-features). Also note that this parameter is applied to each individual alignment when there are more than one alignment reported for a read (ie. multi-mapping read). See section ``Count multi-mapping reads and multi-overlapping reads'' for more details.\\
+\hline
+-p \newline (\code{isPairedEnd}) & Specify if the input libraries contain paired-end reads. {\featureCounts} will terminate if the read type of the input data is incorrectly specified.\\
+\hline
+-P \newline (\code{checkFragLength}) & If specified, the fragment length will be checked when assigning fragments to meta-features or features. This option must be used together with \code{-p}. The fragment length thresholds should be specified using \code{-d} and \code{-D} options.\\
+\hline
+-Q $<int>$ \newline (\code{minMQS}) & The minimum mapping quality score a read must satisfy in order to be counted. For paired-end reads, at least one end should satisfy this criteria. 0 by default.\\
+\hline
+-R $<string>$ \newline (\code{reportReads}) & Output detailed read assignment results for each read (or fragment if paired end). The detailed assignment results can be saved in three different formats including \code{CORE}, \code{SAM} and \code{BAM} (note that these values are case sensitive). \newline When \code{CORE} format is specified, a tab-delimited file will be generated for each input file. Name of each generated file is the input file name added with `.featureCounts'.  Each generated file contains four columns including read name, status (assigned or the reason if not assigned), number of targets and target list. A target is a feature or a meta-feature. Items in the target lists is separated by comma. If a read is not assigned, its number of targets will be set as -1. \newline When \code{SAM} or \code{BAM} format is specified, the detailed assignment results will be saved to SAM and BAM format files. Names of generated files are the input file names added with `.featureCounts.sam' or `.featureCounts.bam'. Three tags are used to describe read assignment results: XS, XN and XT. Tag XS gives the assignment status. Tag XN gives number of targets. Tag XT gives comma separated target list. \\
+\hline
+-s $<int or string>$ \newline (\code{isStrandSpecific}) & Indicate if strand-specific read counting should be performed. A single integer value (applied to all input files) or a string of comma-separated values (applied to each corresponding input file) should be provided. Possible values include: 0 (unstranded), 1 (stranded) and 2 (reversely stranded). Default value is 0 (ie. unstranded read counting carried out for all input files). For paired-end reads, strand of the first read is taken as the strand of the whole fragment. FLAG field is used to tell if a read is first or second read in a pair. Value of \code{isStrandSpecific} parameter in {\Rsubread} {\featureCounts} is a vector which has a length of either {\code{1}}, or the same with the total number of input files provided. \\
+\hline
+-t $<string>$ \newline (\code{GTF.featureType}) & Specify the feature type(s). If more than one feature type is provided, they should be separated by `,' (no space). Only rows which have a matched feature type in the provided GTF annotation file will be included for read counting. `exon' by default.\\
+\hline
+-T $<int>$ \newline (\code{nthreads}) & Number of the threads. The value should be between 1 and 32. 1 by default.\\
+\hline
+-v & Output version of the program. \\
+\hline
+$--$byReadGroup \newline (\code{byReadGroup}) & Count reads by read group. Read group information is identified from the header of BAM/SAM input files and the generated count table will include counts for each group in each library.\\
+\hline
+$--$countReadPairs \newline (\code{countReadPairs}) & Read pairs will be counted instead of reads. This parameter is only applicable when paired-end data were provided.\\
+\hline
+$--$donotsort \newline (\code{autosort}) & If specified, paired end reads will not be re-ordered even if reads from the same pair were found not to be next to each other in the input.\\
+\hline
+$--$extraAttributes $<string>$ \newline (\code{GTF.attrType.extra}) & Extract extra attribute types from the provided GTF annotation and include them in the counting output. These attribute types will not be used to group features. If more than one attribute type is provided they should be separated by comma (in {\Rsubread} {\featureCounts} its value is a character vector).  \\
+\hline
+$--$fraction \newline (\code{fraction}) & Assign fractional counts to features. This option must be used together with `-M' or `-O' or both. When `-M' is specified, each reported alignment from a multi-mapping read (identified via `NH' tag) will carry a count of 1/x, instead of 1 (one), where x is the total number of alignments reported for the same read. When `-O' is specified, each overlapping feature will receive a count of 1/y, where y is the total number of features overlapping with the read. When both `-M' and `-O' are specified, each alignment will carry a count of 1/(x*y).\\
+\hline
+$--$fracOverlap $<float>$ \newline (\code{fracOverlap}) & Minimum fraction of overlapping bases in a read that is required for read assignment. Value should be a float number in the range [0,1]. 0 by default. If paired end, number of overlapping bases is counted from both reads. Soft-clipped bases are counted when calculating total read length (but ignored when counting overlapping bases). Both this option and `--minOverlap' option need to be satisfied for read assignment. \\
+\hline
+$--$fracOverlapFeature $<float>$ \newline (\code{fracOverlapFeature}) & Minimum fraction of bases included in a feature that is required to overlap with a read or a read pair. Value should be within range [0,1]. 0 by default. \\
+\hline
+$--$ignoreDup \newline (\code{ignoreDup}) & If specified, reads that were marked as duplicates will be ignored. Bit Ox400 in FLAG field of SAM/BAM file is used for identifying duplicate reads. In paired end data, the entire read pair will be ignored if at least one end is found to be a duplicate read.\\
+\hline
+$--$largestOverlap \newline (\code{largestOverlap}) & If specified, reads (or fragments) will be assigned to the target that has the largest number of overlapping bases.\\
+\hline
+$--$maxMOp $<int>$ \newline (\code{maxMOp}) & Specify the maximum number of `M' operations (matches or mis-matches) allowed in a CIGAR string. 10 by default. Both `X' and `=' operations are treated as `M' and adjacent `M' operations are merged in the CIGAR string. When the number of `M' operations exceeds the limit, only the first `maxMOp' number of `M' operations will be used in read assignment.\\
+\hline
+$--$minOverlap $<int>$ \newline (\code{minOverlap}) & Minimum number of overlapping bases in a read that is required for read assignment. 1 by default. If a negative value is provided, then a gap of up to specified size will be allowed between read and the feature that the read is assigned to. For assignment of read pairs (fragments), number of overlapping bases from each read from the same pair will be summed. \\
+\hline
+$--$nonOverlap $<int>$ \newline (\code{nonOverlap}) & Maximum number of non-overlapping bases in a read (or a read pair) that is allowed when being assigned to a feature. No limit is set by default. \\
+\hline
+$--$nonOverlapFeature $<int>$ \newline (\code{nonOverlapFeature}) & Maximum number of non-overlapping bases in a feature that is allowed in read assignment. No limit is set by default. \\
+\hline
+$--$nonSplitOnly \newline (\code{nonSplitOnly}) & If specified, only non-split alignments (CIGAR strings do not contain letter `N') will be counted. All the other alignments will be ignored.\\
+\hline
+$--$primary \newline (\code{primaryOnly}) & If specified, only primary alignments will be counted. Primary and secondary alignments are identified using bit 0x100 in the Flag field of SAM/BAM files. All primary alignments in a dataset will be counted no matter they are from multi-mapping reads or not (ie. `-M' is ignored).\\
+\hline
+$--$read2pos $<int>$ \newline (\code{read2pos}) & Read is reduced to its 5' most base or 3' most base. Read summarization is then performed based on the single base position to which the read is reduced. By default no read reduction is performed. Read reduction is performed after read shifting and read extension if they are also specified. \\
+\hline
+$--$readExtension3 $<int>$ \newline (\code{readExtension3}) & Reads are extended downstream by $<int>$ bases from their 3' end. 0 by default. Negative value is not allowed. Read extension is performed after read shifting but before read reduction.\\
+\hline
+$--$readExtension5 $<int>$ \newline (\code{readExtension5}) & Reads are extended upstream by $<int>$ bases from their 5' end. 0 by default. Negative value is not allowed. \\
+\hline
+$--$readShiftSize $<int>$ \newline (\code{readShiftSize}) & Reads are shifted by $<int>$ bases. 0 by default. Negative value is not allowed. \\
+\hline
+$--$readShiftType $<string>$ \newline (\code{readShiftType}) & Specify the direction in which reads are being shifted. Possible values include \code{upstream}, \code{downstream}, \code{left} and \code{right}.  \code{upstream} by default. Read shifting is performed before read extension or reduction. \\
+\hline
+$--$Rpath $<string>$ \newline (\code{reportReadsPath}) & Specify a directory to save the detailed assignment results. If unspecified, the directory where counting results are saved is used. See `-R' option for obtaining detailed assignment results for reads.\\
+\hline
+$--$splitOnly \newline (\code{splitOnly}) & If specified, only split alignments (CIGAR strings contain letter `N') will be counted. All the other alignments will be ignored. An example of split alignments is the exon-spanning reads in RNA-seq data. If exon-spanning reads need to be assigned to all their overlapping exons, `-f' and `-O' options should be provided as well.\\
+\hline
+$--$tmpDir $<string>$ \newline (\code{tmpDir}) & Directory under which intermediate files are saved (later removed). By default, intermediate files will be saved to the directory specified in `-o' argument (In \R, intermediate files are saved to the current working directory by default).\\
+\hline
+$--$verbose \newline (\code{verbose}) & Output verbose information for debugging such as unmatched chromosomes/contigs between reads and annotation.\\
+\hline
+\end{longtable}
+
+\pagebreak
+
+\section{A quick start for {\featureCounts} in SourceForge \Subread}
+
+You need to provide read mapping results (in either SAM or BAM format) and an annotation file for the read summarization.
+The example commands below assume your annotation file is in GTF format.\\
+
+\noindent Summarize BAM format single-end reads using 5 threads:\\
+
+\noindent\code{featureCounts -T 5 -a annotation.gtf -t exon -g gene\_id \\
+ -o counts.txt mapping\_results\_SE.bam}\\
+
+\noindent Summarize BAM format single-end read data:\\
+
+\noindent\code{featureCounts -a annotation.gtf -t exon -g gene\_id \\
+ -o counts.txt mapping\_results\_SE.bam}\\
+
+\noindent Summarize multiple libraries at the same time:\\
+
+\noindent\code{featureCounts -a annotation.gtf -t exon -g gene\_id \\
+ -o counts.txt mapping\_results1.bam mapping\_results2.bam}\\
+
+\noindent Summarize paired-end reads and count fragments (instead of reads):\\
+
+\noindent\code{featureCounts -p -a annotation.gtf -t exon -g gene\_id \\
+-o counts.txt mapping\_results\_PE.bam}\\
+
+\noindent Count fragments satisfying the fragment length criteria, eg. [50bp, 600bp]:\\
+
+\noindent\code{featureCounts -p -P -d 50 -D 600 -a annotation.gtf -t exon -g gene\_id\\
+-o counts.txt mapping\_results\_PE.bam}\\
+
+\noindent Count fragments which have both ends successfully aligned without considering the fragment length constraint:\\
+
+\noindent\code{featureCounts -p -B -a annotation.gtf -t exon -g gene\_id\\
+ -o counts.txt mapping\_results\_PE.bam}\\
+
+\noindent Exclude chimeric fragments from the fragment counting:\\
+
+\noindent\code{featureCounts -p -C -a annotation.gtf -t exon -g gene\_id\\
+ -o counts.txt mapping\_results\_PE.bam}
+
+
+\section{A quick start for {\featureCounts} in Bioconductor \Rsubread}
+
+You need to provide read mapping results (in either SAM or BAM format) and an annotation file for the read summarization.
+The example commands below assume your annotation file is in GTF format.\\
+
+\noindent Load {\Rsubread} library from you {\R} session:
+
+\begin{Rcode}
+library(Rsubread)
+\end{Rcode}
+
+\noindent Summarize single-end reads using built-in RefSeq annotation for mouse genome `mm10' (`mm10' is the default inbuilt genome annotation):
+\begin{Rcode}
+featureCounts(files="mapping_results_SE.bam")
+\end{Rcode}
+
+\noindent Summarize single-end reads using a user-provided GTF annotation file:
+
+\begin{Rcode}
+featureCounts(files="mapping_results_SE.bam",annot.ext="annotation.gtf",
+isGTFAnnotationFile=TRUE,GTF.featureType="exon",GTF.attrType="gene_id")
+\end{Rcode}
+
+\noindent Summarize single-end reads using 5 threads:
+
+\begin{Rcode}
+featureCounts(files="mapping_results_SE.bam",nthreads=5)
+\end{Rcode}
+
+\noindent Summarize BAM format single-end read data:
+
+\begin{Rcode}
+featureCounts(files="mapping_results_SE.bam")
+\end{Rcode}
+
+\noindent Summarize multiple libraries at the same time:
+
+\begin{Rcode}
+featureCounts(files=c("mapping_results1.bam","mapping_results2.bam"))
+\end{Rcode}
+
+\noindent Summarize paired-end reads and counting fragments (instead of reads):
+
+\begin{Rcode}
+featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE)
+\end{Rcode}
+
+\noindent Count fragments satisfying the fragment length criteria, eg. [50bp, 600bp]:
+
+\begin{Rcode}
+featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE,checkFragLength=TRUE,
+minFragLength=50,maxFragLength=600)
+\end{Rcode}
+
+\noindent Count fragments which have both ends successfully aligned without considering the fragment length constraint:
+
+\begin{Rcode}
+featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE,requireBothEndsMapped=TRUE)
+\end{Rcode}
+
+\noindent Exclude chimeric fragments from fragment counting:
+
+\begin{Rcode}
+featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE,countChimericFragments=FALSE)
+\end{Rcode}
+
+\chapter{Quantify single-cell RNA-seq data}
+
+\section{cellCounts}
+
+The \emph{cellCounts} program is developed for the quantification of single-cell RNA-seq (scRNA-seq) data generated from the 10X platform.
+With \emph{cellCounts}, the entire quantification process is simply done by just one function call.
+\emph{cellCounts} demultiplexes samples and cells and deduplicates reads.  
+It calls \emph{align} or \emph{subjunc} function to map scRNA-seq reads to a reference genome, and it calls \emph{featureCounts} function to assign UMIs (Unique Molecular Identifiers) to genomic features such as genes and exons.
+
+Note that \emph{cellCounts} is only available in the {\Rsubread} package.
+It is not available in the {\Subread} package.
+Its parameters can be found in the table below.
+
+
+\begin{longtable}{|p{4.5cm}|p{11cm}|}
+\multicolumn{2}{p{16cm}}{Table 4: Arguments used by the \code{cellCounts} program.
+The arguments are listed in the alphabetical order.}
+\endfirsthead
+\hline
+Arguments & Description \\
+\hline
+annot.ext & Specify an external annotation for UMI counting. See \code{featureCounts} for more details.\\
+\hline
+annot.inbuilt & Specify an inbuilt annotation for UMI counting. See \code{featureCounts} for more details.\\
+\hline
+cell.barcode & A character string giving the name of a text file (can be gzipped) that contains the set of cell barcodes used in sample preparation. If \code{NULL}, a cell barcode set will be determined for the input data by \code{cellCounts} based on the matching of cell barcodes sequences of the first 100,000 reads in the data with the three cell barcode sets used by 10X Genomics. \code{NULL} by default.\\
+\hline
+GTF.attrType & See \code{featureCounts} for more details. \\
+\hline
+GTF.featureType & See \code{featureCounts} for more details. \\
+\hline
+index & A character string giving the base name of index files, generated by the \code{buildindex} function, for a reference genome. \\
+\hline
+isGTFAnnotationFile & See \code{featureCounts} for more details. \\
+\hline
+sample.index & A data frame containing index set name for each sample. The data frame must contain four columns with column headers named `InputDirectory', `Lane', `SampleName' and `IndexSetName'. Note that this is not the Sample Sheet created by an Illumina sequencer. This data frame is used by \code{cellCounts} to produce a Sample Sheet which is then used to demultiplex samples. The name of an index set specifies a set of indices that were used for the sequencing of a sample. An example of the index set name is ‘SI-P01-A2’.\\
+\hline
+useMetaFeatures & Specify if UMI counting should be carried out at the meta-feature level (eg. gene level). See \code{featureCounts} for more details. \\
+\hline
+… & other parameters passed to \code{align}, \code{subjunc} and \code{featureCounts} functions. \\
+\hline
+\end{longtable}
+
+
+The \code{cellCounts} program returns a \code{List} object to R, and it also outputs three gzipped FASTQ files and one BAM file for each sample.
+The three gzipped FASTQ files include cell barcode and UMI sequences (R1), sample index sequences (I1) and the actual genomic sequences of the reads (R2), respectively. 
+The BAM file includes location-sorted read mapping results.
+
+The returned \code{List} object contains the following components:
+
+\noindent\code{counts} \\
+A \code{List} object including UMI counts for each sample. Each component in this object is a matrix that contains UMI counts for a sample. Rows in the matrix are genes and columns are cells.\\
+
+\noindent\code{annotation}\\
+A \code{data.frame} object containing an annotation (eg. a gene annotation). UMIs were assigned to features (eg. genes) in this annotation. Rows in the annotation are features. Columns of the annotation include \code{GeneID}, \code{Chr}, \code{Start}, \code{End} and \code{Length}.\\
+
+\noindent\code{sample.info}\\
+A \code{data.frame} object containing sample information and also statistics related to the quantification result. It includes the following columns: \code{SampleName}, \code{InputDirectory}, \code{TotalCells}, \code{HighConfidenceCells}, \code{RescuedCells}, \code{TotalUMI}, \code{TotalReads}, \code{MappedReads} and \code{AssignedReads}. The order of samples in this object is the same as that in the components \code{counts} and \code{cell.confidence}.\\
+
+\noindent\code{cell.confidence}\\
+A \code{List} object indicating if a cell is a high-confidence cell or a rescued cell (low confidence). Each component in the \code{List} object corresponds to a sample. Each component is a logical vector with a \code{TRUE} value indicating a high-confidence cell.
+
+
+\chapter{SNP calling}
+
+\section{Algorithm}
+
+SNPs(Single Nucleotide Polymorphisms) are the mutations of single nucleotides in the genome.
+It has been reported that many diseases were initiated and/or driven by such mutations.
+Therefore, successful detection of SNPs is very useful in designing better diagnosis and treatments for a variety of diseases such as cancer.
+SNP detection also is an important subject of many population studies.
+
+Next-gen sequencing technologies provide an unprecedented opportunity to identify SNPs at the highest resolution.
+However, it is extremely computing-intensive to analyze the data generated from these technologies for the purpose of SNP discovery  because of the sheer volume of the data and the large number of chromosomal locations to be considered.
+To discover SNPs, reads need to be mapped to the reference genome first and then all the read data mapped to a particular site will be used for SNP calling for that site.
+Discovery of SNPs is often confounded by many sources of errors.
+Mapping errors and sequencing errors are often the major sources of errors causing incorrect SNP calling.
+Incorrect alignments of indels, exon-exon junctions and structural variants in the reads can also result in wrong placement of blocks of continuous read bases, likely giving rise to consecutive incorrectly reported SNPs.
+
+We have developed a highly accurate and efficient SNP caller, called \emph{exactSNP} \cite{exactSNP}.
+\emph{exactSNP} calls SNPs for individual samples, without requiring control samples to be provided.
+It tests the statistical significance of SNPs by comparing SNP signals to their background noises.
+It has been found to be an order of magnitude faster than existing SNP callers.
+
+\section{exactSNP}
+
+Below is the command for running \code{exactSNP} program.
+The complete list of parameters used by \code{exactSNP} can be found in Table 5.\\
+
+\noindent\code{exactSNP [options] -i input -g reference\_genome -o output}\\
+
+
+\begin{longtable}{|p{4.5cm}|p{11cm}|}
+\multicolumn{2}{p{16cm}}{Table 5: Arguments used by the \code{exactSNP} program included in the SourceForge {\Subread} package in alphabetical order.
+Arguments included in parenthesis are the equivalent parameters used by \code{exactSNP} function in Bioconductor {\Rsubread} package.}
+\endfirsthead
+\hline
+Arguments & Description \\
+\hline
+-a $<file>$ \newline (SNPAnnotationFile) & Specify name of a VCF-format file that includes annotated SNPs. Such annotation files can be downloaded from public databases such as the dbSNP database. Gzipped file is accepted. Incorporating known SNPs into SNP calling has been found to be helpful. However note that the annotated SNPs may or may not be called for the sample being analyzed. \\
+\hline
+-b \newline (isBAM) & Indicate the input file provided via $-i$ is in BAM format. \\
+\hline
+-f $<float>$ \newline (minAllelicFraction) & Specify the minimum fraction of mis-matched bases a SNP-containing location must have. Its value must between 0 and 1. 0 by default. \\
+\hline
+-g $<file>$ \newline (refGenomeFile) & Specify name of the file including all reference sequences. Only one single FASTA format file should be provided. \\
+\hline
+-i $<file> [-b\ if\ BAM] \newline (readFile)$ & Specify name of an input file including read mapping results. The format of input file can be SAM or BAM  (\code{-b} needs to be specified if a BAM file is provided).\\
+\hline
+-n $<int>$ \newline (minAllelicBases) & Specify the minimum number of mis-matched bases a SNP-containing location must have. 1 by default.\\
+\hline
+-o $<file>$ \newline (outputFile) & Specify name of the output file. This program outputs a VCF format file that includes discovered SNPs. \\
+\hline
+-Q $<int>$  \newline (qvalueCutoff) &  Specify the q-value cutoff for SNP calling at sequencing depth of 50X. 12 by default. The corresponding p-value cutoff is $10^{-Q}$. Note that this program automatically adjusts the q-value cutoff according to the sequencing depth at each chromosomal location.\\
+\hline
+-r $<int>$ \newline (minReads) & Specify the minimum number of mapped reads a SNP-containing location must have (ie. the minimum coverage). 1 by default. \\
+\hline
+-s $<int>$ \newline (minBaseQuality) & Specify the cutoff for base calling quality scores (Phred scores) read bases must satisfy to be used for SNP calling. 13 by default. Read bases that have Phred scores lower than the cutoff value will be excluded from the analysis. \\
+\hline
+-t $<int>$ \newline (nTrimmedBases) & Specify the number of bases trimmed off from each end of the read. 3 by default. \\
+\hline
+-T $<int>$ \newline (nthreads) & Specify the number of threads. 1 by default. \\
+\hline
+-v & Output version of the program. \\
+\hline
+-x $<int>$ \newline (maxReads) & Specify the maximum depth a SNP location is allowed to have. 1,000,000 reads by default. Any location having more reads than the maximum allowed depth will not be considered for SNP calling. This option is useful for removing PCR artefacts. \\
+\hline
+\end{longtable}
+
+
+
+\chapter{Utility programs}
+
+Usage info for each utility program can be seen by just typing the program name on the command prompt.
+
+\section{repair}
+
+This program takes as input a paired-end BAM file and places reads from the same pair next to each other in its output.
+BAM files generated by {\repair} are compatible with {\featureCounts} program, ie they will not be re-sorted by {\featureCounts}.
+Note that you do not have to run {\repair} before running {\featureCounts}.
+{\featureCounts} calls {\repair} automatically if it finds that reads need to be re-sorted.
+
+The {\repair} program uses a novel approach to quickly find reads from the same pair, rather than performing time-consuming sort of read names.
+It takes only about half a minute to re-order a location-sorted BAM file including 30 million read pairs.
+
+\section{flattenGTF}
+
+Flatten features (eg. exons) provided in a GTF annotation and output the modified annotation to a SAF format annotation.
+If overlapping features are found in the GTF annotation, this function can combine them to form a single large feature encompassing all the original features, or chop them into non-overlapping bins. 
+
+\section{promoterRegions}
+
+This function is only implemented in {\Rsubread}. It generates a SAF format annotation that includes coordinates of promoter regions for each gene.
+
+\section{propmapped}
+
+Get number of mapped reads from a BAM/SAM file.
+
+\section{qualityScores}
+
+Retrieve Phred scores for read bases from a Fastq/BAM/SAM file.
+
+\section{removeDup}
+
+Remove duplicated reads from a SAM/BAM file. 
+In {\Rsubread} this function is called \textsf{removeDupReads}.
+
+\section{subread-fullscan}
+
+Get all chromosomal locations that contain a genomic sequence sharing high homology with a given input sequence.
+
+\section{txUnique}
+
+This function is only implemented in {\Rsubread}. It counts the number of bases unique to each transcript.
+
+\chapter{Case studies}
+
+\section{A Bioconductor R pipeline for analyzing RNA-seq data}
+
+Here we illustrate how to use two Bioconductor packages - {\Rsubread} and {\limma} - to perform a complete RNA-seq analysis, including {\Subread} read mapping, {\featureCounts} read summarization, {\voom} normalization and {\limma} differential expresssion analysis.\\
+
+{\noindent\bf Data and software.} The RNA-seq data used in this case study include four libraries: A\_1, A\_2, B\_1 and B\_2.
+Sample A is Universal Human Reference RNA (UHRR) and sample B is Human Brain Reference RNA (HBRR).
+A\_1 and A\_2 are two replicates of sample A (undergoing separate sample preparation), and B\_1 and B\_2 are two replicates of sample B.
+In this case study, A\_1 and A\_2 are treated as biological replicates although they are more like technical replicates.
+B\_1 and B\_2 are treated as biological replicates as well.
+
+Note that these libraries only included reads originating from human chromosome 1 (according to {\Subread} aligner).
+Reads were generated by the MAQC/SEQC Consortium.
+Data used in this case study can be downloaded from\\
+\url{http://bioinf.wehi.edu.au/RNAseqCaseStudy/data.tar.gz} (283MB).
+Both read data and reference sequence for chromosome 1 of human genome (GRCh37) were included in the data.
+
+After downloading the data, you can uncompress it and save it to your current working directory.
+Launch {\R} and load {\Rsubread}, {\limma} and {\edgeR} libraries by issuing the following commands at your R prompt.
+Version of your {\R} should be 3.0.2 or later.
+{\Rsubread} version should be 1.12.1 or later and {\limma} version should be 3.18.0 or later.
+Note that this case study only runs on Linux/Unix and Mac OS X.
+
+\begin{Rcode}
+library(Rsubread)
+library(limma)
+library(edgeR)
+\end{Rcode}
+
+To install/update {\Rsubread} and {\limma} packages, issue the following commands at your R prompt:
+\begin{Rcode}
+source("http://bioconductor.org/biocLite.R")
+biocLite(pkgs=c("Rsubread","limma","edgeR"))
+\end{Rcode}
+
+{\noindent\bf Index building.} Build an index for human chromosome 1. This typically takes $\sim$3 minutes. Index files with basename `chr1' will be generated in your current working directory.
+
+\begin{Rcode}
+buildindex(basename="chr1",reference="hg19_chr1.fa")
+\end{Rcode}
+
+{\noindent\bf Alignment.} Perform read alignment for all four libraries and report uniquely mapped reads only. This typically takes $\sim$5 minutes. BAM files containing the mapping results will be generated in your current working directory.
+
+\begin{Rcode}
+targets <- readTargets()
+align(index="chr1",readfile1=targets$InputFile,output_file=targets$OutputFile)
+\end{Rcode}
+
+{\noindent\bf Read summarization.} Summarize mapped reads to NCBI RefSeq genes.
+This will only take a few seconds.
+Note that the {\featureCounts} function contains built-in RefSeq annotations for human and mouse genes.
+{\featureCounts} returns an {\R} `List' object, which includes raw read count for each gene in each library and also annotation information such as gene identifiers and gene lengths.
+
+\begin{Rcode}
+fc <- featureCounts(files=targets$OutputFile,annot.inbuilt="hg19")
+
+fc$counts[1:5,]
+          A_1.bam A_2.bam B_1.bam B_2.bam
+653635        642     522     591     596
+100422834       1       0       0       0
+645520          5       3       0       0
+79501           0       0       0       0
+729737         82      72      30      25
+
+fc$annotation[1:5,c("GeneID","Length")]
+     GeneID Length
+1    653635   1769
+2 100422834    138
+3    645520   1130
+4     79501    918
+5    729737   3402
+\end{Rcode}
+
+Create a {\DGEList} object.
+\begin{Rcode}
+x <- DGEList(counts=fc$counts, genes=fc$annotation[,c("GeneID","Length")])
+\end{Rcode}
+
+%Calculate RPKM (reads per kilobases of exon per million reads mapped) values for genes:
+%\begin{Rcode}
+%x_rpkm <- rpkm(x,x$genes$Length,prior.count=0)
+%
+%x_rpkm[1:5,]
+%          A_1.bam A_2.bam B_1.bam B_2.bam
+%653635        939   905.0     709     736
+%100422834      19     0.0       0       0
+%645520         11     8.1       0       0
+%79501           0     0.0       0       0
+%729737         62    64.9      19      16
+%\end{Rcode}
+
+
+{\noindent\bf Filtering.} Only keep in the analysis those genes which had $>$10 reads per million mapped reads in at least two libraries.
+
+\begin{Rcode}
+isexpr <- rowSums(cpm(x) > 10) >= 2
+x <- x[isexpr,]
+\end{Rcode}
+
+{\noindent\bf Design matrix.} Create a design matrix: 
+
+\begin{Rcode}
+celltype <- factor(targets$CellType)
+design <- model.matrix(~0+celltype)
+colnames(design) <- levels(celltype)
+\end{Rcode}
+
+{\noindent\bf Normalization.} Perform {\voom} normalization: 
+
+\begin{Rcode}
+y <- voom(x,design,plot=TRUE)
+\end{Rcode}
+
+The figure below shows the mean-variance relationship estimated by voom.
+\begin{center}
+\includegraphics[scale=0.3]{voom_mean_variance.png}
+\end{center}
+
+{\noindent\bf Sample clustering.} Multi-dimensional scaling (MDS) plot shows that sample A libraries are clearly separated from sample B libraries.
+
+\begin{Rcode}
+plotMDS(y,xlim=c(-2.5,2.5))
+\end{Rcode}
+
+\begin{center}
+\includegraphics[scale=0.5]{MDSplot.png}
+\end{center}
+
+{\noindent\bf Linear model fitting and differential expression analysis.} Fit linear models to genes and assess differential expression using eBayes moderated t statistic.
+Here we compare sample B vs sample A.
+
+\begin{Rcode}
+fit <- lmFit(y,design)
+contr <- makeContrasts(BvsA=B-A,levels=design)
+fit.contr <- eBayes(contrasts.fit(fit,contr))
+dt <- decideTests(fit.contr)
+summary(dt)
+   BvsA
+-1  922
+0   333
+1   537
+\end{Rcode}
+
+List top 10 differentially expressed genes: 
+
+\begin{Rcode}
+options(digits=2)
+topTable(fit.contr)
+             GeneID Length logFC AveExpr   t P.Value adj.P.Val  B
+100131754 100131754   1019   1.6      16 113 3.5e-28   6.3e-25 54
+2023           2023   1812  -2.7      13 -91 2.2e-26   1.9e-23 51
+2752           2752   4950   2.4      13  82 1.5e-25   9.1e-23 49
+22883         22883   5192   2.3      12  64 1.8e-23   7.9e-21 44
+6135           6135    609  -2.2      12 -62 3.1e-23   9.5e-21 44
+6202           6202    705  -2.4      12 -62 3.2e-23   9.5e-21 44
+4904           4904   1546  -3.0      11 -60 5.5e-23   1.4e-20 43
+23154         23154   3705   3.7      11  55 2.9e-22   6.6e-20 41
+8682           8682   2469   2.6      12  49 2.2e-21   4.3e-19 39
+6125           6125   1031  -2.0      12 -48 3.1e-21   5.6e-19 39
+\end{Rcode}
+
+
+\bibliographystyle{unsrt}
+\bibliography{SubreadUsersGuide}
+
+
+\end{document}
