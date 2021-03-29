@@ -2,6 +2,8 @@
 The Subread software package is a tool kit for processing next-gen sequencing data. It includes Subread aligner, Subjunc exon-exon junction detector and featureCounts read summarization program.
 
 # Installation
+The latest releases can be downloaded from the [release page](https://github.com/ShiLab-Bioinformatics/subread/releases).
+
 ## Installation from a binary package
 The easist way to installing Subread on Linux, Windows and macOS is to directly download the binary packages on our Release page. Simply decompress the package and the programs will be in the "/bin" directory.
 
