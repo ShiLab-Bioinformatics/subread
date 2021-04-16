@@ -38,6 +38,9 @@ $ sh test_all.sh
 # Usage
 The usages of the programs in this package can be found in the users-guide in the "/doc" directory.
 
+# PhD projects
+PhD projects are available for further development of the Subread package, including the development of new methods for analyzing single-cell sequencing data. For any inquiries, please contact [Prof Wei Shi](https://www.onjcri.org.au/about-us/wei-shi/).
+
 # Citation
 We have published papers on our Subread/Subjunc read aligners and featureCounts read quantifiers:
 
