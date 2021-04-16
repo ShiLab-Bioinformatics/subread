@@ -38,12 +38,14 @@ $ sh test_all.sh
 ## Usage
 The usages of the programs in this package can be found in the users-guide in the "/doc" directory.
 
-## PhD projects
-PhD projects are available for further development of the Subread package, including the development of new methods for analyzing single-cell sequencing data. For any inquiries, please contact [Prof Wei Shi](https://www.onjcri.org.au/about-us/wei-shi/).
-
 ## Citation
 We have published papers on our Subread/Subjunc read aligners and featureCounts read quantifiers:
 
 1. The Subread aligner: fast, accurate and scalable read mapping by seed-and-vote, ***Y Liao, GK Smyth, W Shi***, Nucleic acids research, 2013 [PMID:23558742](https://pubmed.ncbi.nlm.nih.gov/23558742/)
 
 2. featureCounts: an efficient general purpose program for assigning sequence reads to genomic features, ***Y Liao, GK Smyth, W Shi***, Bioinformatics, 2014 [PMID:24227677](https://pubmed.ncbi.nlm.nih.gov/24227677/)
+
+3. The R package Rsubread is easier, faster, cheaper and better for alignment and quantification of RNA sequencing reads, ***Y Liao, GK Smyth, W Shi***,  Nucleic acids research, 2019 [PMID:30783653](https://pubmed.ncbi.nlm.nih.gov/30783653/)
+
+## PhD projects
+PhD projects are available for further development of the Subread package, including the development of new methods for analyzing single-cell sequencing data. For any inquiries, please contact [Prof Wei Shi](https://www.onjcri.org.au/about-us/wei-shi/).
