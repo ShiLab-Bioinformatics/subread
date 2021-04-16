@@ -7,6 +7,9 @@ The latest releases can be downloaded from the [release page](https://github.com
 ### Installation from a binary package
 The easist way to installing Subread on Linux, Windows and macOS is to directly download the binary packages on our Release page. Simply decompress the package and the programs will be in the "/bin" directory.
 
+### Installation in the R environment
+We also provide an R version of our package, [Rsubread](http://bioconductor.org/packages/Rsubread), on Bioconductor. You can follow the instructions on the Rsubread webpage to install it in R.
+
 ### Installation from the source code
 An experienced user may also try building the binary programs from source code. To this end, some programs and libraries are necessary.
 
@@ -39,7 +42,7 @@ $ sh test_all.sh
 The usages of the programs in this package can be found in the users-guide in the "/doc" directory.
 
 ## Citation
-We have published papers on our Subread/Subjunc read aligners and featureCounts read quantifiers. We also provide an R version of our package, [Rsubread](http://bioconductor.org/packages/Rsubread), on Bioconductor.
+We have published papers on our Subread/Subjunc read aligners and featureCounts read quantifiers.
 
 1. The Subread aligner: fast, accurate and scalable read mapping by seed-and-vote, ***Y Liao, GK Smyth, W Shi***, Nucleic acids research, 2013 [PMID:23558742](https://pubmed.ncbi.nlm.nih.gov/23558742/)
 
