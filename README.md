@@ -23,7 +23,7 @@ $ make -f Makefile.Linux (for Linux)
 $ make -f Makefile.MacOS (for macOS)
 $ make -f Makefile.Windows (for Windows)
 ```
-The executable programs will be moved to the "/bin" directory. Because our dependency is minimum, we do not use autoconf to generate the Makefiles. 
+The executable programs will be moved to the "/bin" directory. Because we want to minimise the dependency to other packages, we do not use autoconf to generate the Makefiles. 
 
 ### Testing the installation
 After installation, you may test the programs to see if it works.
