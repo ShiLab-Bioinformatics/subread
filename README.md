@@ -23,10 +23,10 @@ $ make -f Makefile.Linux (for Linux)
 $ make -f Makefile.MacOS (for macOS)
 $ make -f Makefile.Windows (for Windows)
 ```
-The products will be moved to the "/bin" directory. Because our dependency is minimum, we do not use autoconf to generate the Makefiles. 
+The executable programs will be moved to the "/bin" directory. Because our dependency is minimum, we do not use autoconf to generate the Makefiles. 
 
 ### Testing the installation
-After installation, you may test the programs to see if it can work.
+After installation, you may test the programs to see if it works.
 
 The Subread package incorporates many small testcases that cover most of its functions. No matter if Subread is installed from the source code or a binary package, you can run "test_all.sh" in the "/test" directory. This assumes that you have a Shell program and a Python2 interpreter in PATH.
 
