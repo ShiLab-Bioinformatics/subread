@@ -1,13 +1,13 @@
 # Subread
 The Subread software package is a tool kit for processing next-gen sequencing data. It includes Subread aligner, Subjunc exon-exon junction detector and featureCounts read summarization program.
 
-# Installation
+## Installation
 The latest releases can be downloaded from the [release page](https://github.com/ShiLab-Bioinformatics/subread/releases).
 
-## Installation from a binary package
+### Installation from a binary package
 The easist way to installing Subread on Linux, Windows and macOS is to directly download the binary packages on our Release page. Simply decompress the package and the programs will be in the "/bin" directory.
 
-## Installation from the source code
+### Installation from the source code
 An experienced user may also try building the binary programs from source code. To this end, some programs and libraries are necessary.
 
 1. A C language compiler. It can be gcc or clang or anything. Intel CC should work well but we have not tried it on our source code.
@@ -25,7 +25,7 @@ $ make -f Makefile.Windows (for Windows)
 ```
 The products will be moved to the "/bin" directory. Because our dependency is minimum, we do not use autoconf to generate the Makefiles. 
 
-## Testing the installation
+### Testing the installation
 After installation, you may test the programs to see if it can work.
 
 The Subread package incorporates many small testcases that cover most of its functions. No matter if Subread is installed from the source code or a binary package, you can run "test_all.sh" in the "/test" directory. This assumes that you have a Shell program and a Python2 interpreter in PATH.
@@ -35,13 +35,13 @@ $ cd test
 $ sh test_all.sh
 ```
 
-# Usage
+## Usage
 The usages of the programs in this package can be found in the users-guide in the "/doc" directory.
 
-# PhD projects
+## PhD projects
 PhD projects are available for further development of the Subread package, including the development of new methods for analyzing single-cell sequencing data. For any inquiries, please contact [Prof Wei Shi](https://www.onjcri.org.au/about-us/wei-shi/).
 
-# Citation
+## Citation
 We have published papers on our Subread/Subjunc read aligners and featureCounts read quantifiers:
 
 1. The Subread aligner: fast, accurate and scalable read mapping by seed-and-vote, ***Y Liao, GK Smyth, W Shi***, Nucleic acids research, 2013 [PMID:23558742](https://pubmed.ncbi.nlm.nih.gov/23558742/)
