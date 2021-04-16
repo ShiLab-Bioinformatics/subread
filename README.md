@@ -39,7 +39,7 @@ $ sh test_all.sh
 The usages of the programs in this package can be found in the users-guide in the "/doc" directory.
 
 ## Citation
-We have published papers on our Subread/Subjunc read aligners and featureCounts read quantifiers:
+We have published papers on our Subread/Subjunc read aligners and featureCounts read quantifiers. We also provide an R version of our package, [Rsubread](http://bioconductor.org/packages/Rsubread), on Bioconductor.
 
 1. The Subread aligner: fast, accurate and scalable read mapping by seed-and-vote, ***Y Liao, GK Smyth, W Shi***, Nucleic acids research, 2013 [PMID:23558742](https://pubmed.ncbi.nlm.nih.gov/23558742/)
 
