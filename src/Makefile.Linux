@@ -19,10 +19,10 @@ ALL_OBJECTS=$(addsuffix .o, ${ALL_LIBS})
 ALL_H=$(addsuffix .h, ${ALL_LIBS})
 ALL_C=$(addsuffix .c, ${ALL_LIBS})
 
-all: genRandomReads detectionCall sublong repair txUnique featureCounts removeDup exactSNP subread-buildindex subindel  subread-align subjunc qualityScores subread-fullscan propmapped flattenGTF # samMappedBases mergeVCF  testZlib
+all: genRandomReads detectionCall sublong repair txUnique featureCounts removeDup exactSNP subread-buildindex subindel  subread-align subjunc qualityScores subread-fullscan propmapped flattenGTF cell-counts # samMappedBases mergeVCF  testZlib 
 	mkdir -p ../bin/utilities
 	mv longread-one/LRM longread-one/sublong
-	mv longread-one/sublong subread-align subjunc featureCounts  subindel exactSNP subread-buildindex ../bin/
+	mv longread-one/sublong subread-align subjunc featureCounts  subindel exactSNP subread-buildindex cell-counts ../bin/
 	mv detectionCall genRandomReads repair propmapped qualityScores removeDup subread-fullscan txUnique flattenGTF ../bin/utilities
 	@echo
 	@echo "###########################################################"
@@ -89,6 +89,9 @@ qualityScores: qualityScores.c ${ALL_OBJECTS}
 
 subread-fullscan: fullscan.c  ${ALL_OBJECTS}
 	${CC} -o subread-fullscan fullscan.c  ${ALL_OBJECTS}  ${LDFLAGS}
+
+cell-counts: cell-counts.c  ${ALL_OBJECTS}
+	${CC} -o cell-counts cell-counts.c   ${ALL_OBJECTS}  ${LDFLAGS}
 
 clean:
 	rm -f core featureCounts exactSNP removeDup subread-buildindex ${ALL_OBJECTS}

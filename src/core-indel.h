@@ -201,4 +201,6 @@ void print_indel_table(global_context_t * global_context);
 int sort_junction_entry_table(global_context_t * global_context);
 void mark_event_bitmap(unsigned char * bitmap, unsigned int pos);
 int check_event_bitmap(unsigned char * bitmap, unsigned int pos);
+int localPointerCmp_forEventEntry(const void *pointer1, const void *pointer2);
+srUInt_64 localPointerHashFunction_forEventEntry(const void *pointer);
 #endif

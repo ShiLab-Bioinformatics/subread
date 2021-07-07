@@ -1468,13 +1468,11 @@ int search_event(global_context_t * global_context, HashTable * event_table, chr
 }
 
 
-void get_insertion_sequence(global_context_t * global_context, thread_context_t * thread_context , char * binary_bases , char * read_text , int insertions)
-{
+void get_insertion_sequence(global_context_t * global_context, thread_context_t * thread_context , char * binary_bases , char * read_text , int insertions) {
 	int xk1;
 	read_text[0]=0;
 
-	for(xk1=0; xk1<insertions; xk1++)
-	{
+	for(xk1=0; xk1<insertions; xk1++) {
 		int byte_no = xk1/4;
 		int bit_no = 2*(xk1%4);
 		
@@ -1483,8 +1481,7 @@ void get_insertion_sequence(global_context_t * global_context, thread_context_t 
 	read_text[insertions]=0;
 }
 
-void set_insertion_sequence(global_context_t * global_context, thread_context_t * thread_context , char ** binary_bases , char * read_text , int insertions)
-{
+void set_insertion_sequence(global_context_t * global_context, thread_context_t * thread_context , char ** binary_bases , char * read_text , int insertions) {
 	int xk1;
 
 	(*binary_bases) = malloc((1+insertions)/4+2);
@@ -1493,8 +1490,7 @@ void set_insertion_sequence(global_context_t * global_context, thread_context_t 
 	assert(insertions <= MAX_INSERTION_LENGTH);
 	memset((*binary_bases),0, (1+insertions)/4+2);
 
-	for(xk1=0; xk1<insertions;xk1++)
-	{
+	for(xk1=0; xk1<insertions;xk1++) {
 		int byte_no = xk1/4;
 		int bit_no = 2*(xk1%4);
 
@@ -1502,8 +1498,7 @@ void set_insertion_sequence(global_context_t * global_context, thread_context_t 
 	}
 }
 
-chromosome_event_t * local_add_indel_event(global_context_t * global_context, thread_context_t * thread_context, HashTable * event_table, char * read_text, unsigned int left_edge, int indels, int score_supporting_read_added, int is_ambiguous, int mismatched_bases,int * old_event_id)
-{
+chromosome_event_t * local_add_indel_event(global_context_t * global_context, thread_context_t * thread_context, HashTable * event_table, char * read_text, unsigned int left_edge, int indels, int score_supporting_read_added, int is_ambiguous, int mismatched_bases,int * old_event_id) {
 		chromosome_event_t * found = NULL;
 		chromosome_event_t * search_return [MAX_EVENT_ENTRIES_PER_SITE];
 

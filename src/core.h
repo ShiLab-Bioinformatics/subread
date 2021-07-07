@@ -349,7 +349,6 @@ typedef struct{
 
 typedef struct
 {
-
 	unsigned int selected_position;
 	short result_flags;
 	short read_length;
@@ -366,7 +365,6 @@ typedef struct
 	unsigned short confident_coverage_end;
 
 	short subread_quality; 
-
 } mapping_result_t;
 
 typedef struct{
