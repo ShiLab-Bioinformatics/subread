@@ -4,6 +4,7 @@
 #include "gene-algorithms.h"
 #include "input-files.h"
 #include "input-blc.h"
+#include "core-junction.h"
 
 
 typedef struct
@@ -50,6 +51,7 @@ typedef struct{
 	int max_indel_length;
 	int max_top_vote_simples;
 	int max_vote_number_cutoff;
+	int max_mismatching_bases_in_reads;
 	int min_votes_per_mapped_read;
 	int total_subreads_per_read;
 
@@ -80,6 +82,13 @@ typedef struct{
 	gene_input_t input_dataset;
 	subread_lock_t input_dataset_lock;
 	subread_lock_t output_lock;
+
+	char cell_barcode_list_file[MAX_FILE_NAME_LENGTH];
+	char bcl_sample_sheet_file[MAX_FILE_NAME_LENGTH];
+	int known_cell_barcode_length;
+	HashTable * cell_barcode_head_tail_table;
+	ArrayList * cell_barcodes_array;
+	
 	
 	char features_annotation_file[MAX_FILE_NAME_LENGTH];
 	char features_annotation_alias_file[MAX_FILE_NAME_LENGTH];
@@ -100,6 +109,45 @@ typedef struct{
 typedef struct{
 	int thread_no;
 } cellcounts_final_thread_t;
+
+#define IMPOSSIBLE_MEMORY_SPACE 0x5CAFEBABE0000000llu
+
+void cellCounts_cell_barcode_tabel_destroy(void *a){
+	if(((a-NULL) & 0xfffffffff0000000llu ) ==IMPOSSIBLE_MEMORY_SPACE )return;
+	ArrayListDestroy((ArrayList*)a);
+}
+
+void cellCounts_make_barcode_HT_table(cellcounts_global_t * cct_context){
+	int xx1,xx2;
+	cct_context -> cell_barcode_head_tail_table = StringTableCreate(600000);
+	HashTableSetDeallocationFunctions(cct_context -> cell_barcode_head_tail_table, free, cellCounts_cell_barcode_tabel_destroy);
+
+	for(xx1=0;xx1 < cct_context-> cell_barcodes_array -> numOfElements; xx1++){
+		char * bc = ArrayListGet(cct_context-> cell_barcodes_array, xx1);
+		int bcl =strlen(bc);
+		if(cct_context -> known_cell_barcode_length==0) cct_context -> known_cell_barcode_length=bcl;
+		if(bcl!=cct_context -> known_cell_barcode_length){
+			SUBREADprintf("ERROR: the cell barcode list must contain equal-length strings!\n");
+		}
+		char bctmp[20];
+		HashTablePut(cct_context -> cell_barcode_head_tail_table, strdup(bc), NULL+xx1+IMPOSSIBLE_MEMORY_SPACE);
+		for(xx2=0; xx2<2; xx2++){
+			bctmp[0] = xx2?'S':'F';
+			int xx3;
+			for(xx3 = 0; xx3< cct_context -> known_cell_barcode_length/2; xx3++)
+				bctmp[xx3+1] = bc[ xx3*2+xx2 ];
+			bctmp[bcl/2+1]=0;
+
+			ArrayList * array_of_codes = HashTableGet(cct_context -> cell_barcode_head_tail_table, bctmp);
+			if(!array_of_codes){
+				array_of_codes = ArrayListCreate(4);
+				HashTablePut(cct_context -> cell_barcode_head_tail_table, strdup(bctmp), array_of_codes);
+			}
+			ArrayListPush(array_of_codes, NULL+xx1);
+		}
+	}
+}
+
 
 int features_load_one_line(char * gene_name, char * transcript_name, char * chro_name, unsigned int start, unsigned int end, int is_negative_strand, void * context){
 	cellcounts_global_t * cct_context = context;
@@ -137,6 +185,9 @@ static struct option cellCounts_long_options[]={
 	{"annotationType", required_argument ,0,0},
 	{"annotationChroAlias", required_argument ,0,0},
 
+	{"cellBarcodeFile",required_argument, 0,0},
+	{"sampleSheetFile",required_argument, 0,0},
+
 	{0,0,0,0}
 };
 
@@ -153,12 +204,24 @@ int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** 
 	cct_context -> reads_per_chunk = 30000000;
 	cct_context -> max_best_alignments = 1;
 	cct_context -> max_voting_simples = 5;
+	cct_context -> max_mismatching_bases_in_reads = 3;
 	cct_context -> max_voting_locations = 3;
 	cct_context -> max_indel_length = 5;
 	cct_context -> max_top_vote_simples = 3;
 	cct_context -> max_vote_number_cutoff = 2;
 	cct_context -> min_votes_per_mapped_read = 3;
 	cct_context -> total_subreads_per_read = 10;
+
+	if(1){
+		SUBREADprintf("WARNINGqqq: small-chunk!\n");
+		SUBREADprintf("WARNINGqqq: small-chunk!\n");
+		SUBREADprintf("WARNINGqqq: small-chunk!\n");
+		SUBREADprintf("WARNINGqqq: small-chunk!\n");
+		SUBREADprintf("WARNINGqqq: small-chunk!\n");
+		SUBREADprintf("WARNINGqqq: small-chunk!\n");
+		cct_context -> reads_per_chunk /= 9;
+	}
+
 
 	while (1){
 		c = getopt_long(argc, argv, "", cellCounts_long_options, &option_index);
@@ -194,6 +257,12 @@ int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** 
 		if(strcmp("isGTFannotation", cellCounts_long_options[option_index].name)==0){
 			cct_context -> features_annotation_file_type = FILE_TYPE_GTF;
 		}
+		if(strcmp("cellBarcodeFile", cellCounts_long_options[option_index].name)==0){
+			strncpy(cct_context -> cell_barcode_list_file, optarg, MAX_FILE_NAME_LENGTH -1);
+		}
+		if(strcmp("sampleSheetFile", cellCounts_long_options[option_index].name)==0){
+			strncpy(cct_context -> bcl_sample_sheet_file, optarg, MAX_FILE_NAME_LENGTH -1);
+		}
 	}
 	return 0;
 }
@@ -212,8 +281,26 @@ int determine_total_index_blocks(cellcounts_global_t * cct_context){
 
 #define EXONIC_REGION_RESOLUTION 16
 
+int cellCounts_load_scRNA_tables(cellcounts_global_t * cct_context){
+	int rv = 0;
+	cct_context-> cell_barcodes_array = input_BLC_parse_CellBarcodes( cct_context-> cell_barcode_list_file );
+	if(NULL == cct_context-> cell_barcodes_array) rv = 1;
+	if(!rv)cellCounts_make_barcode_HT_table( cct_context );
+	return rv;
+}
+
+int cellCounts_load_base_value_indexes(cellcounts_global_t * cct_context){
+	int block_no, rv=0;
+	for(block_no = 0; block_no< cct_context->total_index_blocks; block_no++) {
+		char tmp_fname[MAX_FILE_NAME_LENGTH+ 30];
+		sprintf(tmp_fname, "%s.%02d.b.array", cct_context ->index_prefix, block_no);
+		rv = rv || gvindex_load(&cct_context -> all_value_indexes[block_no], tmp_fname);
+	}
+	return rv;
+}
+
 int cellCounts_load_context(cellcounts_global_t * cct_context){
-	int rv = 0, block_no;
+	int rv = 0;
 
 	if(cct_context -> input_mode == GENE_INPUT_BCL)
 		rv = rv || geinput_open_bcl(cct_context -> input_dataset_name , & cct_context -> input_dataset , cct_context -> reads_per_chunk, cct_context -> total_threads);
@@ -228,12 +315,8 @@ int cellCounts_load_context(cellcounts_global_t * cct_context){
 	rv = rv || ((cct_context -> exonic_region_bitmap = calloc(bitmap_size, 1))==NULL);
 	int voting_location_table_items = cct_context -> reads_per_chunk * max(cct_context -> max_voting_locations, cct_context -> max_best_alignments);
 	rv = rv || ((cct_context->voting_location_table = calloc(sizeof(voting_location_t), voting_location_table_items))==NULL);
-
-	if(!rv)for(block_no = 0; block_no< cct_context->total_index_blocks; block_no++) {
-		char tmp_fname[MAX_FILE_NAME_LENGTH+ 30];
-		sprintf(tmp_fname, "%s.%02d.b.array", cct_context ->index_prefix, block_no);
-		rv = rv || gvindex_load(&cct_context -> all_value_indexes[block_no], tmp_fname);
-	}
+	rv = rv || cellCounts_load_base_value_indexes(cct_context);
+	rv = rv || cellCounts_load_scRNA_tables(cct_context);
 
 	return rv;
 }
@@ -241,6 +324,7 @@ int cellCounts_load_context(cellcounts_global_t * cct_context){
 int cellCounts_destroy_context(cellcounts_global_t * cct_context){
 	geinput_close(&cct_context -> input_dataset);
 	destroy_offsets(&cct_context->chromosome_table);
+	free(cct_context->event_space_dynamic);
 	free(cct_context->voting_location_table);
 	free(cct_context->exonic_region_bitmap);
 	return 0;
@@ -328,7 +412,7 @@ typedef struct{
 	char out_strands[CIGAR_PERFECT_SECTIONS];
 
 	char additional_information[CORE_ADDITIONAL_INFO_LENGTH + 1];
-	mapping_result_t * raw_result;
+	voting_location_t * raw_result;
 
 	unsigned int linear_position;
 	short soft_clipping_movements;
@@ -347,7 +431,7 @@ typedef struct{
 	char * out_cigar_buffer[CIGAR_PERFECT_SECTIONS];
 	cellCounts_output_tmp_t *r1;
 	cellCounts_output_tmp_t ** out_pairs;
-	mapping_result_t ** out_raws;
+	voting_location_t ** out_raws;
 } cellCounts_output_context_t;
 
 voting_location_t * cellCounts_global_retrieve_alignment_ptr(cellcounts_global_t * cct_context, subread_read_number_t pair_number, int best_voting_loc_id){
@@ -396,12 +480,9 @@ unsigned int cellCounts_calc_end_pos(unsigned int p, char * cigar, unsigned int 
 	return cursor;
 
 }
+unsigned int cellCounts_explain_read(cellcounts_global_t * cct_context, int thread_no, realignment_result_t * realigns, subread_read_number_t pair_number,int read_len, char * read_name , char *read_text, char *qual,  int voting_loc_no, int is_negative_strand);
 
 void cellCounts_write_realignments_for_fragment(cellcounts_global_t * cct_context, int thread_no, cellCounts_output_context_t * out_context, unsigned int read_number, realignment_result_t * res, char * read_name, char * read_text, char * qual_text, int rlen, int multi_mapping_number, int this_multi_mapping_i){
-}
-
-unsigned int cellCounts_explain_read(cellcounts_global_t * cct_context, int thread_no, realignment_result_t * realigns, subread_read_number_t pair_number,int read_len, char * read_name , char *read_text, char *qual,  int voting_loc_no, int is_negative_strand){
-	return 0;
 }
 
 int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no){
@@ -437,18 +518,12 @@ int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no
 	final_realignments = malloc(sizeof(realignment_result_t) * cct_context -> max_voting_locations * MAX_ALIGNMENT_PER_ANCHOR);
 	final_realignment_number = malloc(sizeof(int) * cct_context -> max_voting_locations );
 
-	mapping_result_t * align_result_buffer = malloc(sizeof(mapping_result_t) * cct_context -> max_voting_locations);
-
 	while(1) {
-		int max_votes;
-
 		cellCounts_fetch_next_read_pair(cct_context, thread_no,  &read_len, read_name, read_text, qual_text, &current_read_number);
 		// if no more reads
 		if(current_read_number < 0) break;
 		strcpy(raw_read_text, read_text);
 		strcpy(raw_qual_text, qual_text);
-
-		max_votes = cellCounts_global_retrieve_alignment_ptr(cct_context, current_read_number, 0)->selected_votes;
 
 		int voting_loc_no=0;
 		int step2_locations = 0;
@@ -459,8 +534,7 @@ int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no
 
 		for(voting_loc_no = 0; voting_loc_no < cct_context -> max_voting_locations; voting_loc_no++) {
 			voting_location_t *current_result = cellCounts_global_retrieve_alignment_ptr(cct_context, current_read_number, voting_loc_no);
-
-			if(max_votes < cct_context -> min_votes_per_mapped_read) {
+			if(current_result -> selected_votes< cct_context -> min_votes_per_mapped_read) {
 				current_result -> selected_votes = 0;
 				continue;
 			}
@@ -569,7 +643,7 @@ int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no
 			strcpy(qual_text, raw_qual_text);
 			cellCounts_write_realignments_for_fragment(cct_context, thread_no, &out_context, current_read_number, NULL, read_name, read_text, qual_text, read_len, 0, 0);
 		}
-		if(current_read_number % 50000 == 0) SUBREADprintf("realign step: %d\n", current_read_number);
+		if(current_read_number % 500000 == 0) SUBREADprintf("realign step: %d\n", current_read_number);
 	}
 
 	free(final_realignments);
@@ -580,7 +654,6 @@ int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no
 	free(final_realignment_index);
 
 	free(final_SCORE_buffer);
-	free(align_result_buffer);
 
 	for(repeated_count = 0;repeated_count < MAX_ALIGNMENT_PER_ANCHOR * cct_context -> max_best_alignments ; repeated_count ++ )
 		free(repeated_buffer_cigars[repeated_count]);
@@ -683,7 +756,11 @@ int cellCounts_run_maybe_threads(cellcounts_global_t * cct_context, int task){
 	}
 
 	// sort and merge events from all threads and the global event space.
-	cellCounts_finalise_indel_and_junction_thread(cct_context, thread_contexts, task);
+	cellCounts_finalise_indel_and_junction_thread(cct_context, task);
+
+	if(STEP_VOTING == task)
+		// sort the event entry table at each location.
+		cellCounts_sort_junction_entry_table(cct_context);
 
 	return ret_value;
 }
@@ -1023,6 +1100,160 @@ int cellCounts_dynamic_align(cellcounts_global_t * cct_context, int thread_no, c
 		movement_buffer[i] = tmp;
 	}
 	return out_pos;
+}
+
+
+#define _test_record_size	if(current_record_number >= current_record_size - 2){\
+		current_record_size *= 1.5;\
+		records=realloc(records, sizeof(scanning_events_record_t)*current_record_size);\
+		if(NULL == records) return -1;\
+	}\
+
+#define _add_record	records[current_record_number].scanning_positons = body -> event_small_side;\
+	records[current_record_number].thread_bodytable_number = xx1;\
+	current_record_number++;\
+	records[current_record_number].scanning_positons = body -> event_large_side;\
+	records[current_record_number].thread_bodytable_number = xx1;\
+	current_record_number++;\
+
+typedef struct {
+	unsigned int scanning_positons;
+	unsigned int thread_bodytable_number;
+} scanning_events_record_t;
+
+#define cellCounts_get_global_body(iii) ( cct_context ->  event_space_dynamic + records[(iii)].thread_bodytable_number)
+
+int cellCounts_scanning_events_compare(void * arr, int l, int r){
+	void ** arrr = (void **) arr;
+	cellcounts_global_t * cct_context = arrr[0];
+	scanning_events_record_t * records = arrr[1];
+	chromosome_event_t * body_l = cellCounts_get_global_body(l);
+	chromosome_event_t * body_r = cellCounts_get_global_body(r);
+
+	if(records[l].scanning_positons > records[r].scanning_positons)return 1;
+	if(records[l].scanning_positons < records[r].scanning_positons)return -1;
+
+	if((body_l -> is_donor_found_or_annotation & 64)!=0 && (body_r -> is_donor_found_or_annotation & 64)==0) return 1; // prefer known truth.
+	if((body_l -> is_donor_found_or_annotation & 64)==0 && (body_r -> is_donor_found_or_annotation & 64)!=0) return -1;  
+	if(body_l -> supporting_reads > body_r -> supporting_reads) return -1;
+	if(body_l -> supporting_reads < body_r -> supporting_reads) return 1;
+	if(abs(body_l -> indel_length) < abs(body_r -> indel_length)) return 1;
+	if(abs(body_l -> indel_length) > abs(body_r -> indel_length)) return -1;
+	if(body_l -> indel_length > body_r -> indel_length) return -1; // same length, but L is del and R is ins -- prefer del than ins
+	if(body_l -> indel_length < body_r -> indel_length) return 1;
+	
+	if(body_l -> event_small_side > body_r -> event_small_side)return 1;
+	if(body_l -> event_small_side < body_r -> event_small_side)return -1;
+	if(body_l -> event_large_side > body_r -> event_large_side)return 1;
+	return -1;
+}
+
+void cellCounts_scanning_events_merge(void * arr,  int start, int items, int items2){
+	void ** arrr = (void **) arr;
+	scanning_events_record_t * records = arrr[1];
+
+	int read_1_ptr = start, read_2_ptr = start+items, write_ptr;
+	scanning_events_record_t * merged_records = malloc(sizeof(scanning_events_record_t) * (items+items2));
+
+	for(write_ptr=0; write_ptr<items+items2; write_ptr++){
+		if((read_1_ptr >= start+items)||(read_2_ptr < start+items+items2 && cellCounts_scanning_events_compare(arr, read_1_ptr, read_2_ptr) > 0))
+			memcpy(merged_records+write_ptr, records+(read_2_ptr++), sizeof(scanning_events_record_t));
+		else
+			memcpy(merged_records+write_ptr, records+(read_1_ptr++), sizeof(scanning_events_record_t));
+	}	
+	memcpy(records + start, merged_records, sizeof(scanning_events_record_t) * (items+items2));
+	free(merged_records);
+}
+
+void cellCounts_scanning_events_exchange(void * arr, int l, int r){
+	void ** arrr = (void **) arr;
+	scanning_events_record_t * records = arrr[1];
+
+	unsigned long tmpi;
+
+	tmpi = records[l].scanning_positons;
+	records[l].scanning_positons = records[r].scanning_positons;
+	records[r].scanning_positons = tmpi;
+
+	tmpi = records[l].thread_bodytable_number;
+	records[l].thread_bodytable_number = records[r].thread_bodytable_number;
+	records[r].thread_bodytable_number = tmpi;
+}
+
+int cellCounts_sort_junction_entry_table(cellcounts_global_t * cct_context){
+	chromosome_event_t * event_space = cct_context -> event_space_dynamic;
+
+	if(cct_context -> event_entry_table){
+		if(cct_context -> event_entry_table->appendix1) {
+			free(cct_context -> event_entry_table -> appendix1);
+			free(cct_context -> event_entry_table -> appendix2);
+		}
+
+		// free the entry table: the pointers.
+		destory_event_entry_table(cct_context -> event_entry_table);
+		HashTableDestroy(cct_context -> event_entry_table);
+	}
+
+	cct_context -> event_entry_table = HashTableCreate(399997);
+	HashTableSetKeyComparisonFunction(cct_context->event_entry_table, localPointerCmp_forEventEntry);
+	HashTableSetHashFunction(cct_context->event_entry_table, localPointerHashFunction_forEventEntry);
+
+	cct_context -> event_entry_table -> appendix1=malloc(1024 * 1024 * 64);
+	cct_context -> event_entry_table -> appendix2=malloc(1024 * 1024 * 64);
+	memset(cct_context -> event_entry_table -> appendix1, 0, 1024 * 1024 * 64);
+	memset(cct_context -> event_entry_table -> appendix2, 0, 1024 * 1024 * 64);
+
+	int xx1, current_record_number=0, current_record_size=10000;
+	scanning_events_record_t * records = malloc(sizeof(scanning_events_record_t)*current_record_size);
+
+	for(xx1 = 0; xx1 < cct_context -> total_events; xx1++){
+		chromosome_event_t * body = event_space + xx1;
+		_test_record_size;
+		_add_record;
+	}
+
+	void * sort_arr[2];
+	sort_arr[0] = cct_context;
+	sort_arr[1] = records;
+
+	// many repeated elements 
+	// do not use quick sort.
+	merge_sort(sort_arr, current_record_number, cellCounts_scanning_events_compare, cellCounts_scanning_events_exchange, cellCounts_scanning_events_merge);
+	unsigned int last_scannping_pos = records[0].scanning_positons;
+	int merge_start = 0;
+	HashTable * event_table = cct_context -> event_entry_table;
+
+	for(xx1 =0; xx1 <= current_record_number; xx1++){
+		scanning_events_record_t * this_record = NULL;
+		if(xx1<current_record_number) this_record = records+xx1;
+
+		if(xx1>0){
+			if(xx1 == current_record_number || last_scannping_pos!= this_record -> scanning_positons){
+				int merge_end = xx1, merge_i;
+				if( merge_end-merge_start > MAX_EVENT_ENTRIES_PER_SITE )
+					merge_end = merge_start + MAX_EVENT_ENTRIES_PER_SITE;
+				unsigned int * id_list = malloc(sizeof(int) * (1+merge_end-merge_start));
+				assert(id_list);
+				id_list[0] = merge_end-merge_start;
+				for(merge_i = merge_start; merge_i < merge_end; merge_i++){
+					chromosome_event_t * body = cellCounts_get_global_body(merge_i);
+					id_list[merge_i - merge_start + 1] = records[merge_i].thread_bodytable_number + 1;
+
+					mark_event_bitmap(event_table->appendix1, body -> event_small_side);
+					mark_event_bitmap(event_table->appendix2, body -> event_large_side);
+				}
+				merge_start = xx1;
+
+				//#warning "======= UNCOMMENT NEXT ======="
+				HashTablePut(cct_context -> event_entry_table, NULL + last_scannping_pos, id_list);
+			}
+		}
+		if(xx1 == current_record_number) break;
+		last_scannping_pos = this_record -> scanning_positons;
+	}
+
+	free(records);
+	return 0;
 }
 
 
@@ -1387,7 +1618,7 @@ int cellCounts_do_voting(cellcounts_global_t * cct_context, int thread_no) {
 
 
 			if(is_reversed) {
-				if(current_read_number % 50000 == 0) SUBREADprintf("voting step: %d\n", current_read_number);
+				if(current_read_number % 500000 == 0) SUBREADprintf("voting step: %d\n", current_read_number);
 				if(0&&current_read_number == 4000){
 					SUBREADprintf(">>>%llu<<<\n%s [%d]  %s VOTE1_MAX=%d >= %d\n", current_read_number, read_name_1, read_len_1, read_text_1, vote_1->max_vote, min_first_read_votes);
 					SUBREADprintf(" ======= PAIR %s = %llu =======\n", read_name_1, current_read_number);
@@ -1510,22 +1741,24 @@ void cellCounts_conc_sort_merge(void * arr,  int start, int items, int items2){
 int cellCounts_finalise_indel_and_junction_thread(cellcounts_global_t * cct_context, int task) {
 	cellcounts_align_thread_t * thread_contexts = cct_context -> all_thread_contexts;
 	
+	SUBREADprintf("TASK_TEST %d\n", task);
 	if(task == STEP_VOTING) {
 		concatinating_events_record_t * records;
 		int conc_rec_size = 10000, conc_rec_items = 0;
 		records = malloc(sizeof(concatinating_events_record_t) * conc_rec_size);
+		SUBREADprintf("MERGE CONTEXTS %d\n", cct_context->total_threads);
 
 		int xk1, thn;
 		for(thn =0; thn < cct_context->total_threads; thn++){
 			cellcounts_align_thread_t * thread_context = thread_contexts+thn;
 
 			for(xk1 = 0; xk1 < thread_context -> total_events; xk1++){
-			chromosome_event_t * old_body = thread_context  ->  event_space_dynamic + xk1;
-			if(old_body -> event_type == CHRO_EVENT_TYPE_REMOVED) continue;
+				chromosome_event_t * old_body = thread_context  ->  event_space_dynamic + xk1;
+				if(old_body -> event_type == CHRO_EVENT_TYPE_REMOVED) continue;
 
-			_test_conc_size;
-			records[conc_rec_items].thread_no=thn;
-			records[conc_rec_items++].thread_bodytable_number=xk1;
+				_test_conc_size;
+				records[conc_rec_items].thread_no=thn;
+				records[conc_rec_items++].thread_bodytable_number=xk1;
 			}
 		}
 
@@ -1605,13 +1838,14 @@ int cellCounts_finalise_indel_and_junction_thread(cellcounts_global_t * cct_cont
 
 		free(records);
 
+		SUBREADprintf("FINALISE CONTEXTS %d\n", cct_context->total_threads);
 		for(thn =0; thn < cct_context->total_threads; thn++){
 			cellcounts_align_thread_t * thread_context = thread_contexts+thn;
 			
 			destory_event_entry_table(thread_context -> event_entry_table);
 			HashTableDestroy(thread_context -> event_entry_table);
-
 			free(thread_context -> event_space_dynamic);
+			SUBREADprintf("DESTROY CONTEXT %d\n" , thn);
 
 			for(xk1=0; xk1<MAX_READ_LENGTH; xk1++) {
 				free(thread_context -> dynamic_align_table[xk1]);
@@ -1620,7 +1854,6 @@ int cellCounts_finalise_indel_and_junction_thread(cellcounts_global_t * cct_cont
 
 			free(thread_context->dynamic_align_table);
 			free(thread_context->dynamic_align_table_mask);
-			free(thread_context);
 		}
 		if(cct_context -> event_space_dynamic ) free(cct_context -> event_space_dynamic);
 
@@ -1638,11 +1871,889 @@ int cellCounts_finalise_indel_and_junction_thread(cellcounts_global_t * cct_cont
 			}
 			free(thread_context -> final_counted_reads_array);
 			free(thread_context -> final_reads_mismatches_array);
-			free(thread_context);
 		}
 	}
 	return 0;
 }
+
+
+void cellCounts_new_explain_try_replace(cellcounts_global_t * cct_context, int thread_no, explain_context_t * explain_context, int remainder_len, int search_to_back)
+{
+	int is_better_result = 0, is_same_best = 0;
+
+	if(explain_context -> best_matching_bases - explain_context -> best_indel_penalty < explain_context-> tmp_total_matched_bases - explain_context -> tmp_indel_penalty)
+	{
+		is_better_result = 1;
+		explain_context -> best_is_complex = explain_context -> tmp_search_sections ;
+		explain_context -> is_currently_tie = 0;
+		explain_context -> best_support_as_simple = explain_context -> tmp_support_as_simple;
+		explain_context -> best_min_unsupport_as_simple = explain_context -> tmp_min_unsupport;
+		explain_context -> best_min_support_as_complex = explain_context -> tmp_min_support_as_complex;
+		explain_context -> best_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain;
+		explain_context -> second_best_matching_bases = max(explain_context -> second_best_matching_bases, explain_context -> best_matching_bases); 
+		explain_context -> best_matching_bases = explain_context-> tmp_total_matched_bases ;
+		explain_context -> best_indel_penalty = explain_context -> tmp_indel_penalty;
+	}
+	else if(explain_context -> best_matching_bases - explain_context -> best_indel_penalty == explain_context-> tmp_total_matched_bases - explain_context -> tmp_indel_penalty)
+	{
+		// only gapped explainations are complex counted.
+		explain_context -> best_is_complex +=  explain_context -> tmp_search_sections;
+		explain_context -> second_best_matching_bases = explain_context -> best_matching_bases;
+		explain_context -> best_indel_penalty = explain_context -> tmp_indel_penalty;
+
+		if(0 && FIXLENstrcmp("R010442852", explain_context -> read_name) == 0){
+			SUBREADprintf("complexity: curr=%d, new=%d   ;   sections=%d\n", explain_context->best_min_support_as_complex, explain_context -> tmp_min_support_as_complex, explain_context -> tmp_search_sections );
+		}
+		if(explain_context -> best_is_complex > 1)
+		{
+			// is complex now!
+			if(explain_context -> tmp_search_sections == 0)
+			{
+				if(explain_context -> tmp_min_unsupport >explain_context->best_min_support_as_complex){
+					is_better_result = 1;
+					explain_context->best_min_support_as_complex =explain_context -> tmp_min_unsupport;
+					explain_context -> best_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain;
+					explain_context -> is_currently_tie = 0;
+				}
+				else if(explain_context -> tmp_min_unsupport == explain_context->best_min_support_as_complex)
+				{
+					explain_context -> is_currently_tie = 1;
+					is_same_best = 1;
+				}
+			}
+			else{
+				if(explain_context -> tmp_min_support_as_complex  >explain_context->best_min_support_as_complex){
+					is_better_result = 1;
+					explain_context -> best_min_support_as_complex =explain_context -> tmp_min_support_as_complex;
+					explain_context -> best_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain;
+					explain_context -> is_currently_tie = 0;
+				}
+				else if(explain_context -> tmp_min_support_as_complex  == explain_context->best_min_support_as_complex){
+					explain_context -> is_currently_tie = 1;
+					is_same_best = 1;
+				}
+			}
+
+		}
+		else
+		{
+			// this branch is reached ONLY if the last best is ONE-gapped (50M3D50M) and the current best is ungapped (100M)!
+			if(explain_context -> best_is_pure_donor_found_explain)
+			{
+				if(explain_context -> best_min_unsupport_as_simple >= explain_context -> best_support_as_simple+2)
+				{
+					is_better_result = 1;
+					explain_context -> best_min_support_as_complex = explain_context -> best_min_unsupport_as_simple;
+					explain_context -> best_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain;
+					explain_context -> is_currently_tie = 0;
+				}
+			}
+	//#warning "======= MAKE if(0) IS CORRECT BEFORE RELEASE ======"
+			else if(0)
+				if(explain_context -> best_min_unsupport_as_simple >= explain_context -> best_support_as_simple)
+				{
+					is_better_result = 1;
+					explain_context -> best_min_support_as_complex = explain_context -> best_min_unsupport_as_simple;
+					explain_context -> best_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain;
+					explain_context -> is_currently_tie = 0;
+				}
+		}
+	}
+	else return;
+
+	if(is_better_result || is_same_best){
+		if(search_to_back){
+			explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_start =  0;
+		}else{
+			explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_end = explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_start + remainder_len;
+			explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].event_after_section = NULL;
+		}
+	}
+
+	if(is_better_result)
+	{
+		if(search_to_back){
+			explain_context -> all_back_alignments = 1;
+			explain_context -> result_back_junction_numbers[0] = explain_context -> tmp_search_sections +1;
+			// checked: memory boundary
+			memcpy(explain_context -> result_back_junctions[0], explain_context -> tmp_search_junctions , sizeof(perfect_section_in_read_t) * (explain_context -> tmp_search_sections +1)); 
+	
+		}else{
+			explain_context -> all_front_alignments = 1;
+			explain_context -> result_front_junction_numbers[0] = explain_context -> tmp_search_sections +1;
+			// checked: memory boundary
+			memcpy(explain_context -> result_front_junctions[0], explain_context -> tmp_search_junctions , sizeof(perfect_section_in_read_t) * (explain_context -> tmp_search_sections +1)); 
+		}
+
+	}else if(is_same_best){
+		if(search_to_back && explain_context -> all_back_alignments < MAX_ALIGNMENT_PER_ANCHOR){
+			explain_context -> result_back_junction_numbers[explain_context -> all_back_alignments] = explain_context -> tmp_search_sections +1;
+
+			// checked: memory boundary
+			memcpy(explain_context -> result_back_junctions[explain_context -> all_back_alignments], explain_context -> tmp_search_junctions , sizeof(perfect_section_in_read_t) * (explain_context -> tmp_search_sections +1)); 
+			explain_context -> all_back_alignments ++;
+		}else if((!search_to_back) && explain_context -> all_front_alignments < MAX_ALIGNMENT_PER_ANCHOR){
+			explain_context -> result_front_junction_numbers[explain_context -> all_front_alignments] = explain_context -> tmp_search_sections +1;
+
+			// checked: memory boundary
+			memcpy(explain_context -> result_front_junctions[explain_context -> all_front_alignments], explain_context -> tmp_search_junctions , sizeof(perfect_section_in_read_t) * (explain_context -> tmp_search_sections +1)); 
+			explain_context -> all_front_alignments ++;
+		}
+	}
+}
+
+
+
+#define MIN_EVENT_DISTANCE 16
+
+void cellCounts_search_events_to_back(cellcounts_global_t * cct_context, int thread_no, explain_context_t * explain_context, char * read_text , char * qual_text, unsigned int read_tail_abs_offset, short read_tail_pos, short sofar_matched, int suggested_movement)
+{
+	short tested_read_pos;
+	HashTable * event_table = NULL;
+	chromosome_event_t * event_space = NULL;
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
+	event_table = thread_context -> event_entry_table; 
+	event_space = thread_context -> event_space_dynamic;
+	gene_value_index_t * value_index = thread_context->current_value_index;
+
+	if(there_are_events_in_range(event_table -> appendix2, read_tail_abs_offset - read_tail_pos, read_tail_pos)){
+		int event_search_method = EVENT_SEARCH_BY_LARGE_SIDE;
+		int is_junction_scanned = 0;
+		int move_start = MIN_EVENT_DISTANCE;
+		if(suggested_movement) move_start = read_tail_pos - suggested_movement + 1;
+
+		if(MAX_EVENTS_IN_READ - 1> explain_context -> tmp_search_sections)
+		for(tested_read_pos =  move_start; tested_read_pos >=0;tested_read_pos --)
+		{
+			int xk1, matched_bases_to_site;
+			chromosome_event_t *site_events[MAX_EVENT_ENTRIES_PER_SITE];
+			int potential_event_pos;
+			potential_event_pos = read_tail_abs_offset - ( read_tail_pos - tested_read_pos);
+			if(!check_event_bitmap(  event_table->appendix2, potential_event_pos )) continue;
+
+			int search_types = CHRO_EVENT_TYPE_INDEL | CHRO_EVENT_TYPE_JUNCTION | CHRO_EVENT_TYPE_FUSION;
+			int site_events_no = cellCounts_search_event(cct_context, event_table , event_space , potential_event_pos, event_search_method , search_types, site_events);
+			if(!site_events_no)continue;
+
+			unsigned int tested_chro_begin;
+			tested_chro_begin = read_tail_abs_offset - (read_tail_pos - tested_read_pos);
+			matched_bases_to_site = match_chro(read_text + tested_read_pos, value_index, tested_chro_begin , read_tail_pos - tested_read_pos, explain_context -> current_is_strand_jumped, GENE_SPACE_BASE);
+			int this_round_junction_scanned = 0;
+			if(explain_context -> total_tries < REALIGN_TOTAL_TRIES && (read_tail_pos>tested_read_pos) && ( matched_bases_to_site*10000/(read_tail_pos - tested_read_pos) > 7000) )
+				for(xk1 = 0; xk1 < site_events_no ; xk1++) {
+					chromosome_event_t * tested_event = site_events[xk1];
+					int new_read_tail_pos = tested_read_pos;
+					if(tested_event->event_type == CHRO_EVENT_TYPE_INDEL) new_read_tail_pos +=  min(0, tested_event -> indel_length);
+					unsigned int new_read_tail_abs_offset = tested_event -> event_small_side + 1;
+					new_read_tail_pos -= tested_event -> indel_at_junction;
+
+					if(new_read_tail_pos>0) {
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_start = tested_read_pos;
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].event_after_section = tested_event;
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].is_connected_to_large_side = (potential_event_pos == tested_event -> event_small_side);
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].read_pos_end = tested_read_pos + min(0, tested_event->indel_length) - tested_event -> indel_at_junction;
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].abs_offset_for_start = new_read_tail_abs_offset; 
+
+						int current_sup_as_complex = explain_context -> tmp_min_support_as_complex;
+						int current_sup_as_simple = explain_context -> tmp_support_as_simple;
+						int current_pure_donor_found = explain_context -> tmp_is_pure_donor_found_explain;
+
+						explain_context -> tmp_support_as_simple = tested_event -> supporting_reads;
+						explain_context -> tmp_min_support_as_complex = min((tested_event -> is_donor_found_or_annotation & 64)?0x7fffffff:tested_event -> supporting_reads,explain_context -> tmp_min_support_as_complex);
+						explain_context -> tmp_min_unsupport = min(tested_event -> anti_supporting_reads,explain_context -> tmp_min_unsupport);
+						explain_context -> tmp_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain && tested_event -> is_donor_found_or_annotation;
+						explain_context -> tmp_indel_penalty += ( tested_event -> event_type == CHRO_EVENT_TYPE_INDEL );
+						explain_context -> tmp_search_sections ++;
+						explain_context -> total_tries ++;
+
+						cellCounts_search_events_to_back(cct_context, thread_no, explain_context, read_text , qual_text, new_read_tail_abs_offset , new_read_tail_pos, sofar_matched + matched_bases_to_site, tested_event -> connected_previous_event_distance);
+
+						explain_context -> tmp_search_sections --;
+						explain_context -> tmp_indel_penalty -= ( tested_event -> event_type == CHRO_EVENT_TYPE_INDEL );
+						explain_context -> tmp_min_support_as_complex = current_sup_as_complex;
+						explain_context -> tmp_support_as_simple = current_sup_as_simple;
+						explain_context -> tmp_is_pure_donor_found_explain = current_pure_donor_found;
+					}
+				}
+			this_round_junction_scanned = max(this_round_junction_scanned, is_junction_scanned);
+		} 
+	}
+	int whole_section_matched = match_chro(read_text , value_index, read_tail_abs_offset - (explain_context -> current_is_strand_jumped?-1:read_tail_pos), read_tail_pos , explain_context -> current_is_strand_jumped, GENE_SPACE_BASE);
+	explain_context -> tmp_total_matched_bases = whole_section_matched + sofar_matched ;	
+	cellCounts_new_explain_try_replace(cct_context, thread_no, explain_context, 0, 1);
+}
+
+
+
+void cellCounts_search_events_to_front(cellcounts_global_t * cct_context, int thread_no, explain_context_t * explain_context, char * read_text , char * qual_text, unsigned int read_head_abs_offset, short remainder_len, short sofar_matched, int suggested_movement)
+{
+	short tested_read_pos;
+	HashTable * event_table = NULL;
+	chromosome_event_t * event_space = NULL;
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
+
+	event_table = thread_context -> event_entry_table; 
+	event_space = thread_context -> event_space_dynamic;
+
+	gene_value_index_t * value_index = thread_context->current_value_index;
+
+	if(there_are_events_in_range(event_table -> appendix1, read_head_abs_offset, remainder_len)) {
+		int event_search_method = EVENT_SEARCH_BY_SMALL_SIDE;
+		// tested_read_pos is the index of the first base unwanted!
+	
+		int move_start = MIN_EVENT_DISTANCE;
+		if(suggested_movement) move_start = suggested_movement-1;
+		int is_junction_scanned = 0;
+	
+		if(MAX_EVENTS_IN_READ - 1 > explain_context -> tmp_search_sections)
+		for(tested_read_pos = move_start ; tested_read_pos <= remainder_len; tested_read_pos++)
+		{
+			int xk1, matched_bases_to_site;
+			chromosome_event_t *site_events[MAX_EVENT_ENTRIES_PER_SITE+1];
+			unsigned potential_event_pos = read_head_abs_offset + tested_read_pos -1;
+			if(!check_event_bitmap(  event_table->appendix1, potential_event_pos )) continue;
+
+			int search_types =  CHRO_EVENT_TYPE_INDEL | CHRO_EVENT_TYPE_JUNCTION | CHRO_EVENT_TYPE_FUSION;
+			int site_events_no = cellCounts_search_event(cct_context, event_table , event_space , potential_event_pos, event_search_method , search_types , site_events);
+			if(!site_events_no)continue;
+
+			unsigned int tested_chro_begin = read_head_abs_offset;
+			matched_bases_to_site = match_chro(read_text, value_index, tested_chro_begin, tested_read_pos, explain_context -> current_is_strand_jumped, GENE_SPACE_BASE);
+			int this_round_junction_scanned = 0;
+
+			//#warning "========= remove - 2000 from next line ============="
+			if(explain_context -> total_tries < REALIGN_TOTAL_TRIES && tested_read_pos >0 &&  matched_bases_to_site*10000/tested_read_pos > 7000 )
+				for(xk1 = 0; xk1 < site_events_no ; xk1++)
+				{
+					chromosome_event_t * tested_event = site_events[xk1];
+
+					unsigned int new_read_head_abs_offset = tested_event -> event_large_side;
+					short new_remainder_len = remainder_len - tested_read_pos + min(0, tested_event->indel_length) - tested_event -> indel_at_junction;
+
+					if(new_remainder_len>0)
+					{
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_end = explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].read_pos_start + tested_read_pos;
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].event_after_section = tested_event;
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections].is_connected_to_large_side = (potential_event_pos == tested_event -> event_large_side);
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].read_pos_start = tested_read_pos - min(0, tested_event -> indel_length) + tested_event -> indel_at_junction;
+						explain_context -> tmp_search_junctions[explain_context -> tmp_search_sections + 1].abs_offset_for_start = new_read_head_abs_offset;
+					
+						int current_sup_as_complex = explain_context -> tmp_min_support_as_complex;
+						int current_sup_as_simple = explain_context -> tmp_support_as_simple;
+						//int current_unsup_as_simple = explain_context -> tmp_min_unsupport;
+						int current_pure_donor_found = explain_context -> tmp_is_pure_donor_found_explain;
+
+						explain_context -> tmp_support_as_simple = tested_event -> supporting_reads;
+						explain_context -> tmp_min_support_as_complex = min((tested_event -> is_donor_found_or_annotation & 64)?0x7fffffff:tested_event -> supporting_reads,explain_context -> tmp_min_support_as_complex);
+						explain_context -> tmp_min_unsupport = min(tested_event -> anti_supporting_reads,explain_context -> tmp_min_unsupport);
+						explain_context -> tmp_is_pure_donor_found_explain = explain_context -> tmp_is_pure_donor_found_explain && tested_event -> is_donor_found_or_annotation;
+						explain_context -> tmp_indel_penalty += ( tested_event -> event_type == CHRO_EVENT_TYPE_INDEL );
+						explain_context -> tmp_search_sections ++;
+
+						explain_context -> total_tries ++;
+						cellCounts_search_events_to_front(cct_context, thread_no, explain_context, read_text + tested_event -> indel_at_junction + tested_read_pos -  min(0, tested_event->indel_length), qual_text + tested_read_pos -  min(0, tested_event->indel_length), new_read_head_abs_offset, new_remainder_len, sofar_matched + matched_bases_to_site, tested_event -> connected_next_event_distance);
+						explain_context -> tmp_search_sections --;
+
+						explain_context -> tmp_indel_penalty -= ( tested_event -> event_type == CHRO_EVENT_TYPE_INDEL );
+						explain_context -> tmp_min_support_as_complex = current_sup_as_complex;
+						explain_context -> tmp_support_as_simple = current_sup_as_simple;
+						explain_context -> tmp_is_pure_donor_found_explain = current_pure_donor_found;
+					}
+				}
+			is_junction_scanned = max(is_junction_scanned, this_round_junction_scanned);
+		}
+	}
+	int whole_section_matched = match_chro(read_text , value_index, read_head_abs_offset, remainder_len , explain_context -> current_is_strand_jumped, GENE_SPACE_BASE);
+	explain_context -> tmp_total_matched_bases = whole_section_matched + sofar_matched ;	
+	cellCounts_new_explain_try_replace(cct_context, thread_no, explain_context, remainder_len, 0);
+}
+
+
+#define SOFT_CLIPPING_WINDOW_SIZE 5
+#define SOFT_CLIPPING_MAX_ERROR   1
+
+// it returns the number of bases to be clipped off.
+int cellCounts_find_soft_clipping(cellcounts_global_t * cct_context, int thread_no , gene_value_index_t * current_value_index, char * read_text, unsigned int mapped_pos, int test_len,  int search_to_tail, int search_center) {
+	int base_in_window = 0;
+	int added_base_index = 0, removed_base_index = 0;
+	int search_start = 0;
+	int matched_in_window = SOFT_CLIPPING_WINDOW_SIZE;
+	int last_matched_base_index = -1, delta;
+
+	if(search_to_tail) {
+		if(search_center < 0)
+			search_start = 0;
+		else if(search_center >= test_len)
+			// SHOULD NOT HAPPEN!!!
+			search_start = test_len - 1;
+		else	search_start = search_center - 1;
+
+		delta = 1;
+	}else{
+		if(search_center < 0)
+			// SHOULD NOT HAPPEN!!!
+			search_start = 0;
+		else if(search_center >= test_len)
+			search_start = test_len - 1;
+		else	search_start = search_center + 1;
+
+		delta = -1;
+	}
+
+	for(added_base_index = search_start; added_base_index >= 0 && added_base_index < test_len; added_base_index += delta) {
+		// add the new base
+		char reference_base = gvindex_get(current_value_index, added_base_index + mapped_pos);
+
+		int added_is_matched = (reference_base == read_text[added_base_index]);
+		matched_in_window += added_is_matched;
+		if(added_is_matched)
+			last_matched_base_index = added_base_index;
+
+		base_in_window ++;
+
+		if(base_in_window > SOFT_CLIPPING_WINDOW_SIZE){
+			removed_base_index = added_base_index - delta * SOFT_CLIPPING_WINDOW_SIZE;
+			char removing_ref_base = gvindex_get(current_value_index, removed_base_index + mapped_pos);
+			matched_in_window -= (removing_ref_base == read_text[removed_base_index]);
+		}else{
+			matched_in_window --;
+		}
+
+		if(matched_in_window < SOFT_CLIPPING_WINDOW_SIZE - SOFT_CLIPPING_MAX_ERROR){
+			// clip, bondary is the last matched base.
+			if(search_to_tail){
+				if(last_matched_base_index < 0) return test_len - search_start;
+				else return test_len - last_matched_base_index - 1;
+			}else{
+				if(last_matched_base_index >= 0) return last_matched_base_index;
+				else return search_start - 1;
+			}
+		}
+	}
+
+	if(last_matched_base_index < 0) return test_len;
+
+	if(search_to_tail){
+		if(last_matched_base_index < 0) return test_len - search_start;
+		else return test_len - last_matched_base_index - 1;
+	}else{
+		if(last_matched_base_index >= 0) return last_matched_base_index;
+		else return search_start - 1;
+	}
+}
+
+
+
+int cellCounts_final_CIGAR_quality(cellcounts_global_t * cct_context, int thread_no, char * read_text, char * qual_text, int read_len, char * cigar_string, unsigned long read_head_abs_offset, int is_read_head_reversed, int * mismatched_bases, int covered_start, int covered_end, char * read_name, int * non_clipped_length, int *total_indel_length, int * matched_bases, int * chromosomal_length, int * full_section_clipped)
+{
+	int cigar_cursor = 0;
+	int read_cursor = 0;
+	unsigned int current_perfect_section_abs = read_head_abs_offset;
+	int rebuilt_read_len = 0, total_insertion_length = 0;
+	float all_matched_bases = 0;
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
+	gene_value_index_t * current_value_index = thread_context->current_value_index;
+	int current_reversed = is_read_head_reversed;
+	int all_mismatched = 0;
+	int is_First_M = 1, is_wrong_cigar = 0;
+	int head_soft_clipped = -1, tail_soft_clipped = -1;
+	unsigned int tmp_int = 0;
+
+	while(1) {
+		char nch = cigar_string[cigar_cursor++];
+		if(!nch)break;
+		if(isdigit(nch))
+			tmp_int = tmp_int*10+(nch-'0');
+		else{
+			if(tmp_int == 0)is_wrong_cigar = 1;
+			if(is_wrong_cigar) break;
+			if(nch == 'M' || nch == 'S') {
+				char *qual_text_cur;
+				if(qual_text[0])qual_text_cur = qual_text+read_cursor;
+				else	qual_text_cur = NULL;
+
+				float section_qual;
+
+				int is_Last_M = (cigar_string[cigar_cursor]==0);
+				int has_clipping_this_section_head = 0, has_clipping_this_section_tail = 0;
+				char * reversed_first_section_text = NULL;
+
+				if(is_First_M) {
+					int adj_coverage_start = covered_start - read_cursor;
+
+					if(current_reversed) {
+						reversed_first_section_text = malloc(MAX_READ_LENGTH);
+						memcpy(reversed_first_section_text, read_text, tmp_int);
+						reverse_read(reversed_first_section_text, tmp_int, GENE_SPACE_BASE);
+
+						head_soft_clipped = cellCounts_find_soft_clipping(cct_context, thread_no, current_value_index, reversed_first_section_text, current_perfect_section_abs, tmp_int, 1, 0);
+					} else	head_soft_clipped = cellCounts_find_soft_clipping(cct_context, thread_no, current_value_index, read_text, current_perfect_section_abs, tmp_int, 0, adj_coverage_start);
+					//SUBREADprintf("SSHEAD:%d\n", head_soft_clipped);
+
+					if(head_soft_clipped == tmp_int){
+						(*full_section_clipped) = 1;
+						head_soft_clipped = 0;
+					}
+					else has_clipping_this_section_head = 1;
+
+					if(has_clipping_this_section_head){
+						if( tmp_int - head_soft_clipped < 3 && head_soft_clipped > 1 ) (*full_section_clipped) = 1;
+					}
+
+					if(reversed_first_section_text)
+						free(reversed_first_section_text);
+					reversed_first_section_text = NULL;
+				}
+				if(is_Last_M) {
+					int adj_coverage_end = covered_end - read_cursor;
+
+					if(current_reversed) {
+						reversed_first_section_text = malloc(MAX_READ_LENGTH);
+						// checked: boundary
+						memcpy(reversed_first_section_text, read_text + read_cursor, tmp_int);
+						reverse_read(reversed_first_section_text, tmp_int, GENE_SPACE_BASE);
+						tail_soft_clipped = cellCounts_find_soft_clipping(cct_context, thread_no, current_value_index, reversed_first_section_text, current_perfect_section_abs, tmp_int, 0, tmp_int);
+					}
+					else
+						tail_soft_clipped = cellCounts_find_soft_clipping(cct_context, thread_no, current_value_index, read_text + read_cursor, current_perfect_section_abs, tmp_int, 1, adj_coverage_end);
+
+					if(1 && tail_soft_clipped == tmp_int){
+						tail_soft_clipped = 0;
+						if(full_section_clipped)(*full_section_clipped) = 1;
+					} else has_clipping_this_section_tail = 1;
+
+					if( has_clipping_this_section_tail ){
+						if(tmp_int - tail_soft_clipped < 3 && tail_soft_clipped > 1) (*full_section_clipped) = 1;
+					}
+
+					if(reversed_first_section_text)
+						free(reversed_first_section_text);
+				}
+
+				if(is_Last_M && is_First_M && tail_soft_clipped+head_soft_clipped >= tmp_int-1) {
+					head_soft_clipped=0;
+					tail_soft_clipped=0;
+				}
+
+				int mismatch_calculation_start = has_clipping_this_section_head?head_soft_clipped:0;
+				int mismatch_calculation_end = has_clipping_this_section_tail?tail_soft_clipped:0;
+
+				section_qual =  match_base_quality(current_value_index, read_text+read_cursor, current_perfect_section_abs, qual_text_cur, tmp_int, current_reversed, FASTQ_PHRED33 , mismatched_bases, &all_mismatched, 0, mismatch_calculation_start, mismatch_calculation_end);
+				all_matched_bases += section_qual;
+				rebuilt_read_len += tmp_int;
+				is_First_M=0;
+
+				read_cursor += tmp_int;
+
+				if(current_reversed)
+					current_perfect_section_abs --;
+				else
+					current_perfect_section_abs += tmp_int;
+
+
+			} else if(nch == 'I') {
+				rebuilt_read_len += tmp_int;
+				read_cursor += tmp_int;
+
+				all_matched_bases += tmp_int;
+				total_indel_length += tmp_int;
+				total_insertion_length += tmp_int;
+			} else if(nch == 'D') {
+				total_indel_length ++;
+				if(!current_reversed)
+					current_perfect_section_abs += tmp_int;
+			}
+
+			if(read_cursor>MAX_READ_LENGTH){
+				SUBREADprintf("ERROR: Cigar section longer than read length: %d >= %d, '%s'\n", tmp_int , MAX_READ_LENGTH, cigar_string);
+				is_wrong_cigar = 1;
+			}
+
+			tmp_int = 0;
+		}
+	}
+
+	int my_non_clipped_length = read_len;
+	my_non_clipped_length -= max(0,tail_soft_clipped);
+	my_non_clipped_length -= max(0,head_soft_clipped);
+
+	if(is_wrong_cigar || rebuilt_read_len != read_len){
+		(*mismatched_bases)=99999;
+		all_matched_bases = 0;
+		sprintf(cigar_string, "%dM", read_len);
+	} else if((head_soft_clipped>0 || tail_soft_clipped>0)) {
+		char new_cigar_tmp[120];
+		is_First_M=1;
+		new_cigar_tmp[0]=0;
+		cigar_cursor = 0;
+		while(1) {
+			char nch = cigar_string[cigar_cursor++];
+
+			if(!nch)break;
+			if(isdigit(nch))
+				tmp_int = tmp_int*10+(nch-'0');
+			else{
+				char cigar_piece [30];
+				cigar_piece[0]=0;
+
+				if(nch == 'M') {
+					char cigar_tiny [12];
+					int is_Last_M = (cigar_string[cigar_cursor]==0);
+					if(is_First_M && head_soft_clipped>0)
+					{
+						tmp_int -= head_soft_clipped;
+						sprintf(cigar_tiny,"%dS",head_soft_clipped);
+						strcat(cigar_piece, cigar_tiny);
+					}
+					if(is_Last_M && tail_soft_clipped>0)
+					{
+						tmp_int -= tail_soft_clipped;
+					}
+					sprintf(cigar_tiny,"%dM",tmp_int);
+					strcat(cigar_piece, cigar_tiny);
+					if(is_Last_M && tail_soft_clipped>0)
+					{
+						sprintf(cigar_tiny,"%dS",tail_soft_clipped);
+						strcat(cigar_piece, cigar_tiny);
+					}
+					is_First_M = 0;
+				} else {
+					sprintf(cigar_piece, "%u%c", tmp_int, nch);
+				}
+
+				strcat(new_cigar_tmp, cigar_piece);
+				tmp_int = 0;
+			}
+		}
+
+		strcpy(cigar_string, new_cigar_tmp);
+	}
+
+	if((*mismatched_bases) != 99999)
+		(*mismatched_bases) = all_mismatched;
+
+	(*non_clipped_length) = my_non_clipped_length;
+	(*matched_bases) = my_non_clipped_length - all_mismatched - total_insertion_length;
+	(*chromosomal_length) = current_perfect_section_abs - read_head_abs_offset + total_insertion_length;
+
+
+	return max(0, (int)(all_matched_bases*60/my_non_clipped_length));
+}
+
+void cellCounts_absoffset_to_posstr(cellcounts_global_t * cct_context, unsigned int pos, char * res){
+	char * ch;
+	int off;
+	locate_gene_position(pos, &cct_context -> chromosome_table, &  ch, &off);
+	sprintf(res, "%s:%u", ch, off);
+}
+
+
+unsigned int cellCounts_finalise_explain_CIGAR(cellcounts_global_t * cct_context, int thread_no, explain_context_t * explain_context, realignment_result_t * final_realignments)
+{
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
+	int xk1, front_i, back_i;
+	char tmp_cigar[120];
+	chromosome_event_t * to_be_supported [20];
+	short flanking_size_left[20], flanking_size_right[20];
+	int to_be_supported_count = 0;
+	int is_junction_read = 0;
+	int total_perfect_matched_sections = 0;
+
+	voting_location_t * result = cellCounts_global_retrieve_alignment_ptr(cct_context, explain_context->pair_number, explain_context-> best_read_id); 
+	result -> result_flags &= ~CORE_IS_FULLY_EXPLAINED;
+	result -> result_flags &= ~CORE_IS_PAIRED_END;
+
+	for(back_i = 0; back_i < explain_context -> all_back_alignments; back_i++){
+		if( explain_context -> result_back_junction_numbers[back_i] > MAX_EVENTS_IN_READ ){
+			SUBREADprintf("ERROR: Too many cigar sections: %d > %d\n", explain_context -> result_back_junction_numbers[back_i] , MAX_EVENTS_IN_READ);
+			return 0;
+		}
+		for(xk1=0; xk1<explain_context -> result_back_junction_numbers[back_i]/2; xk1++)
+		{
+			perfect_section_in_read_t tmp_exp;
+			memcpy(&tmp_exp, &explain_context -> result_back_junctions[back_i][xk1], sizeof(perfect_section_in_read_t));
+			memcpy(&explain_context -> result_back_junctions[back_i][xk1],  &explain_context -> result_back_junctions[back_i][explain_context -> result_back_junction_numbers[back_i] - xk1 - 1] , sizeof(perfect_section_in_read_t));
+			memcpy(&explain_context -> result_back_junctions[back_i][explain_context -> result_back_junction_numbers[back_i] - xk1 - 1] , &tmp_exp , sizeof(perfect_section_in_read_t));
+		} 
+	}
+
+	int is_cigar_overflow = 0, fusions_in_read = 0, final_alignment_number = 0;
+	for(back_i = 0; back_i < explain_context -> all_back_alignments; back_i++){
+		if(final_alignment_number >= MAX_ALIGNMENT_PER_ANCHOR)break;
+
+		int is_first_section_negative = (result ->result_flags & CORE_IS_NEGATIVE_STRAND)?1:0; 
+		for(xk1=0; xk1<explain_context -> result_back_junction_numbers[back_i]; xk1++) {
+			int section_length = explain_context -> result_back_junctions[back_i][xk1].read_pos_end - explain_context -> result_back_junctions[back_i][xk1].read_pos_start; 
+			unsigned int new_start_pos;
+
+			// "abs_offset_for_start" is the first UNWANTED base. By subtracting the length, it becomes the first WANTED base.
+			new_start_pos = explain_context -> result_back_junctions[back_i][xk1].abs_offset_for_start - section_length;
+			explain_context -> result_back_junctions[back_i][xk1].abs_offset_for_start = new_start_pos;
+			if(explain_context -> result_back_junctions[back_i][xk1].event_after_section
+				&& explain_context -> result_back_junctions[back_i][xk1].event_after_section->is_strand_jumped) is_first_section_negative=!is_first_section_negative;
+		}
+
+		// build CIGAR
+		for(front_i = 0; front_i < explain_context -> all_front_alignments; front_i++){
+			if(final_alignment_number >= MAX_ALIGNMENT_PER_ANCHOR)break;
+
+			to_be_supported_count = 0;
+			tmp_cigar[0]=0;
+			int known_junction_supp = 0;
+
+			for(xk1 = 0; xk1 < explain_context -> result_back_junction_numbers[back_i] + explain_context -> result_front_junction_numbers[front_i] -1; xk1++) {
+				char piece_cigar[25];
+				int read_pos_start, read_pos_end;
+				perfect_section_in_read_t * current_section, *next_section = NULL;
+
+				int is_front_search = 0;
+				if(xk1 >= explain_context -> result_back_junction_numbers[back_i] - 1) {
+					current_section = &explain_context -> result_front_junctions[front_i][xk1 - explain_context -> result_back_junction_numbers[back_i] +1];
+					if(xk1 - explain_context -> result_back_junction_numbers[back_i] +2 < explain_context -> result_front_junction_numbers[front_i])
+						next_section = &explain_context -> result_front_junctions[front_i][xk1 - explain_context -> result_back_junction_numbers[back_i] +2];
+					is_front_search = 1;
+				} else {
+					current_section = &explain_context -> result_back_junctions[back_i][xk1];
+					if(xk1+1 <  explain_context ->  result_back_junction_numbers[back_i])
+						next_section = &explain_context -> result_back_junctions[back_i][xk1+1];
+				}
+
+
+				if(xk1 == explain_context -> result_back_junction_numbers[back_i] - 1)
+				     read_pos_start = explain_context -> result_back_junctions[back_i][xk1].read_pos_start;
+				else read_pos_start = current_section -> read_pos_start;
+
+				read_pos_end = current_section -> read_pos_end;
+				chromosome_event_t *event_after = current_section -> event_after_section;
+
+				sprintf(piece_cigar, "%dM", (read_pos_end - read_pos_start));
+				total_perfect_matched_sections += (read_pos_end - read_pos_start);
+				flanking_size_left[xk1] = (read_pos_end - read_pos_start);
+
+				if(xk1<explain_context ->  result_back_junction_numbers[back_i] + explain_context ->  result_front_junction_numbers[front_i]  -2)
+					assert(event_after);
+
+				if(xk1>0)
+					flanking_size_right[xk1-1] = (read_pos_end - read_pos_start);
+
+				if(event_after) {
+					if(event_after -> event_type == CHRO_EVENT_TYPE_INDEL)
+						sprintf(piece_cigar+strlen(piece_cigar), "%d%c", abs(event_after->indel_length), event_after->indel_length>0?'D':'I');
+					else if(event_after -> event_type == CHRO_EVENT_TYPE_JUNCTION||event_after -> event_type == CHRO_EVENT_TYPE_FUSION) {
+						// the distance in CIGAR is the NEXT UNWANTED BASE of piece#1 to the FIRST WANTED BASE in piece#2
+						int delta_one ;
+						if(current_section -> is_strand_jumped + current_section -> is_connected_to_large_side == 1) delta_one = 1;
+						else delta_one = -1;
+
+						// if it is from front_search, the event side points to the first WANTED base of the next section; it should be moved to the last WANTED base the next section if the next section is jumped.
+						if(next_section && (event_after -> is_strand_jumped + current_section -> is_strand_jumped==1))
+						{
+							if(is_front_search)
+							{
+								if(current_section -> is_connected_to_large_side)
+									delta_one += (next_section->read_pos_end - next_section-> read_pos_start - 1);
+								else
+									delta_one -= (next_section->read_pos_end - next_section-> read_pos_start - 1);
+							}
+							else
+							{
+								if(current_section -> is_connected_to_large_side)
+									delta_one += (next_section->read_pos_end - next_section-> read_pos_start - 1);
+								else
+									delta_one -= (next_section->read_pos_end - next_section-> read_pos_start - 1);
+							}
+						}
+						
+						char jump_mode = current_section -> is_connected_to_large_side?'B':'N';
+						long long int movement = event_after -> event_large_side;
+						movement -= event_after -> event_small_side - delta_one;
+						if(1){
+							if(jump_mode == 'B' && movement < 0){
+								movement = - movement;
+								jump_mode = 'N';
+							}else if(jump_mode == 'N' && movement < 0){
+								movement = - movement;
+								jump_mode = 'B';
+							}
+						}
+						
+						if(event_after -> is_strand_jumped) jump_mode = tolower(jump_mode);
+						fusions_in_read += (event_after -> event_type == CHRO_EVENT_TYPE_FUSION);
+						sprintf(piece_cigar+strlen(piece_cigar), "%u%c", (int)movement, jump_mode);
+						
+						if(event_after -> indel_at_junction) sprintf(piece_cigar+strlen(piece_cigar), "%dI", event_after -> indel_at_junction);
+						is_junction_read ++;
+						if(event_after -> is_donor_found_or_annotation & 64 ) known_junction_supp ++;
+					}
+					to_be_supported[to_be_supported_count++] = event_after;
+				}
+				strcat(tmp_cigar, piece_cigar);
+				if(strlen(tmp_cigar) > CORE_MAX_CIGAR_STR_LEN - 14){
+					is_cigar_overflow=1;
+					break;
+				}
+			}
+
+			int mismatch_bases = 0;
+			if(is_cigar_overflow) sprintf(tmp_cigar, "%dM",  explain_context -> full_read_len);
+
+			unsigned int final_position = explain_context -> result_back_junctions[back_i][0].abs_offset_for_start;
+
+
+			int final_qual = 0, applied_mismatch = 0, non_clipped_length = 0, total_indel_length = 0, final_MATCH = 0, chromosomal_length = 0, full_section_clipped = 0;
+
+			final_qual = cellCounts_final_CIGAR_quality(cct_context, thread_no, explain_context -> full_read_text, explain_context -> full_qual_text, explain_context -> full_read_len , tmp_cigar, final_position, is_first_section_negative != ((result->result_flags & CORE_IS_NEGATIVE_STRAND)?1:0), &mismatch_bases, result -> confident_coverage_start, result -> confident_coverage_end,  explain_context -> read_name, &non_clipped_length, &total_indel_length, & final_MATCH, & chromosomal_length, & full_section_clipped);
+
+			applied_mismatch = cct_context->max_mismatching_bases_in_reads ;
+
+			if(0){
+				char outpos1[100];
+				cellCounts_absoffset_to_posstr(cct_context, final_position, outpos1);
+				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?\n%s %p\nMASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, 0.0 ,result-> used_subreads_in_vote, explain_context -> full_read_text, explain_context -> full_read_text , result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);
+				//exit(0);
+			}
+
+			if(mismatch_bases <= applied_mismatch ){
+				realignment_result_t * realign_res = final_realignments+final_alignment_number;
+				final_alignment_number ++;
+
+				realign_res -> realign_flags = result->result_flags;
+				realign_res -> first_base_is_jumpped = 0;
+				realign_res -> chromosomal_length = chromosomal_length;
+				realign_res -> known_junction_supp = known_junction_supp;
+				realign_res -> final_penalty = explain_context -> best_indel_penalty;
+
+				if(mismatch_bases >  applied_mismatch ) realign_res -> realign_flags |= CORE_TOO_MANY_MISMATCHES;
+				else realign_res -> realign_flags &= ~CORE_TOO_MANY_MISMATCHES;
+				strcpy(realign_res -> cigar_string, tmp_cigar);
+
+				int is_RNA_from_positive = -1;
+				unsigned long long read_id = 2llu * explain_context ->  pair_number;
+
+				for(xk1= 0; xk1 < to_be_supported_count; xk1++) {
+					if(xk1 >= MAX_EVENTS_IN_READ) break;
+					if(to_be_supported [xk1] -> event_type !=CHRO_EVENT_TYPE_INDEL && is_junction_read){
+						if(to_be_supported [xk1] -> event_type == CHRO_EVENT_TYPE_JUNCTION && to_be_supported [xk1] -> is_donor_found_or_annotation && is_RNA_from_positive == -1)
+							is_RNA_from_positive = !(to_be_supported [xk1] -> is_negative_strand);
+					}
+
+					realign_res -> supporting_chromosome_events[xk1] = to_be_supported[xk1];
+					realign_res -> flanking_size_left[xk1] = flanking_size_left[xk1];
+					realign_res -> flanking_size_right[xk1] = flanking_size_right[xk1];
+					realign_res -> crirical_support[xk1] += (read_id == to_be_supported [xk1] -> critical_read_id);
+				}
+				if(to_be_supported_count < MAX_EVENTS_IN_READ ) 
+					realign_res -> supporting_chromosome_events[to_be_supported_count] = NULL;
+				
+				result -> result_flags |= CORE_IS_FULLY_EXPLAINED;
+				result -> read_length = explain_context->full_read_len;
+
+				realign_res -> first_base_position = final_position;
+				realign_res -> final_quality = final_qual;
+				realign_res -> final_mismatched_bases = mismatch_bases;
+				realign_res -> final_matched_bases = (unsigned short)final_MATCH;
+				realign_res -> best_second_diff_bases = (9<explain_context -> best_second_match_diff)?-1:explain_context -> best_second_match_diff; 
+
+			}
+		}
+	}
+
+	return final_alignment_number;
+}
+
+
+
+
+
+unsigned int cellCounts_explain_read(cellcounts_global_t * cct_context, int thread_no, realignment_result_t * realigns, subread_read_number_t pair_number,int read_len, char * read_name , char *read_text, char *qual,  int voting_loc_no, int is_negative_strand){
+	explain_context_t explain_context;
+	voting_location_t *current_result = cellCounts_global_retrieve_alignment_ptr(cct_context, pair_number, voting_loc_no); 
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
+
+	memset(&explain_context,0, sizeof(explain_context_t));
+	explain_context.full_read_len = read_len;
+	explain_context.is_fully_covered = current_result -> is_fully_covered ;
+	explain_context.full_read_text = read_text;
+	explain_context.full_qual_text = qual;
+	explain_context.read_name = read_name;
+	explain_context.is_confirmed_section_negative_strand = is_negative_strand ;
+	explain_context.pair_number = pair_number;
+	explain_context.best_read_id = voting_loc_no;
+	explain_context.total_tries = 0;
+
+	unsigned int back_search_tail_position,front_search_start_position; 
+	unsigned short back_search_read_tail, front_search_read_start;
+
+
+	back_search_read_tail = min(explain_context.full_read_len , current_result -> confident_coverage_end );//- 5;
+	back_search_tail_position = current_result -> selected_position + back_search_read_tail +  current_result -> indels_in_confident_coverage;
+
+	//if( back_search_read_tail > 102)
+	//SUBREADprintf("MAX back_search_read_tail : MIN %d , %d\n", explain_context.full_read_len , current_result -> confident_coverage_end);
+
+	explain_context.tmp_search_junctions[0].read_pos_end = back_search_read_tail;
+	explain_context.tmp_search_junctions[0].abs_offset_for_start = back_search_tail_position;
+
+	explain_context.all_back_alignments = 0;
+	explain_context.tmp_search_sections = 0;
+	explain_context.best_indel_penalty =0;
+	explain_context.best_matching_bases = -9999;
+	explain_context.second_best_matching_bases = -9999;
+	explain_context.tmp_indel_penalty = 0;
+	explain_context.tmp_total_matched_bases = 0;
+	explain_context.is_currently_tie = 0;
+	explain_context.best_is_complex = 0;
+	explain_context.best_support_as_simple = 0;
+	explain_context.best_min_unsupport_as_simple = 0;
+	explain_context.tmp_support_as_simple = 0;
+	explain_context.tmp_min_support_as_complex = 999999;
+	explain_context.tmp_min_unsupport = 999999;
+	explain_context.tmp_is_pure_donor_found_explain = 1;
+	explain_context.best_is_pure_donor_found_explain = 0;
+
+	front_search_read_start = back_search_read_tail > 8? back_search_read_tail - 8:0;
+	front_search_start_position = back_search_tail_position>8?back_search_tail_position - 8:0;
+
+	cellCounts_search_events_to_back(cct_context, thread_no, &explain_context, read_text , qual, back_search_tail_position , back_search_read_tail, 0, 0);
+	int back_penalty = explain_context.best_indel_penalty;
+	int back_search_matches_diff = -9999;
+
+	explain_context.all_front_alignments = 0;
+	explain_context.tmp_search_sections = 0;
+	explain_context.best_indel_penalty = 0;
+	explain_context.best_matching_bases = -9999;
+	explain_context.second_best_matching_bases = -9999;
+	explain_context.tmp_total_matched_bases = 0;
+	explain_context.tmp_indel_penalty = 0;
+
+	explain_context.is_currently_tie = 0;
+	explain_context.best_is_complex = 0;
+	explain_context.best_support_as_simple = 0;
+	explain_context.best_min_unsupport_as_simple = 0;
+	explain_context.tmp_support_as_simple = 0;
+	explain_context.tmp_min_support_as_complex = 999999;
+	explain_context.tmp_min_unsupport = 999999;
+	explain_context.tmp_is_pure_donor_found_explain = 1;
+	explain_context.best_is_pure_donor_found_explain = 0;
+
+	memset(explain_context.tmp_search_junctions, 0, sizeof(perfect_section_in_read_t ) * MAX_EVENTS_IN_READ);
+
+	explain_context.tmp_search_junctions[0].read_pos_start = front_search_read_start;
+	explain_context.tmp_search_junctions[0].abs_offset_for_start = front_search_start_position;
+	short search_remain =  read_len - front_search_read_start;
+
+	cellCounts_search_events_to_front(cct_context, thread_no, &explain_context, read_text + front_search_read_start, qual + front_search_read_start, front_search_start_position, search_remain , 0, 0);
+	explain_context.best_indel_penalty += back_penalty;
+	int front_search_matches_diff = explain_context.best_matching_bases - explain_context.second_best_matching_bases;
+	explain_context.best_second_match_diff = front_search_matches_diff + back_search_matches_diff;
+	int realignment_number = cellCounts_finalise_explain_CIGAR(cct_context, thread_no, &explain_context, realigns);
+	return realignment_number;
+}
+
+
+
+
+
 
 int cellCounts_run_mapping(cellcounts_global_t * cct_context){
 	int chunk_no = 0;
@@ -1705,8 +2816,20 @@ int cellCounts_run_mapping(cellcounts_global_t * cct_context){
 		if(cct_context -> processed_reads_in_chunk < cct_context -> reads_per_chunk ||
 		  (cct_context -> output_binfiles_are_full))
 			// base value indexes loaded in the last circle are not destroyed and are used in writting the indel VCF.
-			// the indexes will be destroyed in destroy_global_context
 			break;
+
+		if(1){
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			break;
+		}
+
 
 		cellCounts_clean_context_after_chunk(cct_context);
 		chunk_no++;
