@@ -88,7 +88,10 @@ typedef struct{
 	int known_cell_barcode_length;
 	HashTable * cell_barcode_head_tail_table;
 	ArrayList * cell_barcodes_array;
-	
+	HashTable * sample_sheet_table;
+	ArrayList * sample_barcode_list;
+	ArrayList * sample_id_to_name;
+	HashTable * lineno1B_to_sampleno1B_tab;
 	
 	char features_annotation_file[MAX_FILE_NAME_LENGTH];
 	char features_annotation_alias_file[MAX_FILE_NAME_LENGTH];
@@ -281,11 +284,49 @@ int determine_total_index_blocks(cellcounts_global_t * cct_context){
 
 #define EXONIC_REGION_RESOLUTION 16
 
+void sheet_convert_ss_to_arr( void * key, void * hashed_obj, HashTable * tab ){
+	ArrayList * hashed_arr = hashed_obj ;
+	cellcounts_global_t * cct_context = tab->appendix1;
+	ArrayListPush(cct_context -> sample_id_to_name, key);
+	hashed_arr -> appendix1 = NULL+ cct_context -> sample_id_to_name -> numOfElements; // One-based
+
+	srInt_64 xx1;
+	for(xx1 =0; xx1< hashed_arr -> numOfElements; xx1++){
+		char ** push_arr = malloc(sizeof(char*)*3);
+		char ** sbc_lane_sample = ArrayListGet(hashed_arr, xx1);
+		srInt_64 lane_sample_int = sbc_lane_sample[0]-(char*)NULL;
+
+		ArrayListPush(cct_context -> sample_barcode_list, push_arr);
+		push_arr[0] = NULL + lane_sample_int;
+		push_arr[1] = NULL + cct_context -> sample_id_to_name -> numOfElements;
+		push_arr[2] = sbc_lane_sample[1]; // Sample Barcode
+
+		int line_no_in_sheet = sbc_lane_sample[2] - (char*)NULL;
+		HashTablePut(cct_context -> lineno1B_to_sampleno1B_tab , NULL+line_no_in_sheet, NULL + cct_context -> sample_id_to_name -> numOfElements);
+	}
+}
+
+
 int cellCounts_load_scRNA_tables(cellcounts_global_t * cct_context){
 	int rv = 0;
+
 	cct_context-> cell_barcodes_array = input_BLC_parse_CellBarcodes( cct_context-> cell_barcode_list_file );
 	if(NULL == cct_context-> cell_barcodes_array) rv = 1;
-	if(!rv)cellCounts_make_barcode_HT_table( cct_context );
+	if(!rv){
+		cellCounts_make_barcode_HT_table( cct_context );
+		cct_context-> sample_sheet_table = input_BLC_parse_SampleSheet( cct_context -> bcl_sample_sheet_file);
+		if(NULL == cct_context-> sample_sheet_table) rv = 1;
+		if(!rv){
+			cct_context -> sample_id_to_name = ArrayListCreate(64);
+			cct_context -> lineno1B_to_sampleno1B_tab = HashTableCreate(40);
+
+			cct_context -> sample_sheet_table -> appendix1 = cct_context;
+			cct_context -> sample_barcode_list = ArrayListCreate(64);
+
+			ArrayListSetDeallocationFunction(cct_context -> sample_barcode_list, free);
+			HashTableIteration(cct_context-> sample_sheet_table, sheet_convert_ss_to_arr);
+		}
+	}
 	return rv;
 }
 
@@ -324,6 +365,11 @@ int cellCounts_load_context(cellcounts_global_t * cct_context){
 int cellCounts_destroy_context(cellcounts_global_t * cct_context){
 	geinput_close(&cct_context -> input_dataset);
 	destroy_offsets(&cct_context->chromosome_table);
+	HashTableDestroy(cct_context->sample_sheet_table);
+	HashTableDestroy(cct_context->lineno1B_to_sampleno1B_tab);
+	ArrayListDestroy(cct_context->sample_id_to_name);
+	ArrayListDestroy(cct_context->sample_barcode_list);
+	ArrayListDestroy(cct_context->cell_barcodes_array);
 	free(cct_context->event_space_dynamic);
 	free(cct_context->voting_location_table);
 	free(cct_context->exonic_region_bitmap);
