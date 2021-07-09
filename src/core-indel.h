@@ -203,4 +203,9 @@ void mark_event_bitmap(unsigned char * bitmap, unsigned int pos);
 int check_event_bitmap(unsigned char * bitmap, unsigned int pos);
 int localPointerCmp_forEventEntry(const void *pointer1, const void *pointer2);
 srUInt_64 localPointerHashFunction_forEventEntry(const void *pointer);
+
+void merge_event_sides(void * arr, int start, int items, int items2);
+void exchange_event_sides(void * arr, int l, int r);
+int compare_event_sides(void * arr, int l, int r);
+void anti_support_add_count(void * ky, void * va, HashTable * tab);
 #endif
