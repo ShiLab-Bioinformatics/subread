@@ -9,6 +9,8 @@
 #include "core-indel.h"
 #include "core-junction.h"
 
+#define CELLBC_BATCH_NUMBER 149
+#define FC_MAX_CIGAR_SECTIONS 96
 
 typedef struct
 {
@@ -59,6 +61,7 @@ typedef struct{
 	int total_threads;
 	cellcounts_align_thread_t * all_thread_contexts;
 	int reads_per_chunk;
+	int allow_multi_overlapping_reads;
 	int max_voting_simples;
 	int max_voting_locations;
 	int max_best_alignments;
@@ -86,6 +89,7 @@ typedef struct{
 
 	char index_prefix[MAX_FILE_NAME_LENGTH];
 	char output_prefix[MAX_FILE_NAME_LENGTH];
+	char temp_file_dir[MAX_FILE_NAME_LENGTH];
 	char input_dataset_name[MAX_FILE_NAME_LENGTH * MAX_SCRNA_FASTQ_FILES * 3];
 	int input_mode;
 
@@ -96,7 +100,6 @@ typedef struct{
 	gene_value_index_t all_value_indexes[100];
 	gene_input_t input_dataset;
 	subread_lock_t input_dataset_lock;
-	subread_lock_t output_lock;
 
 	char cell_barcode_list_file[MAX_FILE_NAME_LENGTH];
 	char bcl_sample_sheet_file[MAX_FILE_NAME_LENGTH];
@@ -107,6 +110,8 @@ typedef struct{
 	ArrayList * sample_barcode_list;
 	ArrayList * sample_id_to_name;
 	HashTable * lineno1B_to_sampleno1B_tab;
+	FILE * batch_files[CELLBC_BATCH_NUMBER+2];
+	subread_lock_t batch_file_locks[CELLBC_BATCH_NUMBER+2];
 	
 	char features_annotation_file[MAX_FILE_NAME_LENGTH];
 	char features_annotation_alias_file[MAX_FILE_NAME_LENGTH];
@@ -218,6 +223,7 @@ int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** 
 	cct_context -> max_vote_number_cutoff = 2;
 	cct_context -> min_votes_per_mapped_read = 3;
 	cct_context -> total_subreads_per_read = 10;
+	strcpy(cct_context -> temp_file_dir, "./");
 
 	if(1){
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
@@ -358,6 +364,19 @@ typedef struct {
 	char * extra_columns;
 } fc_feature_info_t;
 
+typedef struct {
+	unsigned int chro_number;
+	unsigned int chro_features;
+	unsigned int chro_feature_table_start;
+	unsigned int chro_block_table_end;
+	unsigned int chro_possible_length;
+
+	unsigned short chro_reverse_table_current_size;
+	unsigned int * reverse_table_start_index;
+	int reverse_table_start_index_size;
+	//unsigned int * reverse_table_end_index;
+} fc_chromosome_index_info;
+
 srInt_64 unistr_cpy(cellcounts_global_t * cct_context, char * str, int strl)
 {
 	srInt_64 ret;
@@ -404,6 +423,8 @@ int features_load_one_line(char * gene_name, char * transcript_name, char * chro
 			chro_name = tmp_chro_name;
 		}
 	}
+
+	// for the featureCounts part.
 	new_added -> feature_name_pos = unistr_cpy(cct_context, gene_name, strlen(gene_name));
 	new_added -> chro_name_pos_delta = unistr_cpy(cct_context, chro_name, strlen(chro_name)) - new_added -> feature_name_pos;
 	new_added -> start = start;
@@ -411,6 +432,43 @@ int features_load_one_line(char * gene_name, char * transcript_name, char * chro
 	new_added -> sorted_order = the_features -> numOfElements;
 	new_added -> is_negative_strand = is_negative_strand;
 	ArrayListPush(the_features, new_added);
+
+	fc_chromosome_index_info * chro_stub = HashTableGet(cct_context -> chromosome_exons_table, chro_name);
+	if(chro_stub){
+		if(chro_stub -> chro_possible_length < end+1) chro_stub -> chro_possible_length = end+1;
+	}else{
+		chro_stub = calloc(sizeof(fc_chromosome_index_info),1);
+		char * tmp_chro_name = malloc(CHROMOSOME_NAME_LENGTH);
+		term_strncpy(tmp_chro_name, chro_name, CHROMOSOME_NAME_LENGTH);
+		chro_stub -> chro_number = cct_context -> chromosome_exons_table -> numOfElements;
+		chro_stub -> chro_possible_length = end+1;
+		chro_stub -> reverse_table_start_index_size = 0;
+		chro_stub -> reverse_table_start_index = NULL;
+		HashTablePut(cct_context -> chromosome_exons_table, tmp_chro_name, chro_stub);
+	}
+	chro_stub -> chro_features ++;
+
+	if(chro_stub -> reverse_table_start_index){
+		int bin_location = start / REVERSE_TABLE_BUCKET_LENGTH;
+		chro_stub -> reverse_table_start_index[bin_location]++;
+	}
+
+	// for the align part.
+	unsigned int exonic_map_start = linear_gene_position(&cct_context->chromosome_table , chro_name, start);
+	unsigned int exonic_map_stop = linear_gene_position(&cct_context->chromosome_table , chro_name, end);
+	if(exonic_map_start > 0xffffff00 || exonic_map_stop > 0xffffff00){
+		return -1;
+	}
+
+	exonic_map_start -= exonic_map_start%EXONIC_REGION_RESOLUTION;
+	exonic_map_stop -= exonic_map_stop%EXONIC_REGION_RESOLUTION;
+
+	for(; exonic_map_start <= exonic_map_stop; exonic_map_start+=EXONIC_REGION_RESOLUTION){
+		int exonic_map_byte = exonic_map_start / EXONIC_REGION_RESOLUTION / 8;
+		int exonic_map_bit = (exonic_map_start / EXONIC_REGION_RESOLUTION) % 8;
+
+		cct_context ->exonic_region_bitmap[exonic_map_byte] |= (1<<exonic_map_bit);
+	}
 
 	return 0;
 }
@@ -432,25 +490,12 @@ int cellCounts_find_or_insert_gene_name(cellcounts_global_t * cct_context, unsig
 	}
 }
 
-typedef struct {
-	unsigned int chro_number;
-	unsigned int chro_features;
-	unsigned int chro_feature_table_start;
-	unsigned int chro_block_table_start;
-	unsigned int chro_block_table_end;
-	unsigned int chro_possible_length;
-
-	unsigned short chro_reverse_table_current_size;
-	unsigned int * reverse_table_start_index;
-	int reverse_table_start_index_size;
-	//unsigned int * reverse_table_end_index;
-} fc_chromosome_index_info;
-
 void cellCounts_register_reverse_table(int block_no, srInt_64 this_block_min_start, srInt_64 this_block_max_end, fc_chromosome_index_info * chro_inf) {
 	unsigned int reversed_bucket_start = this_block_min_start /  REVERSE_TABLE_BUCKET_LENGTH;
 	unsigned int reversed_bucket_end = this_block_max_end / REVERSE_TABLE_BUCKET_LENGTH;
 	assert(this_block_min_start <= this_block_max_end);
 	assert(reversed_bucket_end < chro_inf -> chro_possible_length);
+	if(!chro_inf->reverse_table_start_index)return;
 	int x1;
 	for(x1 = reversed_bucket_start; x1 <= reversed_bucket_end; x1++)
 		chro_inf->reverse_table_start_index[x1] = min(chro_inf->reverse_table_start_index[x1], block_no);
@@ -577,8 +622,8 @@ void cellCounts_sort_feature_info(cellcounts_global_t * cct_context, unsigned in
 	unsigned char * ret_strand = malloc(features);
 	char ** ret_char_name = malloc(sizeof(void *) * features);
 	fc_feature_info_t ** old_info_ptr = malloc(sizeof(void *) * features);
-	unsigned int * chro_feature_ptr = calloc(sizeof(int) , cct_context -> chromosome_table.total_offsets);
-	fc_chromosome_index_info ** tmp_chro_info_ptrs = calloc(sizeof(fc_chromosome_index_info *), cct_context -> chromosome_table.total_offsets);
+	unsigned int * chro_feature_ptr = calloc(sizeof(int) , cct_context -> chromosome_exons_table -> numOfElements);
+	fc_chromosome_index_info ** tmp_chro_info_ptrs = calloc(sizeof(fc_chromosome_index_info *), cct_context -> chromosome_exons_table -> numOfElements);
 
 	cct_context -> gene_name_array = malloc(sizeof(char *) * features);	// there should be much less identical names.
 	cct_context -> gene_name_table = HashTableCreate(5000);
@@ -596,14 +641,13 @@ void cellCounts_sort_feature_info(cellcounts_global_t * cct_context, unsigned in
 				if (!cursor) break;
 				fc_chromosome_index_info * tmp_chro_inf = cursor -> value;
 				cursor = cursor->next;
-				assert(tmp_chro_inf -> chro_number <  cct_context -> chromosome_table.total_offsets);
+				assert(tmp_chro_inf -> chro_number <  cct_context -> chromosome_exons_table -> numOfElements);
 				chro_feature_ptr [tmp_chro_inf -> chro_number] = tmp_chro_inf -> chro_features;
 				tmp_chro_info_ptrs[tmp_chro_inf -> chro_number] = tmp_chro_inf;
-				SUBREADprintf("INSERT_TPP: %d = %p\n", tmp_chro_inf -> chro_number, tmp_chro_inf);
 			}
 		}
 
-		for(xk1 = 0; xk1 < cct_context -> chromosome_table.total_offsets; xk1++) {
+		for(xk1 = 0; xk1 < cct_context -> chromosome_exons_table -> numOfElements; xk1++) {
 			unsigned int tmpv = chro_feature_ptr[xk1];
 			chro_feature_ptr[xk1] = sum_ptr;
 			tmp_chro_info_ptrs[xk1] -> chro_feature_table_start = sum_ptr;
@@ -622,12 +666,10 @@ void cellCounts_sort_feature_info(cellcounts_global_t * cct_context, unsigned in
 	for(chro_pnt=0; chro_pnt < features; chro_pnt++) {
 		fc_feature_info_t * cur_feature = ArrayListGet(loaded_features, chro_pnt);
 		char * this_chro_name = cct_context -> unistr_buffer_space + cur_feature -> feature_name_pos + cur_feature -> chro_name_pos_delta;
-		int this_chro_number = HashTableGet(cct_context -> chromosome_table.read_name_to_index, this_chro_name) - NULL - 1;
-		if(this_chro_number<0){
-			//SUBREADprintf("Unknown chro in annotation: '%s'\n", this_chro_name);
-			continue;
-		}
-		assert( this_chro_number < cct_context -> chromosome_table.total_offsets );
+		
+		fc_chromosome_index_info * chro_stub = HashTableGet(cct_context -> chromosome_exons_table, this_chro_name);
+		int this_chro_number = chro_stub -> chro_number;
+		assert( this_chro_number < cct_context -> chromosome_exons_table -> numOfElements );
 		unsigned int this_chro_table_ptr = chro_feature_ptr[this_chro_number];
 
 		ret_char_name[this_chro_table_ptr] = this_chro_name;// (char *)cur_feature -> chro;
@@ -640,18 +682,17 @@ void cellCounts_sort_feature_info(cellcounts_global_t * cct_context, unsigned in
 		chro_feature_ptr[this_chro_number]++;
 	}
 
-	for(xk1 = 0; xk1 < cct_context -> chromosome_table.total_offsets; xk1++) {
+	for(xk1 = 0; xk1 < cct_context -> chromosome_exons_table -> numOfElements; xk1++) {
 		fc_chromosome_index_info * tmp_chro_inf = tmp_chro_info_ptrs[xk1];
-		SUBREADprintf("GETTTP %d = %p\n", xk1, tmp_chro_inf);
 		int bins_in_chr = ( tmp_chro_inf->chro_possible_length / REVERSE_TABLE_BUCKET_LENGTH +2);
-		SUBREADprintf("CHRO LEN=%d\n", tmp_chro_inf->chro_possible_length);
 		short * features_per_block_bins = malloc(sizeof(short)*bins_in_chr);
-		for(xk2=0; xk2<bins_in_chr; xk2++)
-			features_per_block_bins[xk2] = max(1,min(1000,(int)(0.9999999+sqrt(tmp_chro_inf -> reverse_table_start_index[xk2]))));
 
-		memset(tmp_chro_inf -> reverse_table_start_index, 0xff, sizeof(int) *bins_in_chr);
+		if(tmp_chro_inf -> reverse_table_start_index){
+			for(xk2=0; xk2<bins_in_chr; xk2++)
+				features_per_block_bins[xk2] = max(1,min(1000,(int)(0.9999999+sqrt(tmp_chro_inf -> reverse_table_start_index[xk2]))));
+			memset(tmp_chro_inf -> reverse_table_start_index, 0xff, sizeof(int) *bins_in_chr);
+		}else continue;
 
-		tmp_chro_inf -> chro_block_table_start = current_block_id; 
 		unsigned int this_block_items = 0;
 		srInt_64 this_block_min_start = 0x7fffffff, this_block_max_end = 0;
 		unsigned int this_chro_tab_end =  tmp_chro_inf -> chro_features + tmp_chro_inf -> chro_feature_table_start;
@@ -667,20 +708,16 @@ void cellCounts_sort_feature_info(cellcounts_global_t * cct_context, unsigned in
 
 		for(sort_i = tmp_chro_inf -> chro_feature_table_start; sort_i< this_chro_tab_end ; sort_i++) {
 			old_info_ptr[sort_i]->sorted_order = sort_i;
-
 			int feature_bin_location = ret_start[sort_i] / REVERSE_TABLE_BUCKET_LENGTH;
 			int block_bin_location = this_block_min_start / REVERSE_TABLE_BUCKET_LENGTH;
 
 			if(this_block_items && (this_block_items > features_per_block_bins[block_bin_location] || feature_bin_location != block_bin_location)){
-
 				if(current_block_id >= current_block_buffer_size - 1) {
 					current_block_buffer_size *= 1.3;
 					ret_block_min_start = realloc(ret_block_min_start, sizeof(srInt_64)*current_block_buffer_size);
 					ret_block_max_end = realloc(ret_block_max_end, sizeof(srInt_64)*current_block_buffer_size);
 					ret_block_end_index = realloc(ret_block_end_index, sizeof(srInt_64)*current_block_buffer_size);
 				}
-
-
 				ret_block_end_index[current_block_id] = sort_i;	// FIRST UNWANTED ID
 				ret_block_min_start[current_block_id] = this_block_min_start;
 				ret_block_max_end[current_block_id] = this_block_max_end;
@@ -742,29 +779,36 @@ int cellCounts_load_annotations(cellcounts_global_t * cct_context){
 		HashTableSetKeyComparisonFunction(cct_context -> chromosome_exons_table, my_strcmp);
 
 		for(x1 = 0; x1 < cct_context -> chromosome_table.total_offsets; x1++){
-			fc_chromosome_index_info * chro_stab = calloc(sizeof(fc_chromosome_index_info),1);
+			fc_chromosome_index_info * chro_stub = calloc(sizeof(fc_chromosome_index_info),1);
 			char * tmp_chro_name = malloc(CHROMOSOME_NAME_LENGTH);
 			char * seq_name = cct_context -> chromosome_table.read_names + MAX_CHROMOSOME_NAME_LEN*x1;
 			term_strncpy(tmp_chro_name, seq_name, CHROMOSOME_NAME_LENGTH);
-			chro_stab -> chro_number = HashTableGet(cct_context -> chromosome_table.read_name_to_index, seq_name ) - NULL -1;
-			chro_stab -> chro_possible_length = cct_context -> chromosome_table.read_offsets[x1] - last_loc;
+			chro_stub -> chro_number = HashTableGet(cct_context -> chromosome_table.read_name_to_index, seq_name ) - NULL -1;
+			chro_stub -> chro_possible_length = cct_context -> chromosome_table.read_offsets[x1] - last_loc;
 			last_loc = cct_context -> chromosome_table.read_offsets[x1];
-			chro_stab -> reverse_table_start_index_size = chro_stab -> chro_possible_length + 1024*1024;
-			chro_stab -> reverse_table_start_index = calloc( chro_stab -> reverse_table_start_index_size  / REVERSE_TABLE_BUCKET_LENGTH +2, sizeof(int));
-			HashTablePut(cct_context -> chromosome_exons_table, tmp_chro_name, chro_stab);
+			chro_stub -> reverse_table_start_index_size = chro_stub -> chro_possible_length + 1024*1024;
+			chro_stub -> reverse_table_start_index = calloc( chro_stub -> reverse_table_start_index_size  / REVERSE_TABLE_BUCKET_LENGTH +2, sizeof(int));
+			HashTablePut(cct_context -> chromosome_exons_table, tmp_chro_name, chro_stub);
 		}
 		
 		cct_context -> all_features_array = ArrayListCreate(350000);
 		ArrayListSetDeallocationFunction(cct_context -> all_features_array, free);
 		int loaded_features = load_features_annotation(cct_context->features_annotation_file, cct_context->features_annotation_file_type, cct_context->features_annotation_gene_id_column, NULL, cct_context->features_annotation_gene_id_column, cct_context, features_load_one_line);
 		if(loaded_features<1) rv = 1;
-		if(!rv){
-			cellCounts_sort_feature_info(cct_context, loaded_features, cct_context -> all_features_array, &cct_context -> features_sorted_chr, &cct_context -> features_sorted_geneid, &cct_context -> features_sorted_start, &cct_context -> features_sorted_stop, &cct_context -> features_sorted_strand, &cct_context -> block_end_index, &cct_context -> block_min_start, &cct_context -> block_max_end);
-		}
+		if(!rv) cellCounts_sort_feature_info(cct_context, loaded_features, cct_context -> all_features_array, &cct_context -> features_sorted_chr, &cct_context -> features_sorted_geneid, &cct_context -> features_sorted_start, &cct_context -> features_sorted_stop, &cct_context -> features_sorted_strand, &cct_context -> block_end_index, &cct_context -> block_min_start, &cct_context -> block_max_end);
 	}
 	return rv;
 }
 
+int cellCounts_open_cellbc_batches(cellcounts_global_t * cct_context){
+	int x1;
+	for(x1=0;x1<CELLBC_BATCH_NUMBER+2; x1++){
+		char fname[MAX_FILE_NAME_LENGTH];
+		sprintf(fname,"%s/temp-cellcounts-%06d-%03d.tmpbin",cct_context->temp_file_dir,getpid(), x1);
+		cct_context -> batch_files[x1] = fopen(fname,"wb");
+		subread_init_lock(cct_context -> batch_file_locks+x1);
+	}
+}
 
 int cellCounts_load_context(cellcounts_global_t * cct_context){
 	int rv = 0;
@@ -785,11 +829,16 @@ int cellCounts_load_context(cellcounts_global_t * cct_context){
 	rv = rv || cellCounts_load_base_value_indexes(cct_context);
 	rv = rv || cellCounts_load_scRNA_tables(cct_context);
 	rv = rv || cellCounts_load_annotations(cct_context);
+	rv = rv || cellCounts_open_cellbc_batches(cct_context);
 
 	return rv;
 }
 
 int cellCounts_destroy_context(cellcounts_global_t * cct_context){
+	int x1;
+	for(x1=0;x1<CELLBC_BATCH_NUMBER+2; x1++) subread_destroy_lock(cct_context -> batch_file_locks+x1);
+	subread_destroy_lock(&cct_context -> input_dataset_lock);
+
 	geinput_close(&cct_context -> input_dataset);
 	destroy_offsets(&cct_context->chromosome_table);
 	HashTableDestroy(cct_context->sample_sheet_table);
@@ -1264,8 +1313,10 @@ void cellCounts_find_hits_for_mapped_section(cellcounts_global_t * cct_context, 
 		}
 	}
 
+	//SUBREADprintf("CHROINF %s=%p ; PossibleLen = %d\n", chro_name, this_chro_info, this_chro_info?this_chro_info-> chro_possible_length:-1);
 	if(this_chro_info) {
 		int search_start, search_end, search_block_id;
+		assert(this_chro_info -> reverse_table_start_index);
 		start_reverse_table_index = min(start_reverse_table_index, this_chro_info-> chro_possible_length / REVERSE_TABLE_BUCKET_LENGTH);
 		end_reverse_table_index = min(end_reverse_table_index, this_chro_info-> chro_possible_length / REVERSE_TABLE_BUCKET_LENGTH+ 1);
 
@@ -1274,15 +1325,18 @@ void cellCounts_find_hits_for_mapped_section(cellcounts_global_t * cct_context, 
 			if(search_start<0xffffff00)break;
 			start_reverse_table_index++;
 		}
+		//SUBREADprintf("REV_TAB RANGE: %d ~ %d for CHRO %s => SEARCH_START %d ; SEARCH_BLOCK_ID %d\n", start_reverse_table_index, end_reverse_table_index, chro_name, search_start, search_block_id);
 		if(search_start>0xffffff00) return;
 		search_end = this_chro_info -> chro_block_table_end;
 
 		for(search_block_id=search_start; search_block_id<search_end; search_block_id++){
+			//SUBREADprintf("TEST BLOCK %s : %d --  %d ~ %d ?? %d ~ %d\n", chro_name, search_block_id, cct_context -> block_min_start[search_block_id] , cct_context -> block_max_end[search_block_id], section_begin_pos, section_end_pos);
 			if (cct_context -> block_min_start[search_block_id] > section_end_pos) break;
 			if (cct_context -> block_max_end[search_block_id] < section_begin_pos) continue;
 
 			int search_item_start = 0, search_item_end = cct_context -> block_end_index[search_block_id];
 			if(search_block_id>0)search_item_start = cct_context -> block_end_index[search_block_id-1];
+			//SUBREADprintf("REACHED SEARCH %s : %d : BLOCK=%d. ITEM START=%d ~ %d\n", chro_name, section_begin_pos, search_block_id, search_item_start, search_item_end);
 
 			// search_item_id is the inner number of the exons.
 			int search_item_id;
@@ -1296,8 +1350,7 @@ void cellCounts_find_hits_for_mapped_section(cellcounts_global_t * cct_context, 
 
 					if(is_strand_ok){
 						if((*nhits) >= thread_context -> hits_number_capacity - 1) {
-							//SUBREADprintf("RESIZE hits: %d\n", thread_context -> hits_number_capacity);
-							thread_context -> hits_number_capacity = max(10, thread_context -> hits_number_capacity);
+							thread_context -> hits_number_capacity = max(10, thread_context -> hits_number_capacity*2);
 							thread_context -> hits_start_pos = realloc(thread_context -> hits_start_pos , sizeof(int) * thread_context -> hits_number_capacity);
 							thread_context -> hits_length = realloc(thread_context -> hits_length, sizeof(short) * thread_context -> hits_number_capacity);
 							thread_context -> hits_chro = realloc(thread_context -> hits_chro, sizeof(char *) * thread_context -> hits_number_capacity);
@@ -1323,20 +1376,225 @@ void cellCounts_find_hits_for_mapped_section(cellcounts_global_t * cct_context, 
 	}
 }
 
+#define SCRNA_READ_NAME_SPLIT_CHAR '|'
+
+int cellCounts_scan_read_name_str(cellcounts_global_t * cct_context, char * read_name, char ** sample_seq, char ** sample_qual, char ** BC_seq, char ** BC_qual, char ** UMI_seq, char ** UMI_qual, char ** lane_str, char ** RG, int * rname_trimmed_len){
+	char * testi;
+	int field_i=0;
+	for(testi = read_name +1; * testi; testi ++){
+		if((*testi)== SCRNA_READ_NAME_SPLIT_CHAR || ((*testi)== ':' && cct_context -> input_mode == GENE_INPUT_BCL )){
+			field_i++;
+			if(field_i == 1) {
+				if(rname_trimmed_len) (*rname_trimmed_len)=testi-read_name;
+				if(BC_seq)(*BC_seq) = testi+1;
+				if(UMI_seq)(*UMI_seq) = testi+1+cct_context -> known_cell_barcode_length;
+			}else if(field_i == 2){
+				if(BC_qual)(*BC_qual) = testi+1;
+				if(UMI_qual)(*UMI_qual) = testi+1+cct_context -> known_cell_barcode_length;
+			}else if(field_i == 3){
+				*sample_seq = testi + 1;
+				if(RG)(*RG) = *sample_seq;
+			}else if(field_i == 4){
+				if(sample_qual)(*sample_qual) = testi + 1;
+			}else if(field_i == 5){
+				(*lane_str) = testi + 1;
+				if(memcmp(*lane_str, "@RgLater@", 9)==0) (*lane_str) += 9;
+				break;
+			}
+		}
+	}
+
+	return field_i;
+}
+
 
 unsigned int cellCounts_explain_read(cellcounts_global_t * cct_context, int thread_no, realignment_result_t * realigns, subread_read_number_t pair_number,int read_len, char * read_name , char *read_text, char *qual,  int voting_loc_no, int is_negative_strand);
+
+int cellCounts_get_cellbarcode_no(cellcounts_global_t * cct_context, int thread_no, char * cbc){
+	//return -1;
+	char tmpc [MAX_READ_NAME_LEN];
+	int xx1;
+	ArrayList * ret=NULL;
+
+	for(xx1=0;xx1<3;xx1++){
+		int xx2;
+		if(xx1==1) ret = ArrayListCreate(100);
+
+		if(xx1>0){
+			tmpc[0] = (xx1==2)?'S':'F';
+			for(xx2=0; xx2<cct_context -> known_cell_barcode_length/2 ; xx2++)
+				tmpc[1+xx2] = cbc[2*xx2+xx1-1];
+			tmpc[1+cct_context -> known_cell_barcode_length/2]=0;
+		}else{
+			memcpy(tmpc, cbc, cct_context -> known_cell_barcode_length);
+			tmpc[cct_context -> known_cell_barcode_length]=0;
+		}
+
+		void *xrawarr = HashTableGet(cct_context -> cell_barcode_head_tail_table, tmpc);
+
+		if(xx1 == 0){
+			//if(xrawarr) SUBREADprintf("CAFE ? %p\n", xrawarr);
+			srInt_64 xint = xrawarr - NULL;
+			if(( xint & 0xFFFFFFFFF0000000llu)== IMPOSSIBLE_MEMORY_SPACE){
+				int only_cell_id = xint - IMPOSSIBLE_MEMORY_SPACE;
+				// no memory was allocated.
+				return only_cell_id;
+			}
+		}else{
+			ArrayList * rawarr = xrawarr;
+			if(rawarr){
+				int xx3,xx2, found;
+				for(xx2=0; xx2<rawarr->numOfElements; xx2++){
+					int bcno = ArrayListGet(rawarr, xx2)-NULL;
+					found=0;
+					for(xx3=0;xx3<ret -> numOfElements;xx3++){
+						if(ArrayListGet(ret, xx3)==NULL+bcno){
+							found=1;
+							break;
+						}
+					}
+
+					if(!found)ArrayListPush(ret, NULL+bcno);
+				}
+			}
+		}
+	}
+
+
+	int tb1=-1;
+	for(xx1=0; xx1<ret -> numOfElements; xx1++){
+		int tbcn = ArrayListGet(ret,xx1)-NULL;
+		char * known_cbc = ArrayListGet(cct_context -> cell_barcodes_array, tbcn);
+		int hc = hamming_dist_ATGC_max2( known_cbc, cbc );
+
+	//	cbc[16]=0; if(hc <=3)SUBREADprintf("TEST_CBC %s ~ %s = %d\n", known_cbc, cbc, hc);
+		if(hc==1){
+			tb1 = tbcn;
+			break;
+		}
+	}
+	//SUBREADprintf("CANDIDATE CELL BARCODES=%ld ; hit = %d\n", ret->numOfElements, tb1);
+	ArrayListDestroy(ret);
+
+	return tb1;
+}
+
+#define READ_BIN_BUF_SIZE 1000 // sufficient for a <=150bp read.
+
+void cellCounts_build_read_bin(cellcounts_global_t * cct_context, int thread_no, char * rbin, char * read_name, int read_name_len, int read_len, char * read_text, char * qual_text, char * chro_name, int chro_pos, realignment_result_t * res, int multi_mapping_number, int this_multi_mapping_i){
+	char * cigar = NULL;
+	if(res)cigar = res->cigar_string;
+	int mapping_quality=0;
+
+	if(res && (res -> realign_flags & CORE_IS_BREAKEVEN)) mapping_quality = 0;
+	else if(res) mapping_quality = 40/res->MAPQ_adjustment;
+
+	int flags = 4;
+	if(res) flags = (res -> realign_flags & CORE_IS_NEGATIVE_STRAND)?16:0;
+	if(this_multi_mapping_i>1) flags += 256;
+
+	int cigar_opts[FC_MAX_CIGAR_SECTIONS], xk1, cover_length = 0;
+	int cigar_opt_len = 0;
+	if(cigar) cigar_opt_len = SamBam_compress_cigar(cigar, cigar_opts, & cover_length, FC_MAX_CIGAR_SECTIONS);
+
+	int record_length = 4 + 4 + 4 + 4 +  /* l_seq: */ 4 + 4 + 4 + 4 + /* read_name:*/ read_name_len + cigar_opt_len * 4 + (read_len + 1) /2 + read_len;
+
+	int bin = SamBam_reg2bin(chro_pos -1, chro_pos-1+cover_length);
+	int refID = -1;
+	if(chro_name) refID = HashTableGet(cct_context -> chromosome_table.read_name_to_index, chro_name) - NULL - 1;
+	int bin_mq_nl = (bin<<16) | (mapping_quality << 8) | read_name_len ;
+	int fag_nc = (flags<<16) | cigar_opt_len;
+	int nextRefID = -1, temp_len = -1, next_chro_pos=-1;
+	chro_pos--;
+	memcpy(rbin     , & record_length , 4);
+	memcpy(rbin + 4 , & refID , 4);
+	memcpy(rbin + 8 , & chro_pos , 4);
+	memcpy(rbin +12 , & bin_mq_nl , 4);
+	memcpy(rbin +16 , & fag_nc , 4);
+	memcpy(rbin +20 , & read_len , 4);
+	memcpy(rbin +24 , & nextRefID , 4);
+	memcpy(rbin +28 , & next_chro_pos , 4);
+	memcpy(rbin +32 , & temp_len , 4);
+	memcpy(rbin +36 , read_name, read_name_len);
+	memcpy(rbin +36 + read_name_len, cigar_opts, cigar_opt_len*4);
+	SamBam_read2bin(read_text  , rbin +36 +read_name_len +cigar_opt_len*4);
+
+	int basev = 36 +read_name_len +cigar_opt_len*4+(read_len + 1) /2;
+	for(xk1=0; xk1<read_len; xk1++) *(rbin +basev+xk1) = qual_text[xk1];
+}
+
+void cellCounts_write_one_read_bin(cellcounts_global_t * cct_context, int thread_no, FILE * binfp, int sample_no, char * readbin, int nhits){
+	fwrite(&sample_no,4,1,binfp);
+}
+
+int cellCounts_get_sample_id(cellcounts_global_t * cct_context, char * sbc, int read_laneno){
+	int x1;
+
+	for(x1=0; x1 < cct_context -> sample_barcode_list -> numOfElements ; x1++ ){
+		char ** lane_and_barcode = ArrayListGet(cct_context -> sample_barcode_list, x1);
+		int lane_no = lane_and_barcode[0]-(char*)NULL;
+		if(read_laneno == lane_no){
+			int sample_no = lane_and_barcode[1]-(char*)NULL;
+			char * knownbar = lane_and_barcode[2];
+			int hd = hamming_dist_ATGC_max2( sbc, knownbar );
+			if(hd<=2) return sample_no;
+		}
+	}
+	return -1;
+}
+
+void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread_no, char * read_name, int rlen, char * read_text, char * qual_text, char * chro_name, int chro_pos, realignment_result_t * res, int nhits, int multi_mapping_number, int this_multi_mapping_i){
+	int batch_no = CELLBC_BATCH_NUMBER+1;
+	
+	char * sample_seq=NULL, *sample_qual=NULL, *BC_qual=NULL, *BC_seq=NULL, *UMI_seq=NULL, *UMI_qual=NULL, *lane_str=NULL, *RG=NULL, *testi;
+	int rname_trimmed_len=0;
+	int fields = cellCounts_scan_read_name_str(cct_context, read_name, &sample_seq, &sample_qual, &BC_seq, &BC_qual, &UMI_seq, &UMI_qual, &lane_str, &RG, &rname_trimmed_len);
+	assert(fields==5);
+
+	int laneno = 0;
+	for(testi = lane_str+1; *testi; testi++){
+		if(!isdigit(*testi))break;
+		laneno = laneno*10 + (*testi)-'0';
+	}
+
+	int sample_no = cellCounts_get_sample_id(cct_context, sample_seq, laneno); 
+	int cell_barcode_no = cellCounts_get_cellbarcode_no(cct_context, thread_no, BC_seq);
+
+	if(nhits > 1 && !cct_context -> allow_multi_overlapping_reads) nhits = 0;
+	if(cell_barcode_no>=0 && sample_no>0) batch_no = cell_barcode_no % CELLBC_BATCH_NUMBER;
+	else if(sample_no>0) batch_no = CELLBC_BATCH_NUMBER;
+	
+	subread_lock_occupy(cct_context -> batch_file_locks + batch_no);
+	FILE * binfp = cct_context -> batch_files [ batch_no ];
+	char readbin[READ_BIN_BUF_SIZE];
+	cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, rname_trimmed_len, rlen, read_text, qual_text, chro_name, chro_pos, res, multi_mapping_number, this_multi_mapping_i);
+	cellCounts_write_one_read_bin(cct_context, thread_no, binfp, sample_no, readbin, nhits);
+	subread_lock_release(cct_context -> batch_file_locks + batch_no);
+}
 
 void cellCounts_write_read_in_batch_bin(cellcounts_global_t * cct_context, int thread_no, cellCounts_output_context_t * out_context, unsigned int read_number, realignment_result_t * res, char * read_name, char * read_text, char * qual_text, int rlen, int multi_mapping_number, int this_multi_mapping_i){
 	if(res){
 		char * chro_name = NULL;
 		int chro_pos = 0;
+		int is_negative = (res -> realign_flags & CORE_IS_NEGATIVE_STRAND)?1:0;
+
 		locate_gene_position( res -> first_base_position+1, &cct_context -> chromosome_table, &chro_name, &chro_pos );
 		chro_pos += get_soft_clipping_length(res->cigar_string);
-	//	SUBREADprintf("Having %d mapped to %s : %d by %s\n", read_name, chro_name, chro_pos,  res->cigar_string);
-	}else{
-	//	SUBREADprintf("Unmapped %s\n", read_name);
-	}
-	//SUBREADprintf("%s\n\n", read_text);
+
+		int nch, nchi, add_curs, tmpi=0, chro_curs=chro_pos, nhits=0;
+		for(nchi=0; nch=res->cigar_string[nchi]; nchi++){
+			if(isdigit(nch)){
+				tmpi = 10*tmpi + (nch-'0');
+			}else{
+				add_curs = 0;
+				if(nch=='M'||nch=='D'||nch=='N') add_curs =tmpi;
+				if(nch=='M')cellCounts_find_hits_for_mapped_section(cct_context, thread_no, chro_name, chro_curs, chro_curs+add_curs, is_negative,&nhits);
+				tmpi=0;
+			}
+		}
+		cellCounts_vote_and_add_count(cct_context, thread_no, read_name, rlen, read_text, qual_text, chro_name, chro_pos, res, nhits, multi_mapping_number, this_multi_mapping_i);
+	}else //unmapped
+		cellCounts_vote_and_add_count(cct_context, thread_no, read_name, rlen, read_text, qual_text, NULL, 0, NULL, 0, 0, 0);
 }
 
 int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no){
@@ -1567,7 +1825,7 @@ int cellCounts_prepare_context_for_align(cellcounts_global_t * cct_context, int 
 		thread_context -> final_reads_mismatches_array = (unsigned short*)malloc(sizeof(unsigned short)*cct_context -> total_events);
 		thread_context -> final_counted_reads_array = (unsigned short*)malloc(sizeof(unsigned short)*cct_context -> total_events);
 
-		thread_context -> hits_number_capacity = 5;
+		thread_context -> hits_number_capacity = 50;
 		thread_context -> hits_start_pos = malloc(sizeof(int) * thread_context -> hits_number_capacity);
 		thread_context -> hits_length = malloc(sizeof(int) * thread_context -> hits_number_capacity);
 		thread_context -> hits_chro = malloc(sizeof(char *) * thread_context -> hits_number_capacity);
@@ -1580,8 +1838,6 @@ int cellCounts_prepare_context_for_align(cellcounts_global_t * cct_context, int 
 
 		memset(thread_context -> final_reads_mismatches_array , 0, sizeof(unsigned short)*cct_context -> total_events);
 		memset(thread_context -> final_counted_reads_array , 0, sizeof(unsigned short)*cct_context -> total_events);
-
-		subread_init_lock(&cct_context -> output_lock);
 	}
 	return 0;
 }
