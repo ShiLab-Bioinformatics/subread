@@ -49,11 +49,6 @@ typedef struct{
 	int * hits_length;
 	char ** hits_chro;
 	srInt_64 * hits_indices;
-
-	int * scoring_buff_numbers;
-	int * scoring_buff_flags;
-	int * scoring_buff_overlappings;
-	srInt_64 * scoring_buff_exon_ids;
 } cellcounts_align_thread_t;
 
 
@@ -112,6 +107,7 @@ typedef struct{
 	HashTable * lineno1B_to_sampleno1B_tab;
 	FILE * batch_files[CELLBC_BATCH_NUMBER+2];
 	subread_lock_t batch_file_locks[CELLBC_BATCH_NUMBER+2];
+	int UMI_length;
 	
 	char features_annotation_file[MAX_FILE_NAME_LENGTH];
 	char features_annotation_alias_file[MAX_FILE_NAME_LENGTH];
@@ -1355,11 +1351,6 @@ void cellCounts_find_hits_for_mapped_section(cellcounts_global_t * cct_context, 
 							thread_context -> hits_length = realloc(thread_context -> hits_length, sizeof(short) * thread_context -> hits_number_capacity);
 							thread_context -> hits_chro = realloc(thread_context -> hits_chro, sizeof(char *) * thread_context -> hits_number_capacity);
 							thread_context -> hits_indices = realloc(thread_context -> hits_indices, sizeof(srInt_64) * thread_context -> hits_number_capacity);
-
-							thread_context -> scoring_buff_numbers = realloc(thread_context -> scoring_buff_numbers, sizeof(int)*2*thread_context -> hits_number_capacity);
-							thread_context -> scoring_buff_flags = realloc(thread_context -> scoring_buff_flags, sizeof(int)*2*thread_context -> hits_number_capacity);
-							thread_context -> scoring_buff_overlappings = realloc(thread_context -> scoring_buff_overlappings, sizeof(int)*2*thread_context -> hits_number_capacity);
-							thread_context -> scoring_buff_exon_ids = realloc(thread_context -> scoring_buff_exon_ids, sizeof(srInt_64)*2*thread_context -> hits_number_capacity);
 						}
 
 						if((*nhits) <= MAX_HIT_NUMBER - 1) {
@@ -1402,6 +1393,11 @@ int cellCounts_scan_read_name_str(cellcounts_global_t * cct_context, char * read
 				break;
 			}
 		}
+	}
+	if(cct_context -> UMI_length <1){ // no locking is needed because it can be safely done many times.
+	    int umi_end_pos=0,nch;
+	    for(umi_end_pos=0; 0!=(nch = (*UMI_seq) [umi_end_pos]); umi_end_pos++) if(!isalpha(nch))break;
+	    cct_context -> UMI_length = umi_end_pos;
 	}
 
 	return field_i;
@@ -1523,8 +1519,31 @@ void cellCounts_build_read_bin(cellcounts_global_t * cct_context, int thread_no,
 	for(xk1=0; xk1<read_len; xk1++) *(rbin +basev+xk1) = qual_text[xk1];
 }
 
-void cellCounts_write_one_read_bin(cellcounts_global_t * cct_context, int thread_no, FILE * binfp, int sample_no, char * readbin, int nhits){
+void cellCounts_write_one_read_bin(cellcounts_global_t * cct_context, int thread_no, FILE * binfp, int sample_no, int cellbarcode_no, char * umi_barcode, char * readbin, int nhits){
+	int x1;
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
+
 	fwrite(&sample_no,4,1,binfp);
+	fwrite(&cellbarcode_no,4,1,binfp);
+	if(nhits <1){
+		srInt_64 zero_genes = 1LLU<<63;
+		fwrite(&zero_genes, 8,1,binfp);
+	}else if(nhits<2){
+		srInt_64 exon_no = thread_context -> hits_indices[0];
+		srInt_64 gene_no = cct_context -> features_sorted_geneid[exon_no];
+		fwrite(&gene_no, 8,1,binfp);
+	}else{
+		srInt_64 total_genes = nhits + (1LLU<<63);
+		fwrite(&total_genes, 8,1,binfp);
+		for(x1=0;x1<nhits;x1++){
+			srInt_64 exon_no = thread_context -> hits_indices[x1];
+			srInt_64 gene_no = cct_context -> features_sorted_geneid[exon_no];
+			fwrite(&gene_no, 8,1,binfp);
+		}
+	}
+	fwrite(umi_barcode, cct_context->UMI_length, 1, binfp);
+	memcpy(&x1, readbin, 4);
+	fwrite(readbin, x1, 1, binfp);
 }
 
 int cellCounts_get_sample_id(cellcounts_global_t * cct_context, char * sbc, int read_laneno){
@@ -1568,7 +1587,7 @@ void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread
 	FILE * binfp = cct_context -> batch_files [ batch_no ];
 	char readbin[READ_BIN_BUF_SIZE];
 	cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, rname_trimmed_len, rlen, read_text, qual_text, chro_name, chro_pos, res, multi_mapping_number, this_multi_mapping_i);
-	cellCounts_write_one_read_bin(cct_context, thread_no, binfp, sample_no, readbin, nhits);
+	cellCounts_write_one_read_bin(cct_context, thread_no, binfp, sample_no, cell_barcode_no, UMI_seq, readbin, nhits);
 	subread_lock_release(cct_context -> batch_file_locks + batch_no);
 }
 
@@ -1830,11 +1849,6 @@ int cellCounts_prepare_context_for_align(cellcounts_global_t * cct_context, int 
 		thread_context -> hits_length = malloc(sizeof(int) * thread_context -> hits_number_capacity);
 		thread_context -> hits_chro = malloc(sizeof(char *) * thread_context -> hits_number_capacity);
 		thread_context -> hits_indices = malloc(sizeof(srInt_64) * thread_context -> hits_number_capacity);
-
-		thread_context -> scoring_buff_numbers = malloc(sizeof(int) *2* thread_context -> hits_number_capacity);
-		thread_context -> scoring_buff_flags = malloc(sizeof(int) *2* thread_context -> hits_number_capacity);
-		thread_context -> scoring_buff_overlappings = malloc(sizeof(int) *2* thread_context -> hits_number_capacity);
-		thread_context -> scoring_buff_exon_ids = malloc(sizeof(srInt_64) *2* thread_context -> hits_number_capacity);
 
 		memset(thread_context -> final_reads_mismatches_array , 0, sizeof(unsigned short)*cct_context -> total_events);
 		memset(thread_context -> final_counted_reads_array , 0, sizeof(unsigned short)*cct_context -> total_events);
@@ -2961,10 +2975,6 @@ int cellCounts_finalise_indel_and_junction_thread(cellcounts_global_t * cct_cont
 			free(thread_context -> hits_length);
 			free(thread_context -> hits_chro);
 			free(thread_context -> hits_indices);
-			free(thread_context -> scoring_buff_numbers);
-			free(thread_context -> scoring_buff_flags);
-			free(thread_context -> scoring_buff_overlappings);
-			free(thread_context -> scoring_buff_exon_ids);
 		}
 	}
 	return 0;
