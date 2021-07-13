@@ -9,6 +9,7 @@
 #include "core-indel.h"
 #include "core-junction.h"
 
+#define MAX_FC_READ_LENGTH 10001
 #define READ_BIN_BUF_SIZE 1000 // sufficient for a <=150bp read.
 #define CELLBC_BATCH_NUMBER 149
 #define FC_MAX_CIGAR_SECTIONS 96
@@ -69,6 +70,7 @@ typedef struct{
 	int total_subreads_per_read;
 	int report_multi_mapping_reads;
 	int is_BAM_and_FQ_out_generated;
+	int current_dataset_no;
 
 	int processed_reads_in_chunk;
 	int running_processed_reads_in_chunk;
@@ -81,7 +83,6 @@ typedef struct{
 	int total_events;
 	int event_space_capacity;
 	chromosome_event_t * event_space_dynamic;
-	chromosome_event_t * event_space;
 	HashTable * event_entry_table;
 
 	char index_prefix[MAX_FILE_NAME_LENGTH];
@@ -101,6 +102,7 @@ typedef struct{
 	char cell_barcode_list_file[MAX_FILE_NAME_LENGTH];
 	char bcl_sample_sheet_file[MAX_FILE_NAME_LENGTH];
 	int known_cell_barcode_length;
+	int is_dual_index;
 	HashTable * cell_barcode_head_tail_table;
 	ArrayList * cell_barcodes_array;
 	HashTable * sample_sheet_table;
@@ -110,6 +112,10 @@ typedef struct{
 	FILE * batch_files[CELLBC_BATCH_NUMBER+2];
 	subread_lock_t batch_file_locks[CELLBC_BATCH_NUMBER+2];
 	HashTable * sample_BAM_writers;
+
+	parallel_gzip_writer_t fastq_unassigned_writer[4];
+	subread_lock_t fastq_unassigned_lock;
+
 	int UMI_length;
 	int barcode_batched_max_genes;
 	int barcode_batched_max_Rbin_len;
@@ -227,6 +233,7 @@ int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** 
 	cct_context -> min_votes_per_mapped_read = 3;
 	cct_context -> total_subreads_per_read = 10;
 	cct_context -> is_BAM_and_FQ_out_generated = 1;
+	cct_context -> current_dataset_no = 1;
 	strcpy(cct_context -> temp_file_dir, "./");
 
 	if(1){
@@ -336,14 +343,52 @@ void cellCounts_close_sample_SamBam_writers(void *v){
 		parallel_gzip_writer_close(gzfp);
 
 		gzfp = vv[3];
+		if(gzfp)parallel_gzip_writer_close(gzfp);
+
+		gzfp = vv[4];
 		parallel_gzip_writer_close(gzfp);
 	}
 
-	pthread_spinlock_t * gz_lock = vv[4];
+	pthread_spinlock_t * gz_lock = vv[5];
 	pthread_spin_destroy(gz_lock);
 	free(gz_lock);
 	
 	free(vv);
+}
+
+void cellCounts_add_simple_writer_header(cellcounts_global_t * cct_context, simple_bam_writer * wtr){
+	int x1, outcapa=3000, outsize=0;
+	unsigned int last_end = 0;
+	char * outbuff = malloc(outcapa);
+	for(x1=0;x1<cct_context->chromosome_table.total_offsets; x1++){
+		if(outsize >= outcapa -MAX_CHROMOSOME_NAME_LEN -40){
+			outcapa *=2;
+			outbuff = realloc(outbuff, outcapa);
+		}
+		char * chro_name = cct_context->chromosome_table.read_names+x1*MAX_CHROMOSOME_NAME_LEN;
+		unsigned int this_end = cct_context->chromosome_table.read_offsets[x1];
+		int this_size = this_end - last_end;
+		last_end = this_end;
+		outsize += sprintf(outbuff+outsize,"@SQ\tSN:%s\tLN:%d\n",chro_name,this_size);
+	}
+	outsize++;
+	simple_bam_write(&outsize,4,wtr,0);
+	simple_bam_write(outbuff, outsize, wtr, 1);
+	free(outbuff);
+
+	simple_bam_write(&cct_context->chromosome_table.total_offsets,4,wtr,0);
+	for(x1=0;x1<cct_context->chromosome_table.total_offsets; x1++){
+		char * chro_name = cct_context->chromosome_table.read_names+x1*MAX_CHROMOSOME_NAME_LEN;
+		unsigned int this_end = cct_context->chromosome_table.read_offsets[x1];
+		int this_size = this_end - last_end;
+		last_end = this_end;
+		int sqname_len = strlen(chro_name)+1;
+		simple_bam_write(&sqname_len, 4, wtr, 0);
+		simple_bam_write(chro_name, sqname_len, wtr, 0);
+		simple_bam_write(&this_size, 4, wtr, 0);
+	}
+	simple_bam_write("",0,wtr,1);
+	wtr -> total_chromosomes = cct_context->chromosome_table.total_offsets;
 }
 
 void cellCounts_sample_SamBam_writers_new_files(void *k, void *v, HashTable * tab){
@@ -356,16 +401,20 @@ void cellCounts_sample_SamBam_writers_new_files(void *k, void *v, HashTable * ta
 	sprintf(fname, "%s.bam", samplename);
 	sprintf(fnamet, "del4-cC-tmp0-%s.del", samplename);
 	simple_bam_writer * wtr = simple_bam_create(fname);
-	parallel_gzip_writer_t * gzipR1fq=NULL, * gzipI1fq=NULL, * gzipR2fq=NULL;
+	cellCounts_add_simple_writer_header(cct_context, wtr);
+	parallel_gzip_writer_t * gzipR1fq=NULL, * gzipI1fq=NULL, * gzipR2fq=NULL, * gzipI2fq=NULL;
 
 	if(cct_context -> input_mode == GENE_INPUT_BCL || cct_context -> input_mode == GENE_INPUT_SCRNA_BAM){
 		gzipR1fq = calloc(sizeof(parallel_gzip_writer_t),1);
 		gzipI1fq = calloc(sizeof(parallel_gzip_writer_t),1);
+		if(cct_context -> is_dual_index)gzipI2fq = calloc(sizeof(parallel_gzip_writer_t),1);
 		gzipR2fq = calloc(sizeof(parallel_gzip_writer_t),1);
 		sprintf(fname, "%s_R1.fastq.gz", samplename);
 		parallel_gzip_writer_init(gzipR1fq, fname, cct_context -> total_threads);
 		sprintf(fname, "%s_I1.fastq.gz", samplename);
 		parallel_gzip_writer_init(gzipI1fq, fname, cct_context -> total_threads);
+		sprintf(fname, "%s_I2.fastq.gz", samplename);
+		if(gzipI2fq)parallel_gzip_writer_init(gzipI2fq, fname, cct_context -> total_threads);
 		sprintf(fname, "%s_R2.fastq.gz", samplename);
 		parallel_gzip_writer_init(gzipR2fq, fname, cct_context -> total_threads);
 	}
@@ -380,9 +429,9 @@ void cellCounts_sample_SamBam_writers_new_files(void *k, void *v, HashTable * ta
 			wtrptr[0]=wtr;
 			wtrptr[1]=gzipR1fq;
 			wtrptr[2]=gzipI1fq;
-			wtrptr[3]=gzipR2fq;
-			wtrptr[4]=gzfp_lock;
-			wtrptr[5]=NULL;
+			wtrptr[3]=gzipI2fq;
+			wtrptr[4]=gzipR2fq;
+			wtrptr[5]=gzfp_lock;
 			HashTablePut(fp_tab, NULL+x1+1 , wtrptr);
 			break;
 		}
@@ -887,6 +936,19 @@ int cellCounts_open_cellbc_batches(cellcounts_global_t * cct_context){
 		cct_context -> batch_files[x1] = fopen(fname,"wb");
 		subread_init_lock(cct_context -> batch_file_locks+x1);
 	}
+	int umfpi;
+	for(umfpi=1; umfpi<=4; umfpi++){
+		char fname [MAX_FILE_NAME_LENGTH+20];
+		char * ftype = "R1";
+		if(3==umfpi && !cct_context->is_dual_index) continue;
+		if(2==umfpi) ftype = "I1";
+		if(3==umfpi) ftype = "I2";
+		if(4==umfpi) ftype = "R2";
+		sprintf(fname, "UnassignedReads%03d_%s.fastq.gz", cct_context ->current_dataset_no, ftype);
+		parallel_gzip_writer_init(cct_context-> fastq_unassigned_writer+(umfpi-1), fname, cct_context->total_threads);
+	}
+	subread_init_lock(&cct_context->fastq_unassigned_lock);
+	return 0;
 }
 
 int cellCounts_load_context(cellcounts_global_t * cct_context){
@@ -915,14 +977,27 @@ int cellCounts_load_context(cellcounts_global_t * cct_context){
 
 int cellCounts_destroy_context(cellcounts_global_t * cct_context){
 	int x1;
-	for(x1=0;x1<CELLBC_BATCH_NUMBER+2; x1++) subread_destroy_lock(cct_context -> batch_file_locks+x1);
+	for(x1=0;x1<CELLBC_BATCH_NUMBER+2; x1++){
+		char tmp_fname[MAX_FILE_NAME_LENGTH+20];
+		sprintf(tmp_fname, "%s/temp-cellcounts-%06d-%03d.tmpbin", cct_context -> temp_file_dir, getpid(), x1);
+		unlink(tmp_fname);
+		subread_destroy_lock(cct_context -> batch_file_locks+x1);
+	}
 	subread_destroy_lock(&cct_context -> input_dataset_lock);
+	if(cct_context -> is_BAM_and_FQ_out_generated){
+		HashTableDestroy(cct_context->sample_BAM_writers);
+		subread_destroy_lock(&cct_context->fastq_unassigned_lock);
+		int umfpi;
+		if(cct_context->input_mode == GENE_INPUT_BCL)
+			for(umfpi = 0; umfpi < 4; umfpi++)
+				if(umfpi!=2 || cct_context->is_dual_index)
+					parallel_gzip_writer_close(cct_context->fastq_unassigned_writer+umfpi);
+	}
 
 	geinput_close(&cct_context -> input_dataset);
 	destroy_offsets(&cct_context->chromosome_table);
 	HashTableDestroy(cct_context->sample_sheet_table);
 	HashTableDestroy(cct_context->lineno1B_to_sampleno1B_tab);
-	HashTableDestroy(cct_context->sample_BAM_writers);
 	ArrayListDestroy(cct_context->sample_id_to_name);
 	ArrayListDestroy(cct_context->sample_barcode_list);
 	ArrayListDestroy(cct_context->cell_barcodes_array);
@@ -980,7 +1055,7 @@ void cellCounts_clean_context_after_chunk(cellcounts_global_t * cct_context) {
 	int event_id;
 	//memset(context -> big_margin_record  , 0 , sizeof(*context -> big_margin_record) * context ->config.reads_per_chunk * (context->input_reads.is_paired_end_reads?2:1) * context->config.big_margin_record_size);
 	for(event_id = 0; event_id < cct_context -> total_events; event_id++){
-		chromosome_event_t * event_body = cct_context -> event_space + event_id;
+		chromosome_event_t * event_body = cct_context -> event_space_dynamic + event_id;
 		event_body -> critical_read_id = 0xffffffffffffffffllu;
 	}
 }
@@ -1377,6 +1452,7 @@ void cellCounts_find_hits_for_mapped_section(cellcounts_global_t * cct_context, 
 	int start_reverse_table_index = section_begin_pos / REVERSE_TABLE_BUCKET_LENGTH;
 	int end_reverse_table_index = (1+section_end_pos) / REVERSE_TABLE_BUCKET_LENGTH;
 
+	//SUBREADprintf("CHRO:%p(%s)\n", chro_name,chro_name);
 	fc_chromosome_index_info * this_chro_info = HashTableGet(cct_context -> chromosome_exons_table, chro_name);
 	if(this_chro_info == NULL) {
 		if(cct_context -> sam_chro_to_anno_chr_alias) {
@@ -1600,7 +1676,7 @@ void cellCounts_build_read_bin(cellcounts_global_t * cct_context, int thread_no,
 	SamBam_read2bin(read_text  , rbin +36 +read_name_len +cigar_opt_len*4);
 
 	int basev = 36 +read_name_len +cigar_opt_len*4+(read_len + 1) /2;
-	for(xk1=0; xk1<read_len; xk1++) *(rbin +basev+xk1) = qual_text[xk1];
+	for(xk1=0; xk1<read_len; xk1++) *(rbin +basev+xk1) = qual_text[xk1]-33;
 }
 
 void cellCounts_write_one_read_bin(cellcounts_global_t * cct_context, int thread_no, FILE * binfp, int sample_no, int cellbarcode_no, char * umi_barcode, char * readbin, int nhits, int notmapped){
@@ -1614,16 +1690,13 @@ void cellCounts_write_one_read_bin(cellcounts_global_t * cct_context, int thread
 			srInt_64 zero_genes = 1LLU<<63;
 			fwrite(&zero_genes, 8,1,binfp);
 		}else if(nhits<2){
-			srInt_64 exon_no = thread_context -> hits_indices[0];
-			srInt_64 gene_no = cct_context -> features_sorted_geneid[exon_no];
+			srInt_64 gene_no = thread_context -> hits_indices[0];
 			fwrite(&gene_no, 8,1,binfp);
 		}else{
-			#warning "==== THE DIFFERENT EXONS OF THE SAME GENE NEED TO BE MERGED INTO ONE HIT ===="
 			srInt_64 total_genes = nhits + (1LLU<<63);
 			fwrite(&total_genes, 8,1,binfp);
 			for(x1=0;x1<nhits;x1++){
-				srInt_64 exon_no = thread_context -> hits_indices[x1];
-				srInt_64 gene_no = cct_context -> features_sorted_geneid[exon_no];
+				srInt_64 gene_no = thread_context -> hits_indices[x1];
 				fwrite(&gene_no, 8,1,binfp);
 			}
 		}
@@ -1672,26 +1745,87 @@ void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread
 	}
 
 	int sample_no = cellCounts_get_sample_id(cct_context, sample_seq, laneno); 
+
 	int cell_barcode_no = cellCounts_get_cellbarcode_no(cct_context, thread_no, BC_seq);
 
 	if(nhits > 1 && !cct_context -> allow_multi_overlapping_reads) nhits = 0;
 	if(cell_barcode_no>=0 && sample_no>0 && res && nhits>0) batch_no = cell_barcode_no % CELLBC_BATCH_NUMBER;
 	else if(sample_no>0 && res) batch_no = CELLBC_BATCH_NUMBER;
 	
+	char readbin[READ_BIN_BUF_SIZE];
+	cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, strlen(read_name), rlen, read_text, qual_text, chro_name, chro_pos, res, multi_mapping_number, this_multi_mapping_i);
+
 	if(sample_no>0){
 		subread_lock_occupy(cct_context -> batch_file_locks + batch_no);
 		FILE * binfp = cct_context -> batch_files [ batch_no ];
-		char readbin[READ_BIN_BUF_SIZE];
-		cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, strlen(read_name), rlen, read_text, qual_text, chro_name, chro_pos, res, multi_mapping_number, this_multi_mapping_i);
 		cellCounts_write_one_read_bin(cct_context, thread_no, binfp, sample_no, cell_barcode_no, UMI_seq, readbin, nhits, batch_no == CELLBC_BATCH_NUMBER+1);
 		subread_lock_release(cct_context -> batch_file_locks + batch_no);
+	}
+
+	void * pps[6];
+	void ** sample_bam_2fps = (void**)pps;
+	if(sample_no<=0){
+		pps[0]=NULL;
+		pps[1]=cct_context -> fastq_unassigned_writer;
+		pps[2]=cct_context -> fastq_unassigned_writer+1;
+		if(cct_context -> is_dual_index)pps[3]=cct_context -> fastq_unassigned_writer+2;
+		else pps[3]=NULL;
+		pps[4]=cct_context -> fastq_unassigned_writer+3;
+		pps[5]=&cct_context -> fastq_unassigned_lock;
+	}else sample_bam_2fps = HashTableGet(cct_context -> sample_BAM_writers, NULL+(sample_no-1) + 1); // sample_id-1: 0,1,2,...
+
+	if(GENE_INPUT_SCRNA_FASTQ != cct_context -> input_mode){
+		parallel_gzip_writer_t **gz3fps = (parallel_gzip_writer_t **)sample_bam_2fps+1;
+		parallel_gzip_writer_add_read_fqs_scRNA(gz3fps, readbin, thread_no);
+		// I2 always has the same length as I1, hence no test is required.
+		if( gz3fps[0]-> thread_objs[thread_no].in_buffer_used >= PARALLEL_GZIP_TXT_BUFFER_SIZE - PARALLEL_GZIP_TXT_BUFFER_MARGIN ||
+		    gz3fps[1]-> thread_objs[thread_no].in_buffer_used >= PARALLEL_GZIP_TXT_BUFFER_SIZE - PARALLEL_GZIP_TXT_BUFFER_MARGIN ||
+		    gz3fps[3]-> thread_objs[thread_no].in_buffer_used >= PARALLEL_GZIP_TXT_BUFFER_SIZE - PARALLEL_GZIP_TXT_BUFFER_MARGIN ){
+			parallel_gzip_zip_texts(gz3fps[0], thread_no, 0);
+			parallel_gzip_zip_texts(gz3fps[1], thread_no, 0);
+			if(gz3fps[2]) parallel_gzip_zip_texts(gz3fps[2], thread_no, 0);
+			parallel_gzip_zip_texts(gz3fps[3], thread_no, 0);
+			pthread_spin_lock(sample_bam_2fps[5]);
+			parallel_gzip_writer_flush(gz3fps[0], thread_no);
+			parallel_gzip_writer_flush(gz3fps[1], thread_no);
+			if(gz3fps[2]) parallel_gzip_writer_flush(gz3fps[2], thread_no);
+			parallel_gzip_writer_flush(gz3fps[3], thread_no);
+			pthread_spin_unlock(sample_bam_2fps[5]);
+		}
+	}
+}
+
+void cellCounts_summarize_entrez_hits(cellcounts_global_t * cct_context, int thread_no, int * nhits){
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
+	if((*nhits) == 0){
+		return;
+	}else if((*nhits) == 1){
+		thread_context -> hits_indices [0] = cct_context -> features_sorted_geneid[thread_context -> hits_indices [0]];
+		return;
+	}else{
+		int scaned_idx, wrt_ptr=0;
+		for(scaned_idx = 0; scaned_idx < *nhits; scaned_idx++)
+			thread_context -> hits_indices [scaned_idx] = cct_context -> features_sorted_geneid[thread_context -> hits_indices [scaned_idx]];
+
+		for(scaned_idx = 0; scaned_idx < *nhits; scaned_idx++){
+			srInt_64 geneid = thread_context -> hits_indices [scaned_idx];
+			int k2, found=0;
+			for(k2=0; k2<wrt_ptr; k2++) if(thread_context -> hits_indices [k2]==geneid) found=1;
+			if(!found) thread_context -> hits_indices [wrt_ptr++] = geneid;
+		}
+		(*nhits) = wrt_ptr;
 	}
 }
 
 void cellCounts_write_read_in_batch_bin(cellcounts_global_t * cct_context, int thread_no, cellCounts_output_context_t * out_context, unsigned int read_number, realignment_result_t * res, char * read_name, char * read_text, char * qual_text, int rlen, int multi_mapping_number, int this_multi_mapping_i){
+
+	char * chro_name = NULL;
+	int chro_pos = 0;
 	if(res){
-		char * chro_name = NULL;
-		int chro_pos = 0;
+		locate_gene_position( res -> first_base_position+1, &cct_context -> chromosome_table, &chro_name, &chro_pos );
+		if(!chro_name) res=NULL;
+	}
+	if(res){
 		int is_negative = (res -> realign_flags & CORE_IS_NEGATIVE_STRAND)?1:0;
 
 		locate_gene_position( res -> first_base_position+1, &cct_context -> chromosome_table, &chro_name, &chro_pos );
@@ -1708,6 +1842,7 @@ void cellCounts_write_read_in_batch_bin(cellcounts_global_t * cct_context, int t
 				tmpi=0;
 			}
 		}
+		cellCounts_summarize_entrez_hits(cct_context, thread_no, &nhits);
 		cellCounts_vote_and_add_count(cct_context, thread_no, read_name, rlen, read_text, qual_text, chro_name, chro_pos, res, nhits, multi_mapping_number, this_multi_mapping_i);
 	}else //unmapped
 		cellCounts_vote_and_add_count(cct_context, thread_no, read_name, rlen, read_text, qual_text, NULL, 0, NULL, 0, 0, 0);
@@ -2875,7 +3010,8 @@ int cellCounts_do_voting(cellcounts_global_t * cct_context, int thread_no) {
 			if(NULL == records) return -1;\
 		}
 
-#define _get_event_body(iii) (thread_contexts[records[iii].thread_no].event_space_dynamic + records[iii].thread_bodytable_number)
+#define _get_event_body(iii) (records[iii].thread_no>=0?(thread_contexts[records[iii].thread_no].event_space_dynamic + records[iii].thread_bodytable_number):\
+  cct_context -> event_space_dynamic + records[iii].thread_bodytable_number)
 
 int cellCounts_conc_sort_compare(void * arr, int l, int r){
 	void ** arrr = (void **)arr;
