@@ -1928,7 +1928,7 @@ int SamBam_writer_calc_cigar_span(char * bin){
 	return ret;
 }
 
-#define MAX_ALLOWED_GAP_IN_BAI_CHUNK 5 // the number of blocks, not the file positions.
+#define MAX_ALLOWED_GAP_IN_BAI_CHUNK 10 // the number of blocks, not the file positions.
 
 void SamBam_writer_sort_bins_to_BAM_test_bins(SamBam_Writer * writer, HashTable * bin_tab, ArrayList * bin_list, ArrayList * win16k_list, int block_len, void ***last_chunk_ptr, int chro_no){
 	int inbin_pos = writer -> chunk_buffer_used - block_len ; // point to the byte AFTER "block_len" int.
@@ -2497,3 +2497,182 @@ void SamBam_writer_finalise_one_thread(SamBam_Writer * writer){
 		}
 	}
 }
+
+
+
+
+unsigned int FC_CRC32(char * dat, int len){
+	unsigned int crc0 = crc32(0, NULL, 0);
+	unsigned int ret = crc32(crc0, (unsigned char *)dat, len);
+	return ret;
+}
+
+struct simple_bam_writer_index_per_chro * simple_bam_writer_new_index_per_chro(){
+	struct simple_bam_writer_index_per_chro * ret = malloc(sizeof(struct simple_bam_writer_index_per_chro ));
+	ret -> index_binP1_table = HashTableCreate(4000);
+	HashTableSetDeallocationFunctions(ret -> index_binP1_table, NULL, (void (*) (void*)) ArrayListDestroy);
+	ret -> index_binP0_list = ArrayListCreate(20000);
+	ret -> win16k_list = ArrayListCreate(20000);
+	return ret;
+}
+
+void simple_bam_writer_update_index(simple_bam_writer * writer, char * rbin, int binlen, srInt_64 block_number, int inbin_pos){
+	int chro_no=0;
+	memcpy(&chro_no, rbin + 4, 4);
+	if(chro_no<0)return;
+
+	unsigned int pos=0, bin_mq_nl=0;
+	memcpy(&pos, rbin + 8, 4);
+	memcpy(&bin_mq_nl, rbin + 12, 4);
+
+	struct simple_bam_writer_index_per_chro * index_chro = HashTableGet(writer -> index_per_chro, NULL+chro_no+1);
+	if(NULL==index_chro){
+		index_chro = simple_bam_writer_new_index_per_chro();
+		HashTablePut(writer -> index_per_chro, NULL+chro_no+1, index_chro);
+	}
+
+	unsigned int binno = bin_mq_nl>>16;
+	int cigar_span = SamBam_writer_calc_cigar_span(rbin +4);
+	int this_w16_no = (pos + cigar_span) >>14;      // WIN is calculated on 0-based pos.
+	unsigned long long this_Vpos = block_number<<16 | inbin_pos;
+	ArrayList * win16k_list = index_chro -> win16k_list;
+	// if this read is after the maximum coordinate in the win16k list: all elements before last one and this one starts at this read.
+	if(this_w16_no > win16k_list->numOfElements){
+		int bbi;
+		for(bbi = win16k_list->numOfElements; bbi <=this_w16_no; bbi++)
+			ArrayListPush(win16k_list, NULL+ this_Vpos);
+	}
+
+	ArrayList * this_bin_chunks = HashTableGet(index_chro -> index_binP1_table, NULL+binno+1);
+	if(NULL == this_bin_chunks){
+		this_bin_chunks = ArrayListCreate(4);
+		HashTablePut(index_chro -> index_binP1_table, NULL+binno+1, this_bin_chunks);
+		ArrayListPush(index_chro -> index_binP0_list, NULL+binno);
+	}
+	int found = 0;
+	// a bin is not necessarily continuous. Say, a top-level bin only contains a few reads (most reads a in low-level bins), but their locations are everywhere
+
+	if(this_bin_chunks -> numOfElements > 0){
+		long long diff = this_Vpos >>16;
+		diff -=(this_bin_chunks -> elementList [ this_bin_chunks -> numOfElements - 1] - NULL)>>16;
+		if(diff < MAX_ALLOWED_GAP_IN_BAI_CHUNK){
+			this_bin_chunks -> elementList [ this_bin_chunks -> numOfElements - 1] = NULL+this_Vpos + binlen + 4;
+			found = 1;
+		}
+	}
+	// if the last chunk in this bin isn't good to be extended (too far from the file location of the new read), a new chunk is created.
+	if(!found){
+		ArrayListPush(this_bin_chunks, NULL + this_Vpos);
+		ArrayListPush(this_bin_chunks, NULL + this_Vpos + binlen+4);
+	}
+}
+
+void simple_bam_write_compressed_block(simple_bam_writer * writer,char *obuf, int olen, int ilen, unsigned int crcval, srInt_64 block_number){
+	if(block_number >= 0)HashTablePut(writer -> bam_blockP1_to_offset0B_table, NULL+1+block_number, NULL+ftello(writer -> bam_FP));
+	fwrite("\x1f\x8b\x8\x4\0\0\0\0\0\0\x6\0", 1, 12, writer -> bam_FP);
+	fwrite("\x42\x43\x2\0", 1, 4, writer -> bam_FP);
+
+	int BSIZE = olen+19+6;
+	fwrite(&BSIZE, 1, 2, writer -> bam_FP);
+	fwrite(obuf, 1, olen, writer -> bam_FP);
+	fwrite(&crcval, 1, 4, writer -> bam_FP);
+	fwrite(&ilen, 1, 4, writer -> bam_FP);
+}
+
+void simple_bam_writer_deallocate_index_per_chro(void * p){
+	struct simple_bam_writer_index_per_chro * ch = p;
+	HashTableDestroy(ch->index_binP1_table);
+	ArrayListDestroy(ch->index_binP0_list);
+	ArrayListDestroy(ch->win16k_list);
+	free(ch);
+}
+
+void simple_bam_write(void * bin, int binlen, simple_bam_writer * writer, int force_flush){
+	while(binlen > 0 || (force_flush && writer->inbin_len)){
+		int concatinate_binlen = min(binlen, 63000 - writer->inbin_len);
+		memcpy(writer->inbin+writer->inbin_len, bin, concatinate_binlen);
+
+		writer->inbin_len += concatinate_binlen;
+		bin += concatinate_binlen;
+		binlen -= concatinate_binlen;
+		if(writer->inbin_len >=63000 || force_flush){
+			deflateInit2(&writer -> strm, Z_BEST_SPEED, Z_DEFLATED, -15, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
+			char obuf[MERGER_WORKER_BINSIZE];
+			writer->strm.next_in = (unsigned char *)writer->inbin;
+			writer->strm.avail_in = writer->inbin_len;
+			writer->strm.next_out = (unsigned char *)obuf;
+			writer->strm.avail_out = MERGER_WORKER_BINSIZE;
+			deflate(&writer->strm, Z_FINISH);
+			int have = MERGER_WORKER_BINSIZE-writer->strm.avail_out;
+			simple_bam_write_compressed_block(writer, obuf, have, writer->inbin_len, FC_CRC32(writer->inbin, writer->inbin_len), -1);
+			writer->inbin_len=0;
+			deflateEnd(&writer -> strm);
+		}
+	}
+}
+
+simple_bam_writer * simple_bam_create(char * fname){
+	simple_bam_writer * ret = calloc(sizeof(simple_bam_writer), 1);
+	ret -> bam_FP = fopen(fname, "wb");
+	ret -> bam_blockP1_to_offset0B_table = HashTableCreate(100000);
+	simple_bam_write("BAM\1", 4, ret, 0);
+
+	char bainame [strlen(fname)+10];
+	strcpy(bainame , fname);
+	strcat(bainame, ".bai");
+	ret -> bai_FP = fopen(bainame, "wb");
+	fwrite("BAI\1", 1, 4, ret -> bai_FP);
+	ret -> index_per_chro = HashTableCreate(1000);
+	HashTableSetDeallocationFunctions(ret -> index_per_chro , NULL , simple_bam_writer_deallocate_index_per_chro);
+	return ret;
+}
+
+#define vpos_to_rpos rposone = (vposone & 0xffff ) + ( (HashTableGet(writer -> bam_blockP1_to_offset0B_table, NULL+1+(vposone >>16)) - NULL) << 16 )
+
+#define BAM_EOF_MARKER "\x1f\x8b\x08\x04\0\0\0\0\0\xff\x06\0\x42\x43\x02\0\x1b\0\x03\0\0\0\0\0\0\0\0\0"
+void simple_bam_close(simple_bam_writer * writer){
+	fwrite(BAM_EOF_MARKER, 1, 28, writer -> bam_FP);
+	fclose(writer -> bam_FP);
+
+	fwrite(&writer -> total_chromosomes, 1, 4, writer -> bai_FP);
+	int chri;
+	for(chri=0; chri<writer -> total_chromosomes; chri++){
+		struct simple_bam_writer_index_per_chro *this_idx = HashTableGet(writer -> index_per_chro , NULL+1+chri);
+		if(NULL == this_idx ){
+			fwrite("\0\0\0\0\0\0\0\0", 1, 8, writer -> bai_FP);//0 intervals and 0 bins
+		}else{
+			HashTable * new_tab=NULL;
+			ArrayList * new_arr=NULL;
+			SamBam_writer_optimize_bins(this_idx -> index_binP1_table, this_idx -> index_binP0_list ,& new_tab, & new_arr);
+			this_idx -> index_binP1_table = new_tab;
+			this_idx -> index_binP0_list = new_arr;
+			fwrite(&this_idx -> index_binP0_list->numOfElements ,1, 4, writer -> bai_FP);
+			int bini;
+			for(bini = 0; bini < this_idx -> index_binP0_list -> numOfElements; bini ++){
+				int binno = ArrayListGet(this_idx -> index_binP0_list, bini)-NULL;
+				ArrayList * bingaps = HashTableGet(this_idx -> index_binP1_table, NULL+1+binno);
+				srInt_64 gapi = bingaps -> numOfElements/2;
+				fwrite(&binno, 1, 4, writer -> bai_FP);
+				fwrite(&gapi ,1, 4, writer -> bai_FP);
+				for(gapi = 0; gapi < bingaps -> numOfElements; gapi++){
+					srInt_64 rposone, vposone = ArrayListGet(bingaps , gapi)-NULL;
+					vpos_to_rpos;
+					fwrite(&rposone, 1, 8, writer -> bai_FP);
+				}
+			}
+
+			fwrite(&this_idx -> win16k_list -> numOfElements ,1, 4, writer -> bai_FP);
+			for(bini = 0; bini < this_idx -> win16k_list -> numOfElements; bini ++){
+				srInt_64 rposone, vposone = ArrayListGet(this_idx -> win16k_list , bini )-NULL;
+				vpos_to_rpos;
+				fwrite(&rposone, 1, 8, writer -> bai_FP);
+			}
+		}
+	}
+	HashTableDestroy(writer -> index_per_chro);
+	fclose(writer -> bai_FP);
+	free(writer);
+}
+
+
+

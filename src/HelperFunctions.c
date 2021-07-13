@@ -106,6 +106,15 @@ char * get_short_fname(char * lname){
 	return ret;
 }
 
+int scRNA_hamming_max2_fixlen(char * u1, char * u2, int ulen){
+	int x, ret=0;
+	for(x=0; x<ulen; x++){
+		if(u1[x]!=u2[x]) ret++;
+		if(ret>1)return ret;
+	}
+	return ret;
+}
+
 
 
 // This assumes the first part of Cigar has differet strandness to the main part of the cigar.
