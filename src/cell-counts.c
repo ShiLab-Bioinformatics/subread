@@ -215,6 +215,8 @@ static struct option cellCounts_long_options[]={
 
 int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** argv){
 	int c , option_index=0;
+	for(c=0; c<argc; c++) SUBREADprintf("Param #%d = '%s'\n", c, argv[c]);
+
 	optind = 0;
 	opterr = 1;
 	optopt = 63;
@@ -243,7 +245,7 @@ int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** 
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
-		cct_context -> reads_per_chunk /= 4;
+		cct_context -> reads_per_chunk /= 15;
 	}
 
 
@@ -506,7 +508,7 @@ typedef struct {
 	//unsigned int * reverse_table_end_index;
 } fc_chromosome_index_info;
 
-srInt_64 unistr_cpy(cellcounts_global_t * cct_context, char * str, int strl)
+srInt_64 cellCounts_unistr_cpy(cellcounts_global_t * cct_context, char * str, int strl)
 {
 	srInt_64 ret;
 	if(cct_context->unistr_buffer_used + strl >= cct_context->unistr_buffer_size-1)
@@ -554,8 +556,8 @@ int features_load_one_line(char * gene_name, char * transcript_name, char * chro
 	}
 
 	// for the featureCounts part.
-	new_added -> feature_name_pos = unistr_cpy(cct_context, gene_name, strlen(gene_name));
-	new_added -> chro_name_pos_delta = unistr_cpy(cct_context, chro_name, strlen(chro_name)) - new_added -> feature_name_pos;
+	new_added -> feature_name_pos = cellCounts_unistr_cpy(cct_context, gene_name, strlen(gene_name));
+	new_added -> chro_name_pos_delta = cellCounts_unistr_cpy(cct_context, chro_name, strlen(chro_name)) - new_added -> feature_name_pos;
 	new_added -> start = start;
 	new_added -> end = end;
 	new_added -> sorted_order = the_features -> numOfElements;
@@ -922,7 +924,7 @@ int cellCounts_load_annotations(cellcounts_global_t * cct_context){
 		
 		cct_context -> all_features_array = ArrayListCreate(350000);
 		ArrayListSetDeallocationFunction(cct_context -> all_features_array, free);
-		int loaded_features = load_features_annotation(cct_context->features_annotation_file, cct_context->features_annotation_file_type, cct_context->features_annotation_gene_id_column, NULL, cct_context->features_annotation_gene_id_column, cct_context, features_load_one_line);
+		int loaded_features = load_features_annotation(cct_context->features_annotation_file, cct_context->features_annotation_file_type, cct_context->features_annotation_gene_id_column, NULL, cct_context-> features_annotation_feature_type, cct_context, features_load_one_line);
 		if(loaded_features<1) rv = 1;
 		if(!rv) cellCounts_sort_feature_info(cct_context, loaded_features, cct_context -> all_features_array, &cct_context -> features_sorted_chr, &cct_context -> features_sorted_geneid, &cct_context -> features_sorted_start, &cct_context -> features_sorted_stop, &cct_context -> features_sorted_strand, &cct_context -> block_end_index, &cct_context -> block_min_start, &cct_context -> block_max_end);
 	}
@@ -1052,6 +1054,8 @@ void cellCounts_go_chunk_nextchunk(cellcounts_global_t * cct_context){
 void cellCounts_clean_context_after_chunk(cellcounts_global_t * cct_context) {
 	cct_context -> running_processed_reads_in_chunk = 0;
 	cct_context -> processed_reads_in_chunk = 0;
+	int voting_location_table_items = cct_context -> reads_per_chunk * max(cct_context -> max_voting_locations, cct_context -> max_best_alignments);
+	memset(cct_context -> voting_location_table ,0,sizeof(voting_location_t)*voting_location_table_items);
 
 	int event_id;
 	//memset(context -> big_margin_record  , 0 , sizeof(*context -> big_margin_record) * context ->config.reads_per_chunk * (context->input_reads.is_paired_end_reads?2:1) * context->config.big_margin_record_size);
@@ -1736,7 +1740,7 @@ int cellCounts_get_sample_id(cellcounts_global_t * cct_context, char * sbc, int 
 }
 
 void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread_no, char * read_name, int rlen, char * read_text, char * qual_text, char * chro_name, int chro_pos, realignment_result_t * res, int nhits, int multi_mapping_number, int this_multi_mapping_i){
-	int batch_no = CELLBC_BATCH_NUMBER+1;
+	int batch_no;
 	
 	char * sample_seq=NULL, *sample_qual=NULL, *BC_qual=NULL, *BC_seq=NULL, *UMI_seq=NULL, *UMI_qual=NULL, *lane_str=NULL, *RG=NULL, *testi;
 	int rname_trimmed_len=0;
@@ -1754,8 +1758,10 @@ void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread
 	int cell_barcode_no = cellCounts_get_cellbarcode_no(cct_context, thread_no, BC_seq);
 
 	if(nhits > 1 && !cct_context -> allow_multi_overlapping_reads) nhits = 0;
-	if(cell_barcode_no>=0 && sample_no>0 && res && nhits>0) batch_no = cell_barcode_no % CELLBC_BATCH_NUMBER;
-	else if(sample_no>0 && res) batch_no = CELLBC_BATCH_NUMBER;
+	if(res){
+		if(cell_barcode_no>=0 && sample_no>0) batch_no = cell_barcode_no % CELLBC_BATCH_NUMBER;
+		else if(sample_no>0) batch_no = CELLBC_BATCH_NUMBER;
+	}else batch_no = CELLBC_BATCH_NUMBER+1;
 	
 	char readbin[READ_BIN_BUF_SIZE];
 	cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, strlen(read_name), rname_trimmed_len, rlen, read_text, qual_text, chro_name, chro_pos, res, multi_mapping_number, this_multi_mapping_i);
@@ -3947,7 +3953,7 @@ unsigned int cellCounts_finalise_explain_CIGAR(cellcounts_global_t * cct_context
 
 			applied_mismatch = cct_context->max_mismatching_bases_in_reads ;
 
-			if(0 && FIXLENstrcmp("R00000011528", explain_context ->  read_name)==0){
+			if(0 && FIXLENstrcmp("R00003945008", explain_context ->  read_name)==0){
 				char outpos1[100];
 				cellCounts_absoffset_to_posstr(cct_context, final_position, outpos1);
 				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?\n%s %p\nMASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, 0.0 ,result-> used_subreads_in_vote, explain_context -> full_read_text, explain_context -> full_read_text , result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);
@@ -4158,7 +4164,7 @@ int cellCounts_run_mapping(cellcounts_global_t * cct_context){
 			// base value indexes loaded in the last circle are not destroyed and are used in writting the indel VCF.
 			break;
 
-		if(0){
+		if(0) if(chunk_no){
 			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
 			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
 			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
