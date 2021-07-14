@@ -316,14 +316,15 @@ void sheet_convert_ss_to_arr( void * key, void * hashed_obj, HashTable * tab ){
 
 	srInt_64 xx1;
 	for(xx1 =0; xx1< hashed_arr -> numOfElements; xx1++){
-		char ** push_arr = malloc(sizeof(char*)*3);
+		char ** push_arr = malloc(sizeof(char*)*4);
 		char ** sbc_lane_sample = ArrayListGet(hashed_arr, xx1);
 		srInt_64 lane_sample_int = sbc_lane_sample[0]-(char*)NULL;
 
 		ArrayListPush(cct_context -> sample_barcode_list, push_arr);
-		push_arr[0] = NULL + lane_sample_int;
+		push_arr[0] = NULL + lane_sample_int; 
 		push_arr[1] = NULL + cct_context -> sample_id_to_name -> numOfElements;
 		push_arr[2] = sbc_lane_sample[1]; // Sample Barcode
+		push_arr[3] = NULL + (sbc_lane_sample[1]!=NULL && strlen(sbc_lane_sample[1])>12);
 
 		int line_no_in_sheet = sbc_lane_sample[2] - (char*)NULL;
 		HashTablePut(cct_context -> lineno1B_to_sampleno1B_tab , NULL+line_no_in_sheet, NULL + cct_context -> sample_id_to_name -> numOfElements);
