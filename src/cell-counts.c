@@ -224,7 +224,7 @@ int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** 
 	cct_context -> features_annotation_file_type = FILE_TYPE_RSUBREAD;
 	cct_context -> reads_per_chunk = 30000000;
 	cct_context -> max_best_alignments = 1;
-	cct_context -> max_voting_simples = 5;
+	cct_context -> max_voting_simples = 3;
 	cct_context -> max_mismatching_bases_in_reads = 3;
 	cct_context -> max_voting_locations = 3;
 	cct_context -> max_indel_length = 5;
@@ -236,14 +236,14 @@ int cellCounts_args_context(cellcounts_global_t * cct_context, int argc, char** 
 	cct_context -> current_dataset_no = 1;
 	strcpy(cct_context -> temp_file_dir, "./");
 
-	if(1){
+	if(0){
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
 		SUBREADprintf("WARNINGqqq: small-chunk!\n");
-		cct_context -> reads_per_chunk /= 9;
+		cct_context -> reads_per_chunk /= 4;
 	}
 
 
@@ -1637,13 +1637,17 @@ int cellCounts_get_cellbarcode_no(cellcounts_global_t * cct_context, int thread_
 	return tb1;
 }
 
-void cellCounts_build_read_bin(cellcounts_global_t * cct_context, int thread_no, char * rbin, char * read_name, int read_name_len, int read_len, char * read_text, char * qual_text, char * chro_name, int chro_pos, realignment_result_t * res, int multi_mapping_number, int this_multi_mapping_i){
+void cellCounts_build_read_bin(cellcounts_global_t * cct_context, int thread_no, char * rbin, char * read_name, int read_name_len, int trimmed_rname_len, int read_len, char * read_text, char * qual_text, char * chro_name, int chro_pos, realignment_result_t * res, int multi_mapping_number, int this_multi_mapping_i){
 	char * cigar = NULL;
 	if(res)cigar = res->cigar_string;
 	int mapping_quality=0;
 
 	if(res && (res -> realign_flags & CORE_IS_BREAKEVEN)) mapping_quality = 0;
 	else if(res) mapping_quality = 40/res->MAPQ_adjustment;
+	else {
+		read_name[trimmed_rname_len]=0;
+		read_name_len = trimmed_rname_len+1;
+	}
 
 	int flags = 4;
 	if(res) flags = (res -> realign_flags & CORE_IS_NEGATIVE_STRAND)?16:0;
@@ -1753,7 +1757,7 @@ void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread
 	else if(sample_no>0 && res) batch_no = CELLBC_BATCH_NUMBER;
 	
 	char readbin[READ_BIN_BUF_SIZE];
-	cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, strlen(read_name), rlen, read_text, qual_text, chro_name, chro_pos, res, multi_mapping_number, this_multi_mapping_i);
+	cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, strlen(read_name), rname_trimmed_len, rlen, read_text, qual_text, chro_name, chro_pos, res, multi_mapping_number, this_multi_mapping_i);
 
 	if(sample_no>0){
 		subread_lock_occupy(cct_context -> batch_file_locks + batch_no);
@@ -1961,7 +1965,7 @@ int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no
 
 				unsigned int skip = 0; int is_exonic_regions = 1;
 				cellCounts_calc_end_pos(final_realignment_result -> first_base_position, final_realignment_result -> cigar_string, &skip, &is_exonic_regions, cct_context);
-				this_SCORE =((100000llu * (10000 - this_MISMATCH + 2*is_exonic_regions) + this_MATCH)*50llu - this_PENALTY)*20llu+ final_realignment_result -> known_junction_supp;
+				this_SCORE =((100000llu * (500 - this_MISMATCH + 2*is_exonic_regions) + this_MATCH)*50llu - this_PENALTY)*20llu+ final_realignment_result -> known_junction_supp;
 
 				best_score_highest = max(best_score_highest, this_SCORE);
 				scores_array[read_record_i] = this_SCORE;
@@ -1979,12 +1983,13 @@ int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no
 				}
 			}
 
-			if(highest_score_occurence<2 || cct_context -> max_best_alignments){
+			if(highest_score_occurence ==1 || cct_context -> report_multi_mapping_reads){
 				int is_break_even = 0;
-				if(highest_score_occurence>1)	is_break_even = 1;
-
+				if(highest_score_occurence>1)is_break_even = 1;
 				highest_score_occurence = min(highest_score_occurence, cct_context -> max_best_alignments);
+
 				for(read_record_i = 0; read_record_i <  candidate_locations ; read_record_i++){
+					if(output_cursor == highest_score_occurence)break;
 					realignment_result_t * final_realignment_result = final_realignments + final_realignment_index[read_record_i];
 
 					if( scores_array[read_record_i] >= best_score_highest && (final_realignment_result -> realign_flags & CORE_TOO_MANY_MISMATCHES)==0
@@ -1999,8 +2004,6 @@ int cellCounts_do_iteration_two(cellcounts_global_t * cct_context, int thread_no
 						output_cursor ++;
 					}
 				}
-
-				assert(output_cursor == highest_score_occurence);
 			}
 		}
 
@@ -3943,11 +3946,10 @@ unsigned int cellCounts_finalise_explain_CIGAR(cellcounts_global_t * cct_context
 
 			applied_mismatch = cct_context->max_mismatching_bases_in_reads ;
 
-			if(0){
+			if(0 && FIXLENstrcmp("R00000011528", explain_context ->  read_name)==0){
 				char outpos1[100];
 				cellCounts_absoffset_to_posstr(cct_context, final_position, outpos1);
 				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?\n%s %p\nMASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, 0.0 ,result-> used_subreads_in_vote, explain_context -> full_read_text, explain_context -> full_read_text , result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);
-				//exit(0);
 			}
 
 			if(mismatch_bases <= applied_mismatch ){
@@ -4155,7 +4157,7 @@ int cellCounts_run_mapping(cellcounts_global_t * cct_context){
 			// base value indexes loaded in the last circle are not destroyed and are used in writting the indel VCF.
 			break;
 
-		if(1){
+		if(0){
 			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
 			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
 			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
