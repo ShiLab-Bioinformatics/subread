@@ -36,17 +36,19 @@
 \begin{center}
 {\Huge\bf Rsubread/Subread Users Guide}\\
 \vspace{1 cm}
-{\centering\large Subread v2.0.2/Rsubread v2.4.3\\}
+{\centering\large Subread v2.0.1/Rsubread v2.2.0\\}
 \vspace{1 cm}
-\centering 29 March 2021\\
+\centering 13 May 2020\\
 \vspace{5 cm}
 \Large Wei Shi and Yang Liao\\
 \vspace{1 cm}
 \small
 {\large Olivia Newton-John Cancer Research Institute\\
-Melbourne, Australia\\}
+Walter and Eliza Hall Institute of Medical Research\\
+University of Melbourne\\
+Australia\\}
 \vspace{7 cm}
-\centering Copyright \small{\copyright}  2011 - 2021\\
+\centering Copyright \small{\copyright}  2011 - 2020\\
 \end{center}
 
 \end{titlepage}
@@ -325,13 +327,13 @@ An index must be built for the reference first and then the read mapping can be 
 \code{subread-align -t 1 -T 5 -i my\_index -r reads.txt.gz -o subread\_results.bam}\\
 
 \noindent Map paired-end reads:\\
-\code{subread-align -t 1 -d 50 -D 600 -i my\_index -r reads1.txt -R reads2.txt \newline -o subread\_results.bam}\\
+\code{subread-align -t 1 -d 50 -D 600 -i my\_index -r reads1.txt -R reads2.txt \newline -o subread\_results.sam}\\
 
 \noindent Detect indels of up to 16bp:\\
-\code{subread-align -t 1 -I 16 -i my\_index -r reads.txt -o subread\_results.bam}\\
+\code{subread-align -t 1 -I 16 -i my\_index -r reads.txt -o subread\_results.sam}\\
 
 \noindent Report up to three best mapping locations:\\
-\code{subread-align -t 1 --multiMapping -B 3 -i my\_index -r reads.txt -o subread\_results.bam}\\
+\code{subread-align -t 1 --multiMapping -B 3 -i my\_index -r reads.txt -o subread\_results.sam}\\
 
 
 \section{A quick start for using Bioconductor {\Rsubread} package}
@@ -622,7 +624,7 @@ The files can be gzipped.\\
 The commands used by {\Subread} to align RNA-seq reads are the same as those used to align gDNA-seq reads.
 Below is an example of using {\Subread} to map single-end RNA-seq reads.\\
 
-\code{subread-align -t 0 -i my\_index -r rnaseq-reads.txt -o subread\_results.bam}\\
+\code{subread-align -t 0 -i my\_index -r rnaseq-reads.txt -o subread\_results.sam}\\
 
 \noindent Another RNA-seq aligner included in this package is the {\Subjunc} aligner.
 {\Subjunc} not only performs read alignments but also detects exon-exon junctions.
@@ -750,7 +752,7 @@ Note that `-t' option should have a value of 1 since miRNA-seq reads are more si
 
 \code{\\
 subread-align -t 1 -i mm10\_full\_index -n 35 -m 4 -M 3 -T 10 -I 0
---multiMapping -B 10 -r miRNA\_reads.fastq -o result.bam\\
+--multiMapping -B 10 -r miRNA\_reads.fastq -o result.sam\\
 }
 
 The `-B 10' parameter instructs {\Subread} aligner to report up to 10 best mapping locations (equally best) in the mapping results.
@@ -1015,7 +1017,7 @@ read mapping that produced the provided SAM/BAM files. This optional argument ca
 \hline
 -O \newline (\code{allowMultiOverlap}) & If specified, reads (or fragments if \code{-p} is specified) will be allowed to be assigned to more than one matched meta-feature (or feature if \code{-f} is specified). Reads/fragments overlapping with more than one meta-feature/feature will be counted more than once. Note that when performing meta-feature level summarization, a read (or fragment) will still be counted once if it overlaps with multiple features within the same meta-feature (as long as it does not overlap with other meta-features). Also note that this parameter is applied to each individual alignment when there are more than one alignment reported for a read (ie. multi-mapping read). See section ``Count multi-mapping reads and multi-overlapping reads'' for more details.\\
 \hline
--p \newline (\code{isPairedEnd}) & Specify if the input libraries contain paired-end reads. {\featureCounts} will terminate if the read type of the input data is incorrectly specified.\\
+-p \newline (\code{isPairedEnd}) & If specified, fragments (or templates) will be counted instead of reads. This option is only applicable for paired-end reads.\\
 \hline
 -P \newline (\code{checkFragLength}) & If specified, the fragment length will be checked when assigning fragments to meta-features or features. This option must be used together with \code{-p}. The fragment length thresholds should be specified using \code{-d} and \code{-D} options.\\
 \hline
@@ -1032,8 +1034,6 @@ read mapping that produced the provided SAM/BAM files. This optional argument ca
 -v & Output version of the program. \\
 \hline
 $--$byReadGroup \newline (\code{byReadGroup}) & Count reads by read group. Read group information is identified from the header of BAM/SAM input files and the generated count table will include counts for each group in each library.\\
-\hline
-$--$countReadPairs \newline (\code{countReadPairs}) & Read pairs will be counted instead of reads. This parameter is only applicable when paired-end data were provided.\\
 \hline
 $--$donotsort \newline (\code{autosort}) & If specified, paired end reads will not be re-ordered even if reads from the same pair were found not to be next to each other in the input.\\
 \hline
@@ -1088,10 +1088,10 @@ $--$verbose \newline (\code{verbose}) & Output verbose information for debugging
 You need to provide read mapping results (in either SAM or BAM format) and an annotation file for the read summarization.
 The example commands below assume your annotation file is in GTF format.\\
 
-\noindent Summarize BAM format single-end reads using 5 threads:\\
+\noindent Summarize SAM format single-end reads using 5 threads:\\
 
 \noindent\code{featureCounts -T 5 -a annotation.gtf -t exon -g gene\_id \\
- -o counts.txt mapping\_results\_SE.bam}\\
+ -o counts.txt mapping\_results\_SE.sam}\\
 
 \noindent Summarize BAM format single-end read data:\\
 
@@ -1137,20 +1137,20 @@ library(Rsubread)
 
 \noindent Summarize single-end reads using built-in RefSeq annotation for mouse genome `mm10' (`mm10' is the default inbuilt genome annotation):
 \begin{Rcode}
-featureCounts(files="mapping_results_SE.bam")
+featureCounts(files="mapping_results_SE.sam")
 \end{Rcode}
 
 \noindent Summarize single-end reads using a user-provided GTF annotation file:
 
 \begin{Rcode}
-featureCounts(files="mapping_results_SE.bam",annot.ext="annotation.gtf",
+featureCounts(files="mapping_results_SE.sam",annot.ext="annotation.gtf",
 isGTFAnnotationFile=TRUE,GTF.featureType="exon",GTF.attrType="gene_id")
 \end{Rcode}
 
 \noindent Summarize single-end reads using 5 threads:
 
 \begin{Rcode}
-featureCounts(files="mapping_results_SE.bam",nthreads=5)
+featureCounts(files="mapping_results_SE.sam",nthreads=5)
 \end{Rcode}
 
 \noindent Summarize BAM format single-end read data:
@@ -1190,68 +1190,16 @@ featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE,requireBothEndsMap
 featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE,countChimericFragments=FALSE)
 \end{Rcode}
 
-\chapter{Quantify single-cell RNA-seq data}
+\chapter{Mapping and quantification of single-cell data}
 
 \section{cellCounts}
 
-The \emph{cellCounts} program is developed for the quantification of single-cell RNA-seq (scRNA-seq) data generated from the 10X platform.
-With \emph{cellCounts}, the entire quantification process is simply done by just one function call.
-\emph{cellCounts} demultiplexes samples and cells and deduplicates reads.  
-It calls \emph{align} or \emph{subjunc} function to map scRNA-seq reads to a reference genome, and it calls \emph{featureCounts} function to assign UMIs (Unique Molecular Identifiers) to genomic features such as genes and exons.
-
-Note that \emph{cellCounts} is only available in the {\Rsubread} package.
-It is not available in the {\Subread} package.
-Its parameters can be found in the table below.
-
-
-\begin{longtable}{|p{4.5cm}|p{11cm}|}
-\multicolumn{2}{p{16cm}}{Table 4: Arguments used by the \code{cellCounts} program.
-The arguments are listed in the alphabetical order.}
-\endfirsthead
-\hline
-Arguments & Description \\
-\hline
-annot.ext & Specify an external annotation for UMI counting. See \code{featureCounts} for more details.\\
-\hline
-annot.inbuilt & Specify an inbuilt annotation for UMI counting. See \code{featureCounts} for more details.\\
-\hline
-cell.barcode & A character string giving the name of a text file (can be gzipped) that contains the set of cell barcodes used in sample preparation. If \code{NULL}, a cell barcode set will be determined for the input data by \code{cellCounts} based on the matching of cell barcodes sequences of the first 100,000 reads in the data with the three cell barcode sets used by 10X Genomics. \code{NULL} by default.\\
-\hline
-GTF.attrType & See \code{featureCounts} for more details. \\
-\hline
-GTF.featureType & See \code{featureCounts} for more details. \\
-\hline
-index & A character string giving the base name of index files, generated by the \code{buildindex} function, for a reference genome. \\
-\hline
-isGTFAnnotationFile & See \code{featureCounts} for more details. \\
-\hline
-sample.index & A data frame containing index set name for each sample. The data frame must contain four columns with column headers named `InputDirectory', `Lane', `SampleName' and `IndexSetName'. Note that this is not the Sample Sheet created by an Illumina sequencer. This data frame is used by \code{cellCounts} to produce a Sample Sheet which is then used to demultiplex samples. The name of an index set specifies a set of indices that were used for the sequencing of a sample. An example of the index set name is ‘SI-P01-A2’.\\
-\hline
-useMetaFeatures & Specify if UMI counting should be carried out at the meta-feature level (eg. gene level). See \code{featureCounts} for more details. \\
-\hline
-… & other parameters passed to \code{align}, \code{subjunc} and \code{featureCounts} functions. \\
-\hline
-\end{longtable}
-
-
-The \code{cellCounts} program returns a \code{List} object to R, and it also outputs three gzipped FASTQ files and one BAM file for each sample.
-The three gzipped FASTQ files include cell barcode and UMI sequences (R1), sample index sequences (I1) and the actual genomic sequences of the reads (R2), respectively. 
-The BAM file includes location-sorted read mapping results.
-
-The returned \code{List} object contains the following components:
-
-\noindent\code{counts} \\
-A \code{List} object including UMI counts for each sample. Each component in this object is a matrix that contains UMI counts for a sample. Rows in the matrix are genes and columns are cells.\\
-
-\noindent\code{annotation}\\
-A \code{data.frame} object containing an annotation (eg. a gene annotation). UMIs were assigned to features (eg. genes) in this annotation. Rows in the annotation are features. Columns of the annotation include \code{GeneID}, \code{Chr}, \code{Start}, \code{End} and \code{Length}.\\
-
-\noindent\code{sample.info}\\
-A \code{data.frame} object containing sample information and also statistics related to the quantification result. It includes the following columns: \code{SampleName}, \code{InputDirectory}, \code{TotalCells}, \code{HighConfidenceCells}, \code{RescuedCells}, \code{TotalUMI}, \code{TotalReads}, \code{MappedReads} and \code{AssignedReads}. The order of samples in this object is the same as that in the components \code{counts} and \code{cell.confidence}.\\
-
-\noindent\code{cell.confidence}\\
-A \code{List} object indicating if a cell is a high-confidence cell or a rescued cell (low confidence). Each component in the \code{List} object corresponds to a sample. Each component is a logical vector with a \code{TRUE} value indicating a high-confidence cell.
-
+The \emph{cellCounts} program was developed to process single-cell RNA-seq (scRNA-seq) data to generate UMI counts for genes, exons or other genomic features.
+It calls \emph{align} function to perform mapping of scRNA-seq reads and calls \emph{featureCounts} functions to generate UMI counts.
+\emph{cellCounts} demultiplexes cell barcodes and also deduplicates reads.
+It accepts BCL or FASTQ files as input.
+Quantification of a scRNA-seq dataset can be simply done by a single \emph{cellCounts} function call.
+It is much faster than other scRNA-seq quantification tools.
 
 \chapter{SNP calling}
 
@@ -1277,13 +1225,13 @@ It has been found to be an order of magnitude faster than existing SNP callers.
 \section{exactSNP}
 
 Below is the command for running \code{exactSNP} program.
-The complete list of parameters used by \code{exactSNP} can be found in Table 5.\\
+The complete list of parameters used by \code{exactSNP} can be found in Table 4.\\
 
 \noindent\code{exactSNP [options] -i input -g reference\_genome -o output}\\
 
 
 \begin{longtable}{|p{4.5cm}|p{11cm}|}
-\multicolumn{2}{p{16cm}}{Table 5: Arguments used by the \code{exactSNP} program included in the SourceForge {\Subread} package in alphabetical order.
+\multicolumn{2}{p{16cm}}{Table 4: Arguments used by the \code{exactSNP} program included in the SourceForge {\Subread} package in alphabetical order.
 Arguments included in parenthesis are the equivalent parameters used by \code{exactSNP} function in Bioconductor {\Rsubread} package.}
 \endfirsthead
 \hline
