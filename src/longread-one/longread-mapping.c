@@ -47,7 +47,8 @@
 int LRMvalidate_and_init_context(LRMcontext_t ** context, int argc, char ** argv);
 
 int LRM_run_testing_code(){
-	// return 0;
+	return 0; // don't do the simple test but go-on to the main program.
+
 	char * read_seq = "CAATGCATAAC", * chro_seq = "CAATGCTATAAC";
 	int move_buf_size = 1000;
 	char * move_buf = malloc(move_buf_size+1);
@@ -1179,14 +1180,17 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 			int ncigarlen = sprintf(mvcigar, "%dM%d%c/%dM/",  gappedMs , absIndels , read_minus_chro_delta > 0?'I':'D', perfectMs);
 			thread_context -> dynamic_programming_indel_movement_start +=ncigarlen;
 		}else if((!simplest_run) && this_subread_chro_start - last_subread_chro_end > LRMDYNAMIC_MIN_EXON_JUNCTION_SPAN_ON_CHRO){ // it is a junction; do probe-based search of the junction point.
-			LRMprintf("DOING PROBING MAPPING -- TRYING IN THIS STAGE!\n");
+			LRMprintf("DOING PROBING MAPPING -- TRYING IN THIS STAGE! %u ~ %u\n", last_subread_chro_end, this_subread_chro_start);
 			#define LRMDYNAMIC_JUNCTION_PROBE_NUMBER 25
-			#define LRMDYNAMIC_JUNCTION_PROBE_LENGTH 24
+			#define LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL 2
+			#define LRMDYNAMIC_JUNCTION_PROBE_LENGTH 30
 			#define LRMDYNAMIC_JUNCTION_PROBE_MAX_MISMATCH 3
 			int probe_i, extra_gap = ( this_subread_start - last_subread_end  - LRMDYNAMIC_JUNCTION_PROBE_LENGTH ) / LRMDYNAMIC_JUNCTION_PROBE_NUMBER, probe_tested = 0;
 
 			unsigned int probe_tested_chro_pos[LRMDYNAMIC_JUNCTION_PROBE_NUMBER], last_accepted_probe_chro_pos = last_subread_chro_end;
 			extra_gap = max(2 , extra_gap);
+			int probe_move_buf_size = (LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL)*3;
+			char * probe_move_buf = malloc(probe_move_buf_size);
 			for(probe_i=0; probe_i<LRMDYNAMIC_JUNCTION_PROBE_NUMBER; probe_i++){
 				probe_tested_chro_pos[probe_i]=0; // zero : no location is found for this probe.
 				int probe_extract_from_read_pos = last_subread_end + extra_gap/2 + extra_gap* probe_i, best_matching_bases = -1;
@@ -1196,25 +1200,31 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 				// moving_on_chro_pos is the FIRST base in the probe.
 				for(moving_on_chro_pos = last_subread_chro_end; moving_on_chro_pos < this_subread_chro_start; moving_on_chro_pos ++){
 					int matched = 0, probe_base_i;
-					for(probe_base_i = 0; probe_base_i < LRMDYNAMIC_JUNCTION_PROBE_LENGTH; probe_base_i ++){
-						char read_base = probe_seq[probe_base_i];
+
+					char chro_seq [LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL];
+					for(probe_base_i = 0; probe_base_i < LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL; probe_base_i ++){
 						char chro_base = LRMgvindex_get(& context -> current_base_index, moving_on_chro_pos + probe_base_i);
-						//LRMprintf("      TESTING %c == %c\n", read_base, chro_base);
-						matched += read_base==chro_base;
+						chro_seq[probe_base_i] = chro_base;
 					}
+					int sw_moves = LRMsmith_waterman(probe_seq, LRMDYNAMIC_JUNCTION_PROBE_LENGTH, chro_seq, LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL,
+						probe_move_buf, probe_move_buf_size, NULL, NULL);
+					for(probe_base_i = 0; probe_base_i < sw_moves; probe_base_i++) matched+=('M' == probe_move_buf[probe_base_i]);
+
 					if(matched >= LRMDYNAMIC_JUNCTION_PROBE_LENGTH-LRMDYNAMIC_JUNCTION_PROBE_MAX_MISMATCH -999){
 						if(matched > best_matching_bases){
 							best_matching_bases = matched;
 							probe_tested_chro_pos[probe_i] = moving_on_chro_pos;
 							last_accepted_probe_chro_pos = moving_on_chro_pos;
+							probe_move_buf[sw_moves]=0;
+							LRMprintf("       PROBE [%d] at %d ~ %u MATCHING %d IS %s\n", probe_i, probe_extract_from_read_pos, moving_on_chro_pos - last_subread_chro_end, matched, probe_move_buf);
 						}
 					}
 				}
-				char lttt = probe_seq[LRMDYNAMIC_JUNCTION_PROBE_LENGTH];
-				probe_seq[LRMDYNAMIC_JUNCTION_PROBE_LENGTH] = 0;
-				probe_seq[LRMDYNAMIC_JUNCTION_PROBE_LENGTH] = lttt;
+				LRMprintf("   PROBE [%d] at %d HAS MATCHED %d at %u\n", probe_i, probe_extract_from_read_pos, best_matching_bases, probe_tested_chro_pos[probe_i] - last_subread_chro_end);
+	
 				probe_tested ++;
 			}
+			free(probe_move_buf);
 		}else if(!simplest_run){
 			if(1){
 				int perfectMs = iteration_context -> chain_cov_end[ii] - iteration_context -> chain_cov_start[ii] -1;

@@ -139,7 +139,7 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 		int indel_len = is_D_in_cigar?(m - same_length_AB_misma - highest_j):(n - same_length_AB_misma - highest_i);
 		while(actual_moves < indel_len)
 			LRC_sw_rec_moves(is_D_in_cigar?'D':'I');
-		while(actual_moves < indel_len+same_length_AB_misma) LRC_sw_rec_moves('X');
+		while(actual_moves < indel_len+same_length_AB_misma) LRC_sw_rec_moves('M');
 		
 		while(1){
 			int this_move = LRM_sw_Move(i,j) & 0x3;
@@ -152,7 +152,7 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 				same_length_AB_misma = min(i,j) ;
 				is_D_in_cigar = i<j;
 				indel_len = is_D_in_cigar?(j-i):(i-j);
-				for(move_i=0; move_i < same_length_AB_misma; move_i++) LRC_sw_rec_moves('X');
+				for(move_i=0; move_i < same_length_AB_misma; move_i++) LRC_sw_rec_moves('M');
 				for(move_i=0; move_i < indel_len; move_i++) LRC_sw_rec_moves(is_D_in_cigar?'D':'I');
 				break;
 			}
@@ -181,6 +181,17 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 		moves[move_i] = moves[actual_moves -1 -move_i];
 		moves[actual_moves -1 -move_i] = tt;
 	}
-	return actual_moves;
 
+	i = j = 0; 
+	for(move_i = 0; move_i < actual_moves; move_i ++){
+		char move = moves[move_i];
+		if(move=='I') i++;
+		else if(move=='D') j++;
+		else {
+			moves[move_i] = A[i]==B[j]?'M':'X';
+			i++;
+			j++;
+		}
+	}
+	return actual_moves;
 }
