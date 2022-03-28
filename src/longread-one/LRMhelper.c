@@ -70,7 +70,8 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 		score_buff_need_free = 1;
 	}
 
-	// follow the pseudo code on https://en.wikipedia.org/wiki/Smith%E2%80%93Waterman_algorithm
+	// Follow the pseudo code on https://en.wikipedia.org/wiki/Smith%E2%80%93Waterman_algorithm
+	// Note: indices of A and B are both 1-based in the pseudo code.
 	// We used the non-linear gap penalty version, hence it is a little more complicated.
 	int k, l;
 	for(k=0; k<= n; k++) LRM_sw_H(k,0)=0;
@@ -80,12 +81,12 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 	
 	for(i = 1; i <= n; i++){
 		for(j = 1; j <= m; j++){
-			int is_matched = A[i] == B[j];
+			int is_matched = A[i-1] == B[j-1];
 			int Hij_HpS = LRM_sw_H(i-1,j-1) + LRMsmith_waterman_match_score(is_matched);
 
 			int Hij_negWk = -999999999, best_k = -1;
 			for(k=1; k<= i; k++){
-				int testval = LRM_sw_H(i-k, j) - LRMsmith_waterman_gap_score(k);
+				int testval = LRM_sw_H(i-k, j) + LRMsmith_waterman_gap_score(k);
 				if(testval > Hij_negWk){
 					Hij_negWk = testval;
 					best_k = k;
@@ -95,7 +96,7 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 			int Hij_negWl = -999999999, best_l = -1;
 			for(l=1; l<= j; l++){
 				// M or X
-				int testval = LRM_sw_H(i, j-l) - LRMsmith_waterman_gap_score(l);
+				int testval = LRM_sw_H(i, j-l) + LRMsmith_waterman_gap_score(l);
 				if(testval > Hij_negWl){
 					Hij_negWl = testval;
 					best_l = l;
@@ -124,6 +125,7 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 		}
 	}
 
+	//LRMprintf("DP All high = %d, I, J = %d, %d HIGH\n", all_high, highest_i, highest_j);
 	actual_moves = 0;
 	if(highest_j>=1 && highest_i>=1){
 		i = highest_i;
@@ -132,9 +134,9 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 		// the [here ~ end] alignment is totally worthless.
 		// but we need to add "I", "D" and "S" segments to match the full lengths of A and B
 		// At this moment, "A" is at the i-th base, and "B" is at the j-th base. Namely we need to add (n-i-1) bases to A after the aligned part, and add (m-j-1) bases to B after the aligned part.
-		int same_length_AB_misma = min(n-i-1, m-j-1);
-		int is_D_in_cigar = (n-i-1 < m-j-1);// chro is longer => chro has some based deleted.
-		int indel_len = is_D_in_cigar?(m - same_length_AB_misma):(n - same_length_AB_misma);
+		int same_length_AB_misma = min(n-i, m-j);
+		int is_D_in_cigar = (n-i < m-j);// chro is longer => chro has some based deleted.
+		int indel_len = is_D_in_cigar?(m - same_length_AB_misma - highest_j):(n - same_length_AB_misma - highest_i);
 		while(actual_moves < indel_len)
 			LRC_sw_rec_moves(is_D_in_cigar?'D':'I');
 		while(actual_moves < indel_len+same_length_AB_misma) LRC_sw_rec_moves('X');
@@ -146,7 +148,8 @@ int LRMsmith_waterman(char * A, int n, char * B, int m, char * moves, int max_mo
 				// The [start ~ here] alignment is totally worthless.
 				// But we need to add "I", "D" and "S" segments to match the full lengths of A and B.
 				// At this moment, "A" is at the i-th base, and "B" is at the j-th base. Namely, adding i bases before the alignment of A, and adding j bases before the alignment of B.
-				same_length_AB_misma = min(i,j);
+				// Note: both i and j are 1-based indices.
+				same_length_AB_misma = min(i,j) ;
 				is_D_in_cigar = i<j;
 				indel_len = is_D_in_cigar?(j-i):(i-j);
 				for(move_i=0; move_i < same_length_AB_misma; move_i++) LRC_sw_rec_moves('X');

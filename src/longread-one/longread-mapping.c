@@ -46,12 +46,63 @@
 
 int LRMvalidate_and_init_context(LRMcontext_t ** context, int argc, char ** argv);
 
+int LRM_run_testing_code(){
+	// return 0;
+	char * read_seq = "CAATGCATAAC", * chro_seq = "CAATGCTATAAC";
+	int move_buf_size = 1000;
+	char * move_buf = malloc(move_buf_size+1);
+	int moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
+		move_buf, move_buf_size, NULL, NULL);
+
+	move_buf[moves]=0;
+	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
+
+	read_seq = "CAATGCCCATAAC";
+	chro_seq = "CAATGCATAAC";
+	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
+		move_buf, move_buf_size, NULL, NULL);
+	move_buf[moves]=0;
+	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
+
+	read_seq = "TGTAAC";
+	chro_seq =  "ATAAC";
+	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
+		move_buf, move_buf_size, NULL, NULL);
+	move_buf[moves]=0;
+	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
+
+	read_seq = "CAATGCCCATAACACCC";
+	chro_seq = "CAATGCCCATAACTG";
+	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
+		move_buf, move_buf_size, NULL, NULL);
+	move_buf[moves]=0;
+	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
+
+	read_seq = "AATCAATGCCCATAACACCC";
+	chro_seq =  "GGCAATGCACCATAACTG";
+	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
+		move_buf, move_buf_size, NULL, NULL);
+	move_buf[moves]=0;
+	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
+
+	read_seq =  "GGCAATGCACCATAACTG";
+	chro_seq = "AATCAATGCCCATAACACCC";
+	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
+		move_buf, move_buf_size, NULL, NULL);
+	move_buf[moves]=0;
+	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
+
+	free(move_buf);
+	return 1;
+}
+
 #ifdef MAKE_STANDALONE
 int main(int argc, char ** argv){
 #else
 int longread_mapping_R(int argc, char ** argv){
 #endif
 	int retv=0;
+	if(LRM_run_testing_code())return 0;
 	
 	LRMcontext_t *context = NULL;
 	retv = retv || LRMvalidate_and_init_context(&context, argc, argv);
