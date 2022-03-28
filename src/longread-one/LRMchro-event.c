@@ -484,10 +484,12 @@ int LRMdynamic_in_middle(LRMcontext_t* context, LRMthread_context_t* thread_cont
 
 	row_i = first_correct_base - last_correct_base - 1;
 	indel_i = trying_indel_length + expected_indels -(row_i >0?best_offset_history[row_i - 1]:0);
+	//LRMprintf("DO_MID_IDDLI  TRY_LEN=%d  EXP_INDELS=%d  ROW_I=%d  BEST_HISTORY[ROW_I - 1]=%d\n", trying_indel_length , expected_indels , row_i, row_i>0?best_offset_history[row_i - 1]:-99999999);
 
 	moves = 0;
+	//LRMprintf("DO_MID_MOVEI INDEL_I_0=%d  ROW_I_0=%d  D_ROW_WID=%d\n", indel_i , row_i , dynamic_row_width);
 	while(row_i >= 0 && indel_i >=0 && indel_i < dynamic_row_width){
-		int slope_offset =  best_offset_history[row_i-1];
+		int slope_offset = best_offset_history[row_i-1];
 		int next_slope_offset = row_i > 1?best_offset_history[row_i-2]:0;
 		int last_slope_delta = slope_offset - next_slope_offset;
 		//#warning "========= DO NOT ASSERT ============="

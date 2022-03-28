@@ -973,10 +973,9 @@ void LRMbuild_chains(LRMcontext_t * context, LRMthread_context_t * thread_contex
 	}
 }
 
-void LRMfill_gaps_addNM(LRMcontext_t * context, LRMthread_context_t * thread_context, LRMread_iteration_context_t * iteration_context, int window_no, int subread_no){
+void LRMfill_gaps_addNM(LRMcontext_t * context, LRMthread_context_t * thread_context, LRMread_iteration_context_t * iteration_context, int window_no, int subread_no, int indel_M_delta){
 	int middle_delta = subread_no?1:1;
 	thread_context -> dynamic_programming_indel_movement_start += sprintf( thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start, "%dM/",  iteration_context -> chain_cov_end[subread_no] - iteration_context -> chain_cov_start[subread_no] - middle_delta);
-	//LRMprintf("NORMAL MS: %dM\n",  iteration_context -> chain_cov_end[subread_no] - iteration_context -> chain_cov_start[subread_no] - middle_delta);
 }
 
 void LRMsave_mapping_result(LRMcontext_t * context, LRMthread_context_t * thread_context, LRMread_iteration_context_t * iteration_context, int window_no){
@@ -1022,7 +1021,9 @@ void LRMfill_gaps_reduce_Cigar(LRMcontext_t * context, LRMthread_context_t * thr
 			if(tmpi<0) tmpi = 1;
 			if(old_opt != nch && repeat_i>0){
 				wcur += sprintf( thread_context -> final_cigar_string + wcur, "%d%c", repeat_i, old_opt );
-				if( old_opt == 'M' || old_opt == 'I' || old_opt == 'S' ) r_rebuilt_len += repeat_i;
+				if( old_opt == 'M' || old_opt == 'I' || old_opt == 'S' ){
+					r_rebuilt_len += repeat_i;
+				}
 				if( old_opt == 'M' ) mapped_length += repeat_i;
 				repeat_i = 0;
 			}
@@ -1032,13 +1033,16 @@ void LRMfill_gaps_reduce_Cigar(LRMcontext_t * context, LRMthread_context_t * thr
 		}
 	}
 	if(repeat_i>0){
-		if( old_opt == 'M' || old_opt == 'I' || old_opt == 'S' ) r_rebuilt_len += repeat_i;
+		if( old_opt == 'M' || old_opt == 'I' || old_opt == 'S' ){
+			r_rebuilt_len += repeat_i;
+		}
 		if( old_opt == 'M' ) mapped_length += repeat_i;
 		sprintf( thread_context -> final_cigar_string + wcur, "%d%c", repeat_i, old_opt );
 	}
 	//LRMprintf("Rebuild Rlen of %s = %d\n", iteration_context -> read_name, r_rebuilt_len);
-	if(r_rebuilt_len != iteration_context -> read_length)
-		LRMprintf("WRONG_REBUILD : %s : %d != %d ; %s\n", iteration_context -> read_name, r_rebuilt_len , iteration_context -> read_length, thread_context -> dynamic_programming_indel_movement_buf);
+	if(r_rebuilt_len != iteration_context -> read_length){
+		LRMprintf("WRONG_REBUILD : %s : %d != %d ; %s\nREBUILT : %s\n", iteration_context -> read_name, r_rebuilt_len , iteration_context -> read_length, thread_context -> dynamic_programming_indel_movement_buf, thread_context -> final_cigar_string );
+	}
 	*PTRmapped_length = mapped_length;
 }
 
@@ -1053,6 +1057,9 @@ unsigned int LRMfill_gaps_find_final_mapping_loc(LRMcontext_t * context, LRMthre
 	}
 	return iteration_context -> chain_chro_at_cov_start[0] - rollback;
 }
+
+#define LRMDYNAMIC_MIN_EXON_JUNCTION_SPAN_ON_CHRO (LRMDYNAMIC_MAXIMUM_GAP_LENGTH *3/2)
+
 void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, LRMread_iteration_context_t * iteration_context, int window_no){
 	int ii;	
 	int total_read_len = 0;
@@ -1064,7 +1071,15 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 	}
 
 	int first_mapped_subread_start = iteration_context -> chain_cov_start[0];
-	int new_moves = LRMdynamic_to_ends(context, thread_context, iteration_context, first_mapped_subread_start, iteration_context -> chain_chro_at_cov_start[0], 0);
+	int simplest_run = 0;
+	int new_moves = -1;
+
+	if(simplest_run){
+		char * mvcigar = thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start;
+		new_moves = sprintf(mvcigar, "%dS", first_mapped_subread_start);
+	}else{
+		new_moves = LRMdynamic_to_ends(context, thread_context, iteration_context, first_mapped_subread_start, iteration_context -> chain_chro_at_cov_start[0], 0);
+	}
 	//LRMprintf("MOVES_START %s: moves=%d ; read_len = %d ; %s\n", iteration_context -> read_name, new_moves, first_mapped_subread_start, thread_context ->  dynamic_programming_indel_movement_buf);
 	if(new_moves<0){
 		LRMprintf("MINUS MOVES : %d\n", new_moves);
@@ -1074,20 +1089,21 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 	thread_context -> dynamic_programming_indel_movement_start += new_moves;
 	iteration_context -> final_mapping_location = LRMfill_gaps_find_final_mapping_loc(context, thread_context, iteration_context, window_no);
 
-	LRMfill_gaps_addNM(context, thread_context, iteration_context, window_no, 0);
+	LRMfill_gaps_addNM(context, thread_context, iteration_context, window_no, 0, 0);
 	total_read_len += iteration_context -> chain_cov_end[0] - iteration_context -> chain_cov_start[0];
 
-	int last_subread_end = iteration_context -> chain_cov_end[0];
+	int last_subread_end = iteration_context -> chain_cov_end[0], indel_M_delta = 0;
 	unsigned int last_subread_chro_end = iteration_context -> chain_chro_at_cov_start[0] + (last_subread_end - first_mapped_subread_start);
 
 	for(ii = 1; ii < iteration_context -> chain_total_items; ii++){
 		unsigned int this_subread_chro_start = iteration_context -> chain_chro_at_cov_start[ii];
 		int this_subread_start = iteration_context -> chain_cov_start[ii];
 		int read_minus_chro_delta = (this_subread_start - last_subread_end) - ( this_subread_chro_start - last_subread_chro_end );
-		//LRMprintf("read_minus_chro_delta== %d = (%d - %d) - (%d - %d)\n", read_minus_chro_delta, this_subread_start, last_subread_end, this_subread_chro_start, last_subread_chro_end);
-		if(this_subread_start <=last_subread_end -1) LRMprintf("Error: Reversed order of %s : %d < %d\n", iteration_context -> read_name, this_subread_start, last_subread_end -1 );
+		if(this_subread_start <=last_subread_end -1) LRMprintf("Error: Reversed order on READ %s : %d < %d\n", iteration_context -> read_name, this_subread_start, last_subread_end -1 );
+		//if(this_subread_chro_start < last_subread_chro_end -1 - 16) LRMprintf("Error: Reversed order on CHRO %s : %u < %u\n", iteration_context -> read_name, this_subread_chro_start , last_subread_chro_end -1 );
 		assert( this_subread_start > last_subread_end -1 );
-		if( this_subread_start - last_subread_end >=  LRMDYNAMIC_MAXIMUM_GAP_LENGTH ){
+		if((! simplest_run) && (this_subread_start - last_subread_end >=  LRMDYNAMIC_MAXIMUM_GAP_LENGTH) ){
+			LRMprintf("DOING ROUGH MAPPING -- IT IS FOR THIS STAGE!\n");
 			int indel_after_M = -read_minus_chro_delta;
 
 			int gap_read_M = this_subread_start - last_subread_end +1 - max( 0, -indel_after_M );
@@ -1095,28 +1111,90 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 			int gap_read_M_R = gap_read_M - gap_read_M_L;
 			int indel_move = indel_after_M<0?'I':'D';
 			thread_context -> dynamic_programming_indel_movement_start += sprintf( thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start, "%dM%d%c%dM/", gap_read_M_L,abs(indel_after_M), indel_move, gap_read_M_R);
-			LRMprintf("LONG GAP %s : %d\n", iteration_context -> read_name, this_subread_start - last_subread_end );
-			LRMprintf("LONG GAP CIGAR : %dM%d%c\n", gap_read_M,abs(indel_after_M), indel_move);
-		}
-		else{
+		}else if(simplest_run){
+			char * mvcigar = thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start;
+			int perfectMs = iteration_context -> chain_cov_end[ii] - iteration_context -> chain_cov_start[ii] -1;
+			int gappedMs =  this_subread_start - last_subread_end +1 - max(0, read_minus_chro_delta);
+			int absIndels = abs(read_minus_chro_delta);
+			if(gappedMs <0){
+				perfectMs += gappedMs;
+				if(perfectMs < 0){
+					absIndels += perfectMs;
+					perfectMs = 0;
+				}
+				gappedMs = 0;
+			}
+			
+			int ncigarlen = sprintf(mvcigar, "%dM%d%c/%dM/",  gappedMs , absIndels , read_minus_chro_delta > 0?'I':'D', perfectMs);
+			thread_context -> dynamic_programming_indel_movement_start +=ncigarlen;
+		}else if((!simplest_run) && this_subread_chro_start - last_subread_chro_end > LRMDYNAMIC_MIN_EXON_JUNCTION_SPAN_ON_CHRO){ // it is a junction; do probe-based search of the junction point.
+			LRMprintf("DOING PROBING MAPPING -- TRYING IN THIS STAGE!\n");
+			#define LRMDYNAMIC_JUNCTION_PROBE_NUMBER 25
+			#define LRMDYNAMIC_JUNCTION_PROBE_LENGTH 24
+			#define LRMDYNAMIC_JUNCTION_PROBE_MAX_MISMATCH 3
+			int probe_i, extra_gap = ( this_subread_start - last_subread_end  - LRMDYNAMIC_JUNCTION_PROBE_LENGTH ) / LRMDYNAMIC_JUNCTION_PROBE_NUMBER, probe_tested = 0;
+
+			unsigned int probe_tested_chro_pos[LRMDYNAMIC_JUNCTION_PROBE_NUMBER], last_accepted_probe_chro_pos = last_subread_chro_end;
+			extra_gap = max(2 , extra_gap);
+			for(probe_i=0; probe_i<LRMDYNAMIC_JUNCTION_PROBE_NUMBER; probe_i++){
+				probe_tested_chro_pos[probe_i]=0; // zero : no location is found for this probe.
+				int probe_extract_from_read_pos = last_subread_end + extra_gap/2 + extra_gap* probe_i, best_matching_bases = -1;
+				if(probe_extract_from_read_pos >= this_subread_start)break;
+				char * probe_seq = iteration_context -> read_text + probe_extract_from_read_pos;
+				unsigned int moving_on_chro_pos;
+				// moving_on_chro_pos is the FIRST base in the probe.
+				for(moving_on_chro_pos = last_subread_chro_end; moving_on_chro_pos < this_subread_chro_start; moving_on_chro_pos ++){
+					int matched = 0, probe_base_i;
+					for(probe_base_i = 0; probe_base_i < LRMDYNAMIC_JUNCTION_PROBE_LENGTH; probe_base_i ++){
+						char read_base = probe_seq[probe_base_i];
+						char chro_base = LRMgvindex_get(& context -> current_base_index, moving_on_chro_pos + probe_base_i);
+						//LRMprintf("      TESTING %c == %c\n", read_base, chro_base);
+						matched += read_base==chro_base;
+					}
+					if(matched >= LRMDYNAMIC_JUNCTION_PROBE_LENGTH-LRMDYNAMIC_JUNCTION_PROBE_MAX_MISMATCH -999){
+						if(matched > best_matching_bases){
+							best_matching_bases = matched;
+							probe_tested_chro_pos[probe_i] = moving_on_chro_pos;
+							last_accepted_probe_chro_pos = moving_on_chro_pos;
+						}
+					}
+				}
+				char lttt = probe_seq[LRMDYNAMIC_JUNCTION_PROBE_LENGTH];
+				probe_seq[LRMDYNAMIC_JUNCTION_PROBE_LENGTH] = 0;
+				probe_seq[LRMDYNAMIC_JUNCTION_PROBE_LENGTH] = lttt;
+				probe_tested ++;
+			}
+		}else if(!simplest_run){
+			if(1){
+				int perfectMs = iteration_context -> chain_cov_end[ii] - iteration_context -> chain_cov_start[ii] -1;
+				int gappedMs =  this_subread_start - last_subread_end +1 - max(0, read_minus_chro_delta);
+				int absIndels = abs(read_minus_chro_delta);
+		
+				LRMprintf("DOING DPPP MAPPING -- IT IS FOR THIS STAGE! PfM, GaM, AbsInd = %d, %d, %d\n", perfectMs , gappedMs , absIndels);
+			}
 			new_moves = LRMdynamic_in_middle(context, thread_context, iteration_context, last_subread_end -1, this_subread_start, last_subread_chro_end - 1, read_minus_chro_delta);
 
 			if(new_moves<0){
-				LRMprintf("MINUS MOVES : %d\n", new_moves);
+				LRMprintf("WRONG__NEG__MOVES  DYN_MID MINUS MOVES : %d\n", new_moves);
 				new_moves = 0;
 			}
 			thread_context -> dynamic_programming_indel_movement_start += new_moves;
 		}
 
 		total_read_len += iteration_context -> chain_cov_end[ii] - last_subread_end ;
-		LRMfill_gaps_addNM(context, thread_context, iteration_context, window_no, ii);
+		if(!simplest_run)LRMfill_gaps_addNM(context, thread_context, iteration_context, window_no, ii, indel_M_delta);
 		last_subread_end = iteration_context -> chain_cov_end[ii];
 		last_subread_chro_end = this_subread_chro_start + (last_subread_end - this_subread_start);
 	}
 
 	unsigned int last_end_chro_pos =  iteration_context -> chain_chro_at_cov_start[ii-1]; 
 	last_end_chro_pos += ( iteration_context -> chain_cov_end[ii-1] - iteration_context -> chain_cov_start[ii-1] );
-	new_moves = LRMdynamic_to_ends(context, thread_context, iteration_context, last_subread_end -1, last_end_chro_pos -1, 1 );
+	if(simplest_run){
+		char * mvcigar = thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start;
+		new_moves = sprintf(mvcigar, "%dS", iteration_context -> read_length - last_subread_end +1);
+	}else{
+		new_moves = LRMdynamic_to_ends(context, thread_context, iteration_context, last_subread_end -1, last_end_chro_pos -1, 1 );
+	}
 
 	if(new_moves<0){
 		LRMprintf("MINUS MOVES : %d\n", new_moves);

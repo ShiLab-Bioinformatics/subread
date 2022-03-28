@@ -33,7 +33,7 @@ typedef unsigned long long srUInt_64;
 #define LRMSEGMENT_CIGAR_SIZE 1000
 #define LRMSOFTCLIPPING_MAX_MISMATCH 2
 #define LRMJUMP_MISMATCH_TOLERANCE 4
-#define LRMDYNAMIC_MAXIMUM_GAP_LENGTH (15000)
+#define LRMDYNAMIC_MAXIMUM_GAP_LENGTH (15000/100)
 
 // " * 250" is for RNA-seq mapping -- a much larger dynamic programming space.
 #define LRMINDEL_DYNAMIC_CHANNEL_TOLERANCE (150 * 250 / 250 )
