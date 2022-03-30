@@ -53,7 +53,7 @@ int LRM_run_testing_code(){
 	int move_buf_size = 1000;
 	char * move_buf = malloc(move_buf_size+1);
 	int moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
-		move_buf, move_buf_size, NULL, NULL);
+		move_buf, move_buf_size, NULL, NULL, NULL);
 
 	move_buf[moves]=0;
 	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
@@ -61,35 +61,35 @@ int LRM_run_testing_code(){
 	read_seq = "CAATGCCCATAAC";
 	chro_seq = "CAATGCATAAC";
 	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
-		move_buf, move_buf_size, NULL, NULL);
+		move_buf, move_buf_size, NULL, NULL, NULL);
 	move_buf[moves]=0;
 	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
 
 	read_seq = "TGTAAC";
 	chro_seq =  "ATAAC";
 	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
-		move_buf, move_buf_size, NULL, NULL);
+		move_buf, move_buf_size, NULL, NULL, NULL);
 	move_buf[moves]=0;
 	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
 
 	read_seq = "CAATGCCCATAACACCC";
 	chro_seq = "CAATGCCCATAACTG";
 	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
-		move_buf, move_buf_size, NULL, NULL);
+		move_buf, move_buf_size, NULL, NULL, NULL);
 	move_buf[moves]=0;
 	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
 
 	read_seq = "AATCAATGCCCATAACACCC";
 	chro_seq =  "GGCAATGCACCATAACTG";
 	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
-		move_buf, move_buf_size, NULL, NULL);
+		move_buf, move_buf_size, NULL, NULL, NULL);
 	move_buf[moves]=0;
 	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
 
 	read_seq =  "GGCAATGCACCATAACTG";
 	chro_seq = "AATCAATGCCCATAACACCC";
 	moves = LRMsmith_waterman(read_seq, strlen(read_seq), chro_seq, strlen(chro_seq),
-		move_buf, move_buf_size, NULL, NULL);
+		move_buf, move_buf_size, NULL, NULL, NULL);
 	move_buf[moves]=0;
 	LRMprintf("LRM_BUF_SIZE %d : %s\n", moves, move_buf);
 
@@ -883,6 +883,9 @@ void LRMbuild_chains(LRMcontext_t * context, LRMthread_context_t * thread_contex
 		last_added_ii = iteration_context -> sorting_subread_nos[seed_subread_no] & 0xffff;
 		unsigned int last_added_read_pos = vtab -> coverage_start[last_added_tt][last_added_ii];
 		long long last_added_chro_pos = vtab -> pos[last_added_tt][last_added_ii] + vtab -> coverage_start[last_added_tt][last_added_ii];
+		long long last_added_chro_pos_end = vtab -> pos[last_added_tt][last_added_ii] + vtab -> coverage_end[last_added_tt][last_added_ii];
+		long long last_added_chro_inner = go_large?last_added_chro_pos:last_added_chro_pos_end;
+		long long last_added_chro_edge = go_large?last_added_chro_pos_end:last_added_chro_pos;
 		//LRMprintf("SEED %s : [%d:%d] ; pos=%u OR %u\n", iteration_context -> sorted_window_is_negative_strand[window_no]?"NEG":"POS", last_added_tt, last_added_ii, last_added_read_pos, iteration_context -> sorting_vote_locations[seed_subread_no]);
 
 		int last_added_read_edge = go_large?vtab -> coverage_end[last_added_tt][last_added_ii]: vtab -> coverage_start[last_added_tt][last_added_ii];
@@ -950,6 +953,8 @@ void LRMbuild_chains(LRMcontext_t * context, LRMthread_context_t * thread_contex
 			this_read_pos = vtab -> coverage_start[test_tt][test_ii];
 			this_read_end = vtab -> coverage_end[test_tt][test_ii];
 			this_chro_pos = iteration_context -> sorting_vote_locations[test_subread_no];
+			long long int this_chro_edge = go_large? this_chro_pos + (this_read_end - this_read_pos) :this_chro_pos;
+			long long int this_chro_inner = go_large? this_chro_pos: (this_chro_pos + (this_read_end - this_read_pos));
 
 			if( test_ii >= LRMGENE_VOTE_SPACE || test_tt >= LRMGENE_VOTE_TABLE_SIZE) LRMprintf("Error: Table oversize %s , Subr: %d/%d : %d %d\n", iteration_context -> read_name, test_subread_no, iteration_context -> sorting_total_votes, test_tt, test_ii);
 
@@ -962,13 +967,15 @@ void LRMbuild_chains(LRMcontext_t * context, LRMthread_context_t * thread_contex
 
 			//LRMprintf("CALC N2W_chro_dist : %lld = %lld - %lld \n", N2W_chro_dist, last_added_chro_pos, this_chro_pos);
 
-			int can_add_this = iteration_context -> sorted_window_is_negative_strand[window_no] == iteration_context -> sorting_is_negative_strand[test_subread_no] &&
+			int this_added_read_inner = go_large? this_read_pos:this_read_end;
+			int perfect_sec_len = abs(last_added_read_edge - this_added_read_inner);
+
+			int can_add_this = ( this_chro_inner > last_added_chro_edge == go_large) && iteration_context -> sorted_window_is_negative_strand[window_no] == iteration_context -> sorting_is_negative_strand[test_subread_no] &&
                                LRM_test_chain_extension(context, thread_context, iteration_context, window_no, go_large, N2W_read_dist, N2W_chro_dist, last_added_chro_pos , this_chro_pos, this_read_end - this_read_pos);
 			if(can_add_this){
 				int idx = iteration_context ->chain_tosmall_items;
 				if(go_large) idx += iteration_context ->chain_tolarge_items;
 
-				int this_added_read_inner = go_large? this_read_pos:this_read_end;
 				if( go_large && this_added_read_inner <= last_added_read_edge ){
 					//LRMprintf("OVERLAPPING_LAGRE %s : %d <= %d\n", iteration_context -> read_name, this_added_read_inner, last_added_read_edge);
 					has_overlapping = 1;
@@ -986,6 +993,7 @@ void LRMbuild_chains(LRMcontext_t * context, LRMthread_context_t * thread_contex
 				last_added_read_pos = this_read_pos;
 				last_added_chro_pos = this_chro_pos;
 				last_added_read_edge = go_large? this_read_end : this_read_pos ;
+				last_added_chro_edge = this_chro_edge;
 			}
 
 			//assert(next_test_subread_no >= 0);
@@ -1027,7 +1035,7 @@ void LRMbuild_chains(LRMcontext_t * context, LRMthread_context_t * thread_contex
 
 void LRMfill_gaps_addNM(LRMcontext_t * context, LRMthread_context_t * thread_context, LRMread_iteration_context_t * iteration_context, int window_no, int subread_no, int indel_M_delta){
 	int middle_delta = subread_no?1:1;
-	thread_context -> dynamic_programming_indel_movement_start += sprintf( thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start, "%dM/",  iteration_context -> chain_cov_end[subread_no] - iteration_context -> chain_cov_start[subread_no] - middle_delta);
+	thread_context -> dynamic_programming_indel_movement_start += sprintf( thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start, "%dM/",  iteration_context -> chain_cov_end[subread_no] - iteration_context -> chain_cov_start[subread_no] - middle_delta + indel_M_delta);
 }
 
 void LRMsave_mapping_result(LRMcontext_t * context, LRMthread_context_t * thread_context, LRMread_iteration_context_t * iteration_context, int window_no){
@@ -1092,7 +1100,7 @@ void LRMfill_gaps_reduce_Cigar(LRMcontext_t * context, LRMthread_context_t * thr
 		sprintf( thread_context -> final_cigar_string + wcur, "%d%c", repeat_i, old_opt );
 	}
 	//LRMprintf("Rebuild Rlen of %s = %d\n", iteration_context -> read_name, r_rebuilt_len);
-	if(r_rebuilt_len != iteration_context -> read_length){
+	if(1)if(r_rebuilt_len != iteration_context -> read_length){
 		LRMprintf("WRONG_REBUILD : %s : %d != %d ; %s\nREBUILT : %s\n", iteration_context -> read_name, r_rebuilt_len , iteration_context -> read_length, thread_context -> dynamic_programming_indel_movement_buf, thread_context -> final_cigar_string );
 	}
 	*PTRmapped_length = mapped_length;
@@ -1148,6 +1156,7 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 	unsigned int last_subread_chro_end = iteration_context -> chain_chro_at_cov_start[0] + (last_subread_end - first_mapped_subread_start);
 
 	for(ii = 1; ii < iteration_context -> chain_total_items; ii++){
+		indel_M_delta = 0;
 		unsigned int this_subread_chro_start = iteration_context -> chain_chro_at_cov_start[ii];
 		int this_subread_start = iteration_context -> chain_cov_start[ii];
 		int read_minus_chro_delta = (this_subread_start - last_subread_end) - ( this_subread_chro_start - last_subread_chro_end );
@@ -1155,13 +1164,13 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 		//if(this_subread_chro_start < last_subread_chro_end -1 - 16) LRMprintf("Error: Reversed order on CHRO %s : %u < %u\n", iteration_context -> read_name, this_subread_chro_start , last_subread_chro_end -1 );
 		assert( this_subread_start > last_subread_end -1 );
 		if((! simplest_run) && (this_subread_start - last_subread_end >=  LRMDYNAMIC_MAXIMUM_GAP_LENGTH) ){
-			LRMprintf("DOING ROUGH MAPPING -- IT IS FOR THIS STAGE!\n");
 			int indel_after_M = -read_minus_chro_delta;
 
 			int gap_read_M = this_subread_start - last_subread_end +1 - max( 0, -indel_after_M );
 			int gap_read_M_L = gap_read_M/2;
 			int gap_read_M_R = gap_read_M - gap_read_M_L;
 			int indel_move = indel_after_M<0?'I':'D';
+			//LRMprintf("DO MDDM : LEND %d   TSTT %d   LCHRO %u > %u    DELTA %d\n", last_subread_end-1, this_subread_start, this_subread_chro_start, last_subread_chro_end, read_minus_chro_delta);
 			thread_context -> dynamic_programming_indel_movement_start += sprintf( thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start, "%dM%d%c%dM/", gap_read_M_L,abs(indel_after_M), indel_move, gap_read_M_R);
 		}else if(simplest_run){
 			char * mvcigar = thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start;
@@ -1179,60 +1188,76 @@ void LRMfill_gaps(LRMcontext_t * context, LRMthread_context_t * thread_context, 
 			
 			int ncigarlen = sprintf(mvcigar, "%dM%d%c/%dM/",  gappedMs , absIndels , read_minus_chro_delta > 0?'I':'D', perfectMs);
 			thread_context -> dynamic_programming_indel_movement_start +=ncigarlen;
-		}else if((!simplest_run) && this_subread_chro_start - last_subread_chro_end > LRMDYNAMIC_MIN_EXON_JUNCTION_SPAN_ON_CHRO){ // it is a junction; do probe-based search of the junction point.
-			LRMprintf("DOING PROBING MAPPING -- TRYING IN THIS STAGE! %u ~ %u\n", last_subread_chro_end, this_subread_chro_start);
-			#define LRMDYNAMIC_JUNCTION_PROBE_NUMBER 25
-			#define LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL 2
+		}else if((!simplest_run) && (this_subread_chro_start - last_subread_chro_end > LRMDYNAMIC_MIN_EXON_JUNCTION_SPAN_ON_CHRO || abs(read_minus_chro_delta) > LRMINDEL_DYNAMIC_CHANNEL_TOLERANCE /2 )){ // it is a junction; do probe-based search of the junction point.
+			LRMprintf("\nDO QSMP : LEND %d   TSTT %d   LCHRO %u > %u    DELTA %d\n", last_subread_end-1, this_subread_start, this_subread_chro_start, last_subread_chro_end, read_minus_chro_delta);
+			#define LRMDYNAMIC_JUNCTION_PROBE_NUMBER 15
+			#define LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL 30 
 			#define LRMDYNAMIC_JUNCTION_PROBE_LENGTH 30
-			#define LRMDYNAMIC_JUNCTION_PROBE_MAX_MISMATCH 3
+			#define LRMDYNAMIC_JUNCTION_PROBE_MAX_PENALTY 10 
 			int probe_i, extra_gap = ( this_subread_start - last_subread_end  - LRMDYNAMIC_JUNCTION_PROBE_LENGTH ) / LRMDYNAMIC_JUNCTION_PROBE_NUMBER, probe_tested = 0;
 
 			unsigned int probe_tested_chro_pos[LRMDYNAMIC_JUNCTION_PROBE_NUMBER], last_accepted_probe_chro_pos = last_subread_chro_end;
 			extra_gap = max(2 , extra_gap);
 			int probe_move_buf_size = (LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL)*3;
-			char * probe_move_buf = malloc(probe_move_buf_size);
+			char * probe_move_buf = malloc(probe_move_buf_size), * best_move_buf = malloc(probe_move_buf_size);
 			for(probe_i=0; probe_i<LRMDYNAMIC_JUNCTION_PROBE_NUMBER; probe_i++){
 				probe_tested_chro_pos[probe_i]=0; // zero : no location is found for this probe.
-				int probe_extract_from_read_pos = last_subread_end + extra_gap/2 + extra_gap* probe_i, best_matching_bases = -1;
+				int probe_extract_from_read_pos = last_subread_end + extra_gap/2 + extra_gap* probe_i, best_matching_bases = -1, highest_score=0;
 				if(probe_extract_from_read_pos >= this_subread_start)break;
 				char * probe_seq = iteration_context -> read_text + probe_extract_from_read_pos;
 				unsigned int moving_on_chro_pos;
 				// moving_on_chro_pos is the FIRST base in the probe.
-				for(moving_on_chro_pos = last_subread_chro_end; moving_on_chro_pos < this_subread_chro_start; moving_on_chro_pos ++){
-					int matched = 0, probe_base_i;
+				for(moving_on_chro_pos = last_accepted_probe_chro_pos; moving_on_chro_pos < this_subread_chro_start; moving_on_chro_pos ++){
+					int matched = 0, probe_base_i, hi_score = 0;
 
 					char chro_seq [LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL];
 					for(probe_base_i = 0; probe_base_i < LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL; probe_base_i ++){
 						char chro_base = LRMgvindex_get(& context -> current_base_index, moving_on_chro_pos + probe_base_i);
 						chro_seq[probe_base_i] = chro_base;
 					}
-					int sw_moves = LRMsmith_waterman(probe_seq, LRMDYNAMIC_JUNCTION_PROBE_LENGTH, chro_seq, LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL,
-						probe_move_buf, probe_move_buf_size, NULL, NULL);
+					int sw_moves = LRMsmith_waterman_linear(probe_seq, LRMDYNAMIC_JUNCTION_PROBE_LENGTH, chro_seq, LRMDYNAMIC_JUNCTION_PROBE_LENGTH + LRMDYNAMIC_JUNCTION_PROBE_MAX_INDEL,
+						probe_move_buf, probe_move_buf_size, NULL, NULL, & hi_score);
 					for(probe_base_i = 0; probe_base_i < sw_moves; probe_base_i++) matched+=('M' == probe_move_buf[probe_base_i]);
 
-					if(matched >= LRMDYNAMIC_JUNCTION_PROBE_LENGTH-LRMDYNAMIC_JUNCTION_PROBE_MAX_MISMATCH -999){
-						if(matched > best_matching_bases){
+					if(matched >= LRMDYNAMIC_JUNCTION_PROBE_LENGTH-LRMDYNAMIC_JUNCTION_PROBE_MAX_PENALTY){
+						if(hi_score > highest_score){
 							best_matching_bases = matched;
+							highest_score = hi_score;
 							probe_tested_chro_pos[probe_i] = moving_on_chro_pos;
 							last_accepted_probe_chro_pos = moving_on_chro_pos;
 							probe_move_buf[sw_moves]=0;
-							LRMprintf("       PROBE [%d] at %d ~ %u MATCHING %d IS %s\n", probe_i, probe_extract_from_read_pos, moving_on_chro_pos - last_subread_chro_end, matched, probe_move_buf);
+							memcpy(best_move_buf, probe_move_buf, sw_moves+1);
+//							LRMprintf("       PROBE [%d] at %d ~ %u MATCHING %d IS %s\n", probe_i, probe_extract_from_read_pos, moving_on_chro_pos - last_subread_chro_end, matched, probe_move_buf);
 						}
 					}
 				}
-				LRMprintf("   PROBE [%d] at %d HAS MATCHED %d at %u\n", probe_i, probe_extract_from_read_pos, best_matching_bases, probe_tested_chro_pos[probe_i] - last_subread_chro_end);
-	
+				if(best_matching_bases >0)
+				LRMprintf("   PROBE [%d] at %d HAS HI SCORE %d at %u : %s\n", probe_i, probe_extract_from_read_pos - last_subread_end, best_matching_bases, probe_tested_chro_pos[probe_i] - last_subread_chro_end, best_move_buf);
 				probe_tested ++;
 			}
 			free(probe_move_buf);
-		}else if(!simplest_run){
-			if(1){
-				int perfectMs = iteration_context -> chain_cov_end[ii] - iteration_context -> chain_cov_start[ii] -1;
-				int gappedMs =  this_subread_start - last_subread_end +1 - max(0, read_minus_chro_delta);
-				int absIndels = abs(read_minus_chro_delta);
-		
-				LRMprintf("DOING DPPP MAPPING -- IT IS FOR THIS STAGE! PfM, GaM, AbsInd = %d, %d, %d\n", perfectMs , gappedMs , absIndels);
+			free(best_move_buf);
+
+
+			// "False-safe" CIGAR
+			char * mvcigar = thread_context -> dynamic_programming_indel_movement_buf + thread_context -> dynamic_programming_indel_movement_start;
+			int gappedMs =  this_subread_start - last_subread_end +1 - max(0, read_minus_chro_delta);
+			int perfectMs = iteration_context -> chain_cov_end[ii] - iteration_context -> chain_cov_start[ii] -1;
+			int absIndels = abs(read_minus_chro_delta);
+			//LRMprintf("  => GAPM %d = ( %d - %d + 1 - %d )  PFCM %d    ABINDEL %d\n", gappedMs, this_subread_start, last_subread_end,  max(0, read_minus_chro_delta), perfectMs, absIndels);
+			if(gappedMs <0){
+				indel_M_delta = gappedMs;
+				if( (-indel_M_delta) < perfectMs) {
+					absIndels += perfectMs;
+					indel_M_delta = perfectMs;
+				}
+				gappedMs = 0;
 			}
+			
+			int ncigarlen = sprintf(mvcigar, "%dM%d%c/",  gappedMs , absIndels , read_minus_chro_delta > 0?'I':'D');
+			thread_context -> dynamic_programming_indel_movement_start +=ncigarlen;
+		}else if(!simplest_run){
+			//LRMprintf("DO DNMK : LEND %d   TSTT %d   LCHRO %u    DELTA %d\n", last_subread_end-1, this_subread_start, last_subread_chro_end-1, read_minus_chro_delta);
 			new_moves = LRMdynamic_in_middle(context, thread_context, iteration_context, last_subread_end -1, this_subread_start, last_subread_chro_end - 1, read_minus_chro_delta);
 
 			if(new_moves<0){
@@ -1299,7 +1324,7 @@ void LRMdo_dynamic_programming_read( LRMcontext_t * context, LRMthread_context_t
 		if(iteration_context -> sorted_window_total_votes [ww] >0){
 			LRMbuild_chains(context, thread_context, iteration_context, ww);
 	
-			if(0&& LRMFIXLENstrcmp("R4", iteration_context->read_name) == 0 )
+			if(0 && LRMFIXLENstrcmp("R4", iteration_context->read_name) == 0 )
 				LRMprint_longvote(context, thread_context, iteration_context);
 	
 			LRMfill_gaps(context, thread_context, iteration_context, ww);
