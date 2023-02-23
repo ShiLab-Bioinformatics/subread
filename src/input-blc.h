@@ -30,6 +30,8 @@ void input_mFQ_close(input_mFQ_t * fqs_input);
 // "cached BCL" maintains a chunk of reads; it decompresses 
 int cacheBCL_init( cache_BCL_t * cache_input, char * data_dir, int reads_in_chunk, int all_threads );
 int cacheBCL_next_read(  cache_BCL_t * cache_input, char * read_name, char * seq, char * qual, srInt_64 * read_number_in_all);
+int cacheBCL_next_readbin(cache_BCL_t * cache_input, int * readlane, char readbin[BCL_READBIN_ITEMS_LOCAL][BCL_READBIN_SIZE], int max_readbin_buffer, srInt_64 * start_allread_no);
+
 int cacheBCL_go_chunk_start( cache_BCL_t * blc_input );
 int cacheBCL_go_chunk_end( cache_BCL_t * blc_input );
 void cacheBCL_close ( cache_BCL_t * blc_input );
@@ -43,7 +45,10 @@ HashTable * input_BLC_parse_SampleSheet(char * fname);
 // It returns NULL if no list is found
 // The arraylist can be simply destroyed and all contents are deallocated automatically
 ArrayList * input_BLC_parse_CellBarcodes(char * fname);
+int hamming_dist_ATGC_max1_2p(char* s1, char* s2 );
+int hamming_dist_ATGC_max1(char* s1, char* s2 );
 int hamming_dist_ATGC_max2(char* s1, char* s2 );
+int hamming_dist_ATGC_max3(char* s1, char* s2 );
 
 // returns -1 if error, or 0 if no error.
 int cacheBCL_quality_test(int is_FASTQ_input, char * datadir, HashTable * sample_sheet_table, ArrayList * cell_barcode_list, int testing_reads, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode);

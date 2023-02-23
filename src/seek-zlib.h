@@ -40,6 +40,7 @@ void parallel_gzip_zip_texts(parallel_gzip_writer_t * pzwtr, int thread_no, int 
 void parallel_gzip_writer_flush(parallel_gzip_writer_t * pzwtr, int thread_no);
 void parallel_gzip_writer_close(parallel_gzip_writer_t * pzwtr);
 int parallel_gzip_writer_add_read_fqs_scRNA(parallel_gzip_writer_t**outfps, char * bambin, int thread_no);
+void parallel_gzip_writer_add_text_qual(parallel_gzip_writer_t * pzwtr, char * text, int tlen, int thread_no);
 
 // returns 0 if OK; returns 1 if the file is not indexable; returns -1 if file doesn't exist.
 int seekgz_open(const char * fname, seekable_zfile_t * fp, FILE * old_fp);

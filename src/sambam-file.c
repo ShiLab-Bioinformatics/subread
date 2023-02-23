@@ -734,7 +734,7 @@ int convert_BAM_binary_to_SAM( SamBam_Reference_Info * chro_table, char * bam_bi
 					memcpy(&tagval,  bam_bin + flex_ptr, type_bytes);
 					long long printv = is_signed?tagval:( (unsigned int) tagval );
 					#ifdef __MINGW32__
-					sam_ptr += sprintf(sam_txt + sam_ptr, "%I64d\t", printv);
+					sam_ptr += sprintf(sam_txt + sam_ptr, "%" PRId64 "\t", printv);
 					#else
 					sam_ptr += sprintf(sam_txt + sam_ptr, "%lld\t", printv);
 					#endif
@@ -988,7 +988,7 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 	//fprintf(stderr, "HN_TAG=%d\n", nh_val	);
 
 	#ifdef __MINGW32__
-	int plen = snprintf(buff, buff_len-1, "%s\t%u\t%s\t%u\t%d\t%s\t%s\t%u\t%I64d\t%s\t%s%s\n%c", aln -> read_name, aln -> flags , chro_name, chro_offset, aln -> mapping_quality, cigar, mate_chro_name, mate_chro_offset, templete_length, aln -> sequence , aln -> seq_quality, extra_tags, 0);
+	int plen = snprintf(buff, buff_len-1, "%s\t%u\t%s\t%u\t%d\t%s\t%s\t%u\t%" PRId64 "\t%s\t%s%s\n%c", aln -> read_name, aln -> flags , chro_name, chro_offset, aln -> mapping_quality, cigar, mate_chro_name, mate_chro_offset, templete_length, aln -> sequence , aln -> seq_quality, extra_tags, 0);
 	#else
 	int plen = snprintf(buff, buff_len-1, "%s\t%u\t%s\t%u\t%d\t%s\t%s\t%u\t%lld\t%s\t%s%s\n%c", aln -> read_name, aln -> flags , chro_name, chro_offset, aln -> mapping_quality, cigar, mate_chro_name, mate_chro_offset, templete_length, aln -> sequence , aln -> seq_quality, extra_tags, 0);
 	#endif
@@ -1911,15 +1911,14 @@ unsigned long long SamBam_writer_sort_bins_to_BAM_FP_pos(FILE * fp){
 
 
 int SamBam_writer_calc_cigar_span(char * bin){
-	int cops = 0, rname_len = 0, ret = 0;
-	memcpy(&cops, bin+12, 4);
-	memcpy(&rname_len, bin+8, 4);
-	rname_len = rname_len & 0xff;
-	cops = cops & 0xffff;
+	int cops, rname_len, ret = 0;
+	cops = *(short *)(bin+12);
+	rname_len = bin[8];
 	int ii;
+	char * binbase = bin+32+rname_len;
 	for(ii = 0; ii < cops ; ii++){
 		unsigned int copt = 0;
-		memcpy(&copt, bin+32+rname_len+4*ii, 4);
+		copt = *(int*)(binbase+4*ii);
 		int copt_char = copt & 0xf;
 		unsigned int copt_len = copt >> 4;
 		if(copt_char == 0 || copt_char == 2 || copt_char == 3 || copt_char == 7 || copt_char == 8) ret += copt_len;
@@ -1928,7 +1927,7 @@ int SamBam_writer_calc_cigar_span(char * bin){
 	return ret;
 }
 
-#define MAX_ALLOWED_GAP_IN_BAI_CHUNK 10 // the number of blocks, not the file positions.
+#define MAX_ALLOWED_GAP_IN_BAI_CHUNK 5 // the number of blocks, not the file positions.
 
 void SamBam_writer_sort_bins_to_BAM_test_bins(SamBam_Writer * writer, HashTable * bin_tab, ArrayList * bin_list, ArrayList * win16k_list, int block_len, void ***last_chunk_ptr, int chro_no){
 	int inbin_pos = writer -> chunk_buffer_used - block_len ; // point to the byte AFTER "block_len" int.
@@ -1939,7 +1938,6 @@ void SamBam_writer_sort_bins_to_BAM_test_bins(SamBam_Writer * writer, HashTable 
 	binno = bin_mq_nl>>16;
 
 	int cigar_span = SamBam_writer_calc_cigar_span(writer -> chunk_buffer + inbin_pos);
-
 	int this_w16_no = (pos + cigar_span) >>14;	// WIN is calculated on 0-based pos.
 	unsigned long long this_Vpos = writer -> this_bam_block_no<<16 | (inbin_pos-4);
 
@@ -2378,7 +2376,7 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 	SAMBAM_renew_BAItabs;
 
 	int chro_no = (int)(current_min >> 32);
-	int old_chro_no = -1, last_written_BAI_chro = -1;;
+	int old_chro_no = -1;
 
 	int wlen = fwrite("BAI\1", 4, 1, writer -> BAI_fp);
 	if(wlen < 1) assert(wlen >0);
@@ -2413,7 +2411,6 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 		if(old_chro_no >=0 && chro_no != old_chro_no){ // if there is old_chro && if has to write. Note: old_chro_no<0 means we reached the "unmapped" part of the sorted temp files
 			//SUBREADprintf("\n====== W1CHR %d =====\n", old_chro_no);
 			SamBam_write_BAI_for_1chr(writer, &bin_chunks_table, &bins_list, &win16k_list);
-			last_written_BAI_chro = old_chro_no;
 			SAMBAM_write_empty_chros(old_chro_no +1, chro_no < 0?n_ref:chro_no);
 			SAMBAM_renew_BAItabs;
 			SAMBAM_reset_sorting_writer;
@@ -2499,13 +2496,21 @@ void SamBam_writer_finalise_one_thread(SamBam_Writer * writer){
 }
 
 
-
-
 unsigned int FC_CRC32(char * dat, int len){
 	unsigned int crc0 = crc32(0, NULL, 0);
 	unsigned int ret = crc32(crc0, (unsigned char *)dat, len);
 	return ret;
 }
+
+void simple_bam_writer_deallocate_index_per_chro(void * p){
+	struct simple_bam_writer_index_per_chro * ch = p;
+	HashTableDestroy(ch->index_binP1_table);
+	ArrayListDestroy(ch->index_binP0_list);
+	ArrayListDestroy(ch->win16k_list);
+	free(ch);
+}
+
+
 
 struct simple_bam_writer_index_per_chro * simple_bam_writer_new_index_per_chro(){
 	struct simple_bam_writer_index_per_chro * ret = malloc(sizeof(struct simple_bam_writer_index_per_chro ));
@@ -2521,9 +2526,9 @@ void simple_bam_writer_update_index(simple_bam_writer * writer, char * rbin, int
 	memcpy(&chro_no, rbin + 4, 4);
 	if(chro_no<0)return;
 
-	unsigned int pos=0, bin_mq_nl=0;
-	memcpy(&pos, rbin + 8, 4);
-	memcpy(&bin_mq_nl, rbin + 12, 4);
+	unsigned int pos, bin_mq_nl=0;
+	pos = *(unsigned int*)(rbin + 8);
+	bin_mq_nl = *(unsigned int*)(rbin + 12);
 
 	struct simple_bam_writer_index_per_chro * index_chro = HashTableGet(writer -> index_per_chro, NULL+chro_no+1);
 	if(NULL==index_chro){
@@ -2577,14 +2582,6 @@ void simple_bam_write_compressed_block(simple_bam_writer * writer,char *obuf, in
 	fwrite(obuf, 1, olen, writer -> bam_FP);
 	fwrite(&crcval, 1, 4, writer -> bam_FP);
 	fwrite(&ilen, 1, 4, writer -> bam_FP);
-}
-
-void simple_bam_writer_deallocate_index_per_chro(void * p){
-	struct simple_bam_writer_index_per_chro * ch = p;
-	HashTableDestroy(ch->index_binP1_table);
-	ArrayListDestroy(ch->index_binP0_list);
-	ArrayListDestroy(ch->win16k_list);
-	free(ch);
 }
 
 void simple_bam_write(void * bin, int binlen, simple_bam_writer * writer, int force_flush){
@@ -2673,6 +2670,5 @@ void simple_bam_close(simple_bam_writer * writer){
 	fclose(writer -> bai_FP);
 	free(writer);
 }
-
 
 

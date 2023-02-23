@@ -25,7 +25,6 @@ void seekgz_try_read_some_zipped_data(seekable_zfile_t * fp, int * is_eof){
 		return;
 	}
 
-	assert(fp -> stem.avail_in >= 0);
 	if(fp -> stem.avail_in < SEEKGZ_BINBUFF_SIZE / 2 ) {
 		if(fp -> in_zipped_buff_read_ptr > 0 && fp -> stem.avail_in > 0){
 			int i;
@@ -301,6 +300,7 @@ int seekgz_load_1_block( seekable_zfile_t * fp , int empty_block_no){
 		while(1){
 			seekgz_try_read_some_zipped_data(fp, &is_eof);
 			if(fp -> stem.avail_in < 1 && is_eof)break;
+			if(fp -> stem.avail_in < 1) continue;
 
 			if(out_txt_size < out_txt_used *4/3){
 				out_txt_size *= 2;
@@ -313,17 +313,13 @@ int seekgz_load_1_block( seekable_zfile_t * fp , int empty_block_no){
 
 			void * old_next_in = fp -> stem.next_in;
 				
-				//SUBREADprintf("i  INFLATINHG: FILEPOS=%llu  IN_AVAIL=%d  OUT_AVAIL=%d\n", seekgz_ftello(fp), fp -> stem.avail_in, fp -> stem.avail_out);
 			int ret_ifl = inflate(&(fp -> stem), Z_BLOCK);
 			int have = (out_txt_size - out_txt_used) - fp -> stem.avail_out;
 			if(ret_ifl != Z_OK && ret_ifl != Z_STREAM_END){
-				SUBREADprintf("ERR  INFLATINHG: RET=%d BY IN %d zipped bytes  ==>  %d PLAIN TXT\n", ret_ifl, old_avail_in - fp -> stem.avail_in, have);
+				SUBREADprintf("ERR  INFLATINHG: RET=%d BY IN %d (%d - %d) zipped bytes  ==>  %d PLAIN TXT\n", ret_ifl, old_avail_in - fp -> stem.avail_in, old_avail_in, fp -> stem.avail_in, have);
 				SUBREADprintf("ERR  INFLATINHG: BEND=%d\n", ( fp -> stem.data_type & 128 )&& !(fp -> stem.data_type & 64));
 			}
 
-			//if(ret_ifl != Z_STREAM_END){
-			//	SUBREADprintf("INF: STREAM_END\n");
-			//}
 			if(ret_ifl != Z_OK && ret_ifl != Z_STREAM_END){
 				is_data_error = 1;
 				break;
@@ -334,11 +330,7 @@ int seekgz_load_1_block( seekable_zfile_t * fp , int empty_block_no){
 			if( ( fp -> stem.data_type & 128 )&& !(fp -> stem.data_type & 64)) is_block_end = 1;
 			if(ret_ifl == Z_STREAM_END) is_gzip_unit_end = 1;
 
-			//if(is_block_end)
-			//	fp -> rolling_dict_window_used = 0;
-			//else
 			seekgz_update_current_window(fp, out_txt + out_txt_used, have);
-
 			out_txt_used += have;
 
 			if(is_block_end){
@@ -562,6 +554,7 @@ void seekgz_close(seekable_zfile_t * fp){
 
 int autozip_open(const char * fname, autozip_fp * fp){
 	int ret = -1;
+	int need_seek=1;
 	memset(fp, 0, sizeof(autozip_fp));
 	strcpy(fp -> filename, fname);
 
@@ -575,7 +568,13 @@ int autozip_open(const char * fname, autozip_fp * fp){
 	if(cc2 == 0x8b && cc1 == 0x1f){
 		//fclose(tstfp);
 		fp -> is_plain = 0;
-		int iret = seekgz_open(fname, &fp -> gz_fp, tstfp);
+		fp -> zlib_fp = NULL;
+		int iret = 0;
+		if(need_seek) iret = seekgz_open(fname, &fp -> gz_fp, tstfp);
+		else{
+			fp -> zlib_fp = gzopen(fname, "rb");
+			if(fp -> zlib_fp == NULL) iret=-1;
+		}
 		if(iret >= 0) ret = 1;
 		else ret = -1;
 	}else{
@@ -594,8 +593,9 @@ int autozip_open(const char * fname, autozip_fp * fp){
 
 void autozip_close(autozip_fp * fp){
 	if(fp -> is_plain) fclose(fp -> plain_fp);
-	else
-		seekgz_close(&fp -> gz_fp);
+	else if(fp->zlib_fp) gzclose(fp -> zlib_fp);
+	else seekgz_close(&fp -> gz_fp);
+	fp -> plain_fp = NULL;
 } 
 
 int autozip_gets(autozip_fp * fp, char * buf, int buf_size){
@@ -610,12 +610,20 @@ int autozip_gets(autozip_fp * fp, char * buf, int buf_size){
 		}
 		buf[2]=0;
 
-		char * retc = fgets(buf + base0, buf_size, fp -> plain_fp);
-		if(retc == NULL && base0 == 0) ret = 0;
-		else ret = strlen(buf);
+		if(fp -> plain_fp) {
+			char * retc = fgets(buf + base0, buf_size, fp -> plain_fp);
+			if(retc == NULL && base0 == 0) ret = 0;
+			else ret = strlen(buf);
+		}
 	}else{
-		seekgz_preload_buffer(&fp->gz_fp, NULL);
-		ret = seekgz_gets(&fp -> gz_fp, buf, buf_size);
+		if(fp -> zlib_fp){
+			char *rets = gzgets(fp -> zlib_fp, buf, buf_size);
+			if(rets) ret = strlen(buf);
+			else ret = 0;
+		}else{
+			seekgz_preload_buffer(&fp->gz_fp, NULL);
+			ret = seekgz_gets(&fp -> gz_fp, buf, buf_size);
+		}
 	}
 	//SUBREADprintf("READBUF '%s'\n", buf);
 	return ret;
@@ -628,13 +636,18 @@ int autozip_getch(autozip_fp * fp){
 		ret = fgetc(fp -> plain_fp);
 		if(ret==EOF)ret = -1;
 	}else{
-		ret = seekgz_next_int8(&fp -> gz_fp);
+		if(fp -> zlib_fp) ret = gzgetc (fp -> zlib_fp);
+		else ret = seekgz_next_int8(&fp -> gz_fp);
 	}
 	return ret;
 }
 
 void autozip_rewind(autozip_fp * fp){
 	char fname [MAX_FILE_NAME_LENGTH+1];
+	if(fp->zlib_fp){
+		SUBREADprintf("File opened as non-seekable.\n");
+		return;
+	}
 	strcpy(fname, fp -> filename);
 
 	autozip_close(fp);
@@ -797,6 +810,7 @@ int parallel_gzip_writer_add_read_fqs_scRNA(parallel_gzip_writer_t**outfps, char
 	parallel_gzip_writer_add_text(outI1fp,"\n",1,thread_no);
 	if(outI2fp) parallel_gzip_writer_add_text(outI2fp,"\n",1,thread_no);
 
+	//SUBREADprintf("WRITEFQ RNAME '%s'\n", bambin+36);
 	char * R1seq = bambin+36+13;
 	int R1len = 0;
 	for(R1len=0; R1seq[R1len] && R1seq[R1len]!='|' ;R1len++);

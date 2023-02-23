@@ -38,8 +38,6 @@ typedef struct{
 } worker_master_mutex_t;
 
 
-int scRNA_hamming_max2_fixlen(char * u1, char * u2, int ulen);
-
 /**** How to run master and worker
  *    Master: prepare_next_job -> wait_for_last_job_done -> collect_results -> notify_worker_do_next -> goto 0 
  *    Worker: wait_for_next_job -> do_next_job -> goto 0
@@ -273,4 +271,8 @@ void TNbignum_assign(struct bn* dst, struct bn* src);        /* Copy src into ds
 size_t get_sys_mem_info(char * keyword);
 int get_free_total_mem(size_t * total, size_t * free_mem);
 void *windows_memmem(const void *haystack_start, size_t haystack_len, const void *needle_start, size_t needle_len);
+
+void sorting_LLU_array_exchange(void * arr, int i, int j);
+int sorting_LLU_array_compare(void * arr, int i, int j);
+
 #endif

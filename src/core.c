@@ -350,7 +350,7 @@ int show_summary(global_context_t * global_context)
 	sprintf(sumname, "%s.summary", global_context->config.output_prefix);
 	FILE * sumfp = fopen(sumname,"w");
 	#ifdef __MINGW32__
-	fprintf(sumfp, "Total_%s\t%I64u\n", global_context->input_reads.is_paired_end_reads?"fragments":"reads" , global_context -> all_processed_reads);
+	fprintf(sumfp, "Total_%s\t%" PRIu64 "\n", global_context->input_reads.is_paired_end_reads?"fragments":"reads" , global_context -> all_processed_reads);
 	#else
 	fprintf(sumfp, "Total_%s\t%llu\n", global_context->input_reads.is_paired_end_reads?"fragments":"reads" , global_context -> all_processed_reads);
 	#endif
@@ -361,7 +361,7 @@ int show_summary(global_context_t * global_context)
 
 	if(global_context->input_reads.is_paired_end_reads){
 		#ifdef __MINGW32__
-		fprintf(sumfp, "Properly_paired_fragments\t%I64u\n",global_context -> all_correct_PE_reads);
+		fprintf(sumfp, "Properly_paired_fragments\t%" PRIu64 "\n",global_context -> all_correct_PE_reads);
 		#else
 		fprintf(sumfp, "Properly_paired_fragments\t%llu\n",global_context -> all_correct_PE_reads);
 		#endif
@@ -400,9 +400,9 @@ int show_summary(global_context_t * global_context)
 
 	#ifdef __MINGW32__
 	if(global_context->input_reads.is_paired_end_reads)
-		print_in_box(80, 0,0,"            Total fragments : %I64d" , global_context -> all_processed_reads);
+		print_in_box(80, 0,0,"            Total fragments : %" PRId64 , global_context -> all_processed_reads);
 	else
-		print_in_box(80, 0,0,"                Total reads : %I64d" , global_context -> all_processed_reads);
+		print_in_box(80, 0,0,"                Total reads : %" PRId64 , global_context -> all_processed_reads);
 
 	print_in_box(81, 0,0,"                     Mapped : %u (%.1f%%%%)", global_context -> all_mapped_reads,  global_context -> all_mapped_reads*100.0 / global_context -> all_processed_reads);
 	print_in_box(80, 0,0,"            Uniquely mapped : %u",  global_context -> all_uniquely_mapped_reads);
@@ -411,8 +411,8 @@ int show_summary(global_context_t * global_context)
 	print_in_box(80, 0,0,"                   Unmapped : %u",  global_context -> all_unmapped_reads);
 	if(global_context->input_reads.is_paired_end_reads){
 		print_in_box(80, 0,1,"      ");
-		print_in_box(80, 0,0,"            Properly paired : %I64d", global_context -> all_correct_PE_reads);
-		print_in_box(80, 0,0,"        Not properly paired : %I64d", global_context -> all_mapped_reads -  global_context -> all_correct_PE_reads);
+		print_in_box(80, 0,0,"            Properly paired : %" PRId64, global_context -> all_correct_PE_reads);
+		print_in_box(80, 0,0,"        Not properly paired : %" PRId64, global_context -> all_mapped_reads -  global_context -> all_correct_PE_reads);
 		print_in_box(80, 0,0,"                  Singleton : %u", global_context -> not_properly_pairs_only_one_end_mapped);
 		print_in_box(80, 0,0,"                   Chimeric : %u", global_context -> not_properly_pairs_different_chro);
 		print_in_box(80, 0,0,"      Unexpected strandness : %u", global_context -> not_properly_different_strands);
@@ -1029,7 +1029,7 @@ int convert_BAM_to_SAM(global_context_t * global_context, char * fname, int is_b
 			int ret = sort_SAM_finalise(&writer);
 			if(writer.unpaired_reads)
 				#ifdef __MINGW32__
-				print_in_box(80,0,0,"%I64d single-end mapped reads in reordering.", writer.unpaired_reads);
+				print_in_box(80,0,0,"%" PRId64 " single-end mapped reads in reordering.", writer.unpaired_reads);
 				#else
 				print_in_box(80,0,0,"%lld single-end mapped reads in reordering.", writer.unpaired_reads);
 				#endif
@@ -1099,10 +1099,11 @@ int core_geinput_open(global_context_t * global_context, gene_input_t * fp, int 
 		if(global_context -> config.is_gzip_fastq)
 			if(convert_GZ_to_FQ(global_context, (half_number==2)? global_context ->config.second_read_file : global_context ->config.first_read_file, half_number)) return -1;
 		fname = (half_number == 2)?global_context -> config.second_read_file:global_context -> config.first_read_file;
-		if(global_context->config.scRNA_input_mode == GENE_INPUT_BCL)
-			rv = geinput_open_bcl(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
-		else if(global_context->config.scRNA_input_mode == GENE_INPUT_SCRNA_FASTQ)
-			rv = geinput_open_scRNA_fqs(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
+
+                if(global_context->config.scRNA_input_mode == GENE_INPUT_BCL)
+                        rv = geinput_open_bcl(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
+                else if(global_context->config.scRNA_input_mode == GENE_INPUT_SCRNA_FASTQ)
+                        rv = geinput_open_scRNA_fqs(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
 		else if(global_context->config.scRNA_input_mode == GENE_INPUT_SCRNA_BAM)
 			rv = geinput_open_scRNA_BAM(fname , fp, global_context -> config.reads_per_chunk, global_context -> config.all_threads );
 		else
@@ -2190,13 +2191,13 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 		{
 			int write_len_2 = 100, 
 			#ifdef __MINGW32__
-			write_len = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%I64d\t%s\t%s%s%s\n", read_name_1, flag1, out_chro1, out_offset1, out_mapping_quality1, out_cigar1, mate_chro_for_1, out_offset2, out_tlen1, read_text_1 + display_offset1, qual_text_1, extra_additional_1[0]?"\t":"", extra_additional_1);
+			write_len = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%", PRId64 ,"\t%s\t%s%s%s\n", read_name_1, flag1, out_chro1, out_offset1, out_mapping_quality1, out_cigar1, mate_chro_for_1, out_offset2, out_tlen1, read_text_1 + display_offset1, qual_text_1, extra_additional_1[0]?"\t":"", extra_additional_1);
 			#else
 			write_len = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%lld\t%s\t%s%s%s\n", read_name_1, flag1, out_chro1, out_offset1, out_mapping_quality1, out_cigar1, mate_chro_for_1, out_offset2, out_tlen1, read_text_1 + display_offset1, qual_text_1, extra_additional_1[0]?"\t":"", extra_additional_1);
 			#endif
 			if(global_context->input_reads.is_paired_end_reads)
 			#ifdef __MINGW32__
-				write_len_2 = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%I64d\t%s\t%s%s%s\n", read_name_2, flag2, out_chro2, out_offset2, out_mapping_quality2, out_cigar2, mate_chro_for_2, out_offset1, out_tlen2, read_text_2 + display_offset2, qual_text_2, extra_additional_2[0]?"\t":"", extra_additional_2);
+				write_len_2 = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%" PRId64 "\t%s\t%s%s%s\n", read_name_2, flag2, out_chro2, out_offset2, out_mapping_quality2, out_cigar2, mate_chro_for_2, out_offset1, out_tlen2, read_text_2 + display_offset2, qual_text_2, extra_additional_2[0]?"\t":"", extra_additional_2);
 			#else
 				write_len_2 = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%lld\t%s\t%s%s%s\n", read_name_2, flag2, out_chro2, out_offset2, out_mapping_quality2, out_cigar2, mate_chro_for_2, out_offset1, out_tlen2, read_text_2 + display_offset2, qual_text_2, extra_additional_2[0]?"\t":"", extra_additional_2);
 			#endif
@@ -3239,7 +3240,7 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 			if(is_reversed==1 || !(global_context-> config.do_fusion_detection || global_context-> config.do_long_del_detection))
 			{
 //#warning "====== CHECK PRINTING !!! =========="
-				if(0&&current_read_number == 4000){
+				if(0 && FIXLENstrcmp("R00000000181", read_name_1) ==0){
 					SUBREADprintf(">>>%llu<<<\n%s [%d]  %s\n%s [%d]  %s  VOTE1_MAX=%d >= %d\n", current_read_number, read_name_1, read_len_1, read_text_1, read_name_2, read_len_2, read_text_2, vote_1->max_vote, min_first_read_votes);
 					SUBREADprintf(" ======= PAIR %s = %llu ; NON_INFORMATIVE = %d, %d =======\n", read_name_1, current_read_number, vote_1 -> noninformative_subreads, vote_2 -> noninformative_subreads);
 					print_votes(vote_1, global_context -> config.index_prefix);
@@ -3697,6 +3698,17 @@ int read_chunk_circles(global_context_t *global_context)
 			// base value indexes loaded in the last circle are not destroyed and are used in writting the indel VCF.
 			// the indexes will be destroyed in destroy_global_context
 			break;
+		if(0){
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			SUBREADprintf("WARNINGqqq: EARLY BREAK!\n");
+			break;
+		}
 		
 		clean_context_after_chunk(global_context);
 		chunk_no++;
@@ -4058,6 +4070,15 @@ int load_global_context(global_context_t * context)
 		char * remove_beighbour = getenv("CC_REMOVE_NEIGHBOUR");
 		if(remove_beighbour) context -> config.do_remove_neighbour_for_scRNA = remove_beighbour[0]-'0';
 		if(reads_per_chunk) context -> config.reads_per_chunk = atoi(reads_per_chunk);
+		if(0){
+			SUBREADprintf("WARNINGqqq: small-chunk!\n");
+			SUBREADprintf("WARNINGqqq: small-chunk!\n");
+			SUBREADprintf("WARNINGqqq: small-chunk!\n");
+			SUBREADprintf("WARNINGqqq: small-chunk!\n");
+			SUBREADprintf("WARNINGqqq: small-chunk!\n");
+			SUBREADprintf("WARNINGqqq: small-chunk!\n");
+			context -> config.reads_per_chunk /= 15;
+		}
 	}
 	print_in_box(80,0,0,"Check the input reads.");
 	subread_init_lock(&context->input_reads.input_lock);
@@ -4242,9 +4263,9 @@ int load_global_context(global_context_t * context)
 	context -> sam_chro_to_anno_chr_alias = NULL;
 	if(context->config.exon_annotation_file[0]){ 
 		print_in_box(80,0,0,"Load the annotation file.");
-		if( load_annotated_exon_regions( context ) ) return -1;
 		if(context->config.exon_annotation_alias_file[0])
 			 context -> sam_chro_to_anno_chr_alias = load_alias_table(context->config.exon_annotation_alias_file);
+		if( load_annotated_exon_regions( context ) ) return -1;
 		warning_anno_vs_index(context -> annotation_chro_table, &context -> chromosome_table, context -> sam_chro_to_anno_chr_alias);
 		HashTableDestroy(context -> annotation_chro_table);
 	} else context -> exonic_region_bitmap = NULL;
@@ -4704,11 +4725,9 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 
 void quick_sort_run(void * arr, int spot_low,int spot_high, int compare (void * arr, int l, int r), void exchange(void * arr, int l, int r));
 
-void quick_sort(void * arr, int arr_size, int compare (void * arr, int l, int r), void exchange(void * arr, int l, int r))
-{
+void quick_sort(void * arr, int arr_size, int compare (void * arr, int l, int r), void exchange(void * arr, int l, int r)) {
 	quick_sort_run(arr, 0, arr_size-1, compare, exchange);
 }
- 
  
 void quick_sort_run(void * arr, int spot_low,int spot_high, int compare (void * arr, int l, int r), void exchange(void * arr, int l, int r))
 {
@@ -4717,22 +4736,21 @@ void quick_sort_run(void * arr, int spot_low,int spot_high, int compare (void * 
 
 	int pivot,j,i;
 
-	if(spot_high <= spot_low) return;
 	pivot = spot_high;
-	i = spot_low;
+	i = spot_low-1;
 
-	for(j = spot_low+1; j < spot_high; j++)
+	for(j = spot_low; j <spot_high; j++)
 		if(compare(arr, j, pivot)<=0) {
-			exchange(arr,i,j);
 			i++;
+			exchange(arr,i,j);
 		}
 
-	exchange(arr, i, spot_high);
+	exchange(arr, i+1, spot_high);
 
-	quick_sort_run(arr, spot_low, i-1, compare, exchange);
-	quick_sort_run(arr, i+1, spot_high, compare, exchange);
-	
+	if(i > spot_low) quick_sort_run(arr, spot_low, i, compare, exchange);
+	if(spot_high>i+2) quick_sort_run(arr, i+2, spot_high, compare, exchange);
 }
+
 void basic_sort_run(void * arr, int start, int items, int compare (void * arr, int l, int r), void exchange(void * arr, int l, int r)){
 	int i, j;
 	for(i=start; i< start + items - 1; i++)
@@ -4823,8 +4841,11 @@ void test_PE_and_same_chro_cigars(global_context_t * global_context , unsigned i
 
 		if(tlen >= global_context -> config.minimum_pair_distance && tlen <= global_context -> config.maximum_pair_distance)
 			(* is_PE_distance) = 1;
-		*res_tlen = tlen;
-	}else *res_tlen = 0x7fffffff;
+		(*res_tlen) = tlen;
+	}else{
+		(*res_tlen) = 0x7fffffff;
+		(*is_exonic_regions) = 0;
+	}
 }
 
 void test_PE_and_same_chro_align(global_context_t * global_context , realignment_result_t * res1, realignment_result_t * res2, int * is_exonic_regions, int * is_PE_distance, int * is_same_chromosome, int read_len_1, int read_len_2, char * read_name, int *res_tlen){

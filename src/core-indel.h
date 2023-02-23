@@ -201,11 +201,15 @@ void print_indel_table(global_context_t * global_context);
 int sort_junction_entry_table(global_context_t * global_context);
 void mark_event_bitmap(unsigned char * bitmap, unsigned int pos);
 int check_event_bitmap(unsigned char * bitmap, unsigned int pos);
-int localPointerCmp_forEventEntry(const void *pointer1, const void *pointer2);
-srUInt_64 localPointerHashFunction_forEventEntry(const void *pointer);
 
-void merge_event_sides(void * arr, int start, int items, int items2);
 void exchange_event_sides(void * arr, int l, int r);
+void merge_event_sides(void * arr, int start, int items, int items2);
 int compare_event_sides(void * arr, int l, int r);
+
+srUInt_64 localPointerHashFunction_forEventEntry(const void *pointer);
+int localPointerCmp_forEventEntry(const void *pointer1, const void *pointer2);
 void anti_support_add_count(void * ky, void * va, HashTable * tab);
+int BINsearch_event(chromosome_event_t * event_space, int * event_ids, int is_small_side, unsigned int pos, int events);
+void destory_event_entry_table(HashTable * old);
+#define is_ambiguous_indel_score(e) (0)
 #endif

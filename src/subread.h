@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <zlib.h>
+#include <inttypes.h>
 
 #ifndef MAKE_STANDALONE
 #ifndef RUNNING_ENV
@@ -33,10 +34,13 @@
 
 #include "hashtable.h" 
 
+#define SCRNA_HIGHEST_REPORTED_ALIGNMENTS 30
 #define MAX_SCRNA_FASTQ_FILES 256 
 #define SCRNA_FASTA_SPLIT1 "|Rsd:cCounts:mFQs|"
 #define SCRNA_FASTA_SPLIT2 "|Rsd:cCounts:1mFQ|"
 
+#define BCL_READBIN_ITEMS_LOCAL 50
+#define BCL_READBIN_SIZE (2*MAX_SCRNA_READ_LENGTH)
 
 #define SAM_FLAG_PAIRED_TASK	0x01
 #define SAM_FLAG_FIRST_READ_IN_PAIR 0x40
@@ -107,7 +111,9 @@
 #define	IS_BREAKEVEN_READ (8192*4)
 #define IS_R1R2_EQUAL_LEN 1024
 
+#ifndef MAKE_CELLCOUNTS
 #define USE_POSIX_MUTEX_LOCK
+#endif
 
 #if defined(MACOS) || defined(FREEBSD) || defined(USE_POSIX_MUTEX_LOCK)
 typedef pthread_mutex_t subread_lock_t;
@@ -200,6 +206,13 @@ typedef short gene_vote_number_t;
 #define GENE_VOTE_SPACE 173 
 #define GENE_VOTE_TABLE_SIZE 331
 #else
+/*
+#warning "============ ADD '-21' from next line  ================"
+#define GENE_VOTE_SPACE (24 - 21)
+#warning "============ ADD '-13' from next line  ================"
+#define GENE_VOTE_TABLE_SIZE (30 - 13)
+
+*/
 #define GENE_VOTE_SPACE 24
 #define GENE_VOTE_TABLE_SIZE 30 
 #endif
@@ -308,9 +321,9 @@ typedef struct{
 	void * appendix2;
 } gene_value_index_t;
 
-
 typedef struct {
 	gene_vote_number_t max_vote;
+	int max_vote_IJ;
 	gehash_data_t max_position;
 	gene_quality_score_t max_quality;
 	gene_vote_number_t max_indel_recorder[MAX_INDEL_TOLERANCE*3];
@@ -328,6 +341,8 @@ typedef struct {
 	gene_vote_number_t indel_recorder [GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE][MAX_INDEL_TOLERANCE*3];
 	char current_indel_cursor[GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
 	char toli[GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
+	int topK_votes[SCRNA_HIGHEST_REPORTED_ALIGNMENTS];
+	int topK_IJ[SCRNA_HIGHEST_REPORTED_ALIGNMENTS ];
 
 	#ifdef MAKE_FOR_EXON
 	short coverage_start [GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
@@ -484,16 +499,16 @@ typedef struct {
 	int is_EOF;
 } input_BLC_t;
 
+#define MAX_SCRNA_READ_LENGTH 160 
+
 typedef struct{
-	union{
-		srInt_64 pos_file1, pos_file2, pos_file3;
-		seekable_position_t zpos_file1;
-	};
-	seekable_position_t zpos_file2;
-	seekable_position_t zpos_file3;
-	int current_file_no;
-	srInt_64 current_read_no;
-} input_mFQ_pos_t;
+	char read_text[MAX_SCRNA_READ_LENGTH];
+	char qual_text[MAX_SCRNA_READ_LENGTH];
+	int read_len;
+	int is_last_read_in_dataset;
+	int file_no;
+	int guessed_lane_no;
+} input_mFQ_cached_read_t;
 
 typedef struct {
 	char filename[MAX_FILE_NAME_LENGTH+1];
@@ -501,23 +516,53 @@ typedef struct {
 	int is_plain;
 	FILE * plain_fp;
 	seekable_zfile_t gz_fp;
+	gzFile zlib_fp;
 	int is_first_chars;
 	unsigned char first_chars[2];
 } autozip_fp;
 
+/*
+typedef pthread_mutex_t  cellCounts_lock_t;
+#define cellCounts_init_lock(pp) pthread_mutex_init(pp, NULL)
+#define cellCounts_destroy_lock pthread_mutex_destroy
+#define cellCounts_lock_occupy pthread_mutex_lock
+#define cellCounts_lock_release pthread_mutex_unlock
+*/
+
+/*
+typedef struct{
+	int is_spin_lock;
+	pthread_spinlock_t spinlock;
+	pthread_mutex_t mutexlock;
+} cellCounts_lock_t;
+*/
+
+typedef pthread_mutex_t cellCounts_lock_t;
+
+void cellCounts_init_lock(cellCounts_lock_t * lock, int is_spin);
+void cellCounts_destroy_lock(cellCounts_lock_t * lock);
+int cellCounts_lock_occupy(cellCounts_lock_t * lock);
+int cellCounts_lock_release(cellCounts_lock_t * lock);
+
+/*
+#define cellCounts_init_lock(pp) pthread_spin_init(pp,PTHREAD_PROCESS_SHARED)
+#define cellCounts_destroy_lock pthread_spin_destroy 
+#define cellCounts_lock_occupy pthread_spin_lock
+#define cellCounts_lock_release pthread_spin_unlock
+*/
 
 
 typedef struct {
-	char ** files1;
-	char ** files2;
-	char ** files3;
-	int total_files;
-	int current_file_no;
-	int current_guessed_lane_no;
-	srInt_64 current_read_no;
-	autozip_fp autofp1;
-	autozip_fp autofp2;
-	autozip_fp autofp3;
+        char ** files1;
+        char ** files2;
+        char ** files3;
+        int total_files;
+        int current_file_no;
+        int current_guessed_lane_no;
+        srInt_64 current_read_no;
+        autozip_fp autofp1;
+        autozip_fp autofp2;
+        autozip_fp autofp3;
 } input_mFQ_t;
 
 
@@ -578,13 +623,26 @@ typedef struct {
 	int is_EOF;
 } cache_BCL_t;
 
+
+typedef struct{
+        union{
+                srInt_64 pos_file1, pos_file2, pos_file3;
+                seekable_position_t zpos_file1;
+        };
+        seekable_position_t zpos_file2;
+        seekable_position_t zpos_file3;
+        int current_file_no;
+        srInt_64 current_read_no;
+} input_mFQ_pos_t;
+
 typedef struct{
 	union{
 		unsigned long long simple_file_position;
 		seekable_position_t seekable_gzip_position;
 		input_BLC_pos_t BCL_position;
-		input_mFQ_pos_t mFQ_position;
 		input_scBAM_pos_t scBAM_position;
+                input_mFQ_pos_t mFQ_position;
+
 	};
 	char gzfa_last_name[MAX_READ_NAME_LEN];
 } gene_inputfile_position_t;

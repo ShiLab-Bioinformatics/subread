@@ -395,7 +395,7 @@ int geinput_open_scRNA_BAM(char * rfnames,  gene_input_t * input, int reads_per_
 	return rv;
 }
 
-int geinput_open_scRNA_fqs(char * rfnames,  gene_input_t * input, int reads_per_chunk, int threads ){
+int geinput_open_scRNA_fqs(char * rfnames,  gene_input_t * input, int reads_per_chunk, int threads){
 	strcpy(input->filename,rfnames);
 	int rv = input_mFQ_init_by_one_string(&input -> scRNA_fq_input, rfnames);
 	input -> file_type = GENE_INPUT_SCRNA_FASTQ;
@@ -549,7 +549,7 @@ int geinput_next_char(gene_input_t * input)
 		while (1)
 		{
 			char nch = fgetc((FILE *)input->input_fp);
-			if (nch <0 && feof((FILE *)input->input_fp))
+			if ((nch <0) && feof((FILE *)input->input_fp))
 				return -2;
 			else if (nch < 0 || nch > 126)SUBREADprintf("\nUnrecognised char = #%d\n", nch);
 
@@ -680,37 +680,38 @@ unsigned int read_numbers(gene_input_t * input)
 	return ret;
 }
 
+
 void geinput_tell(gene_input_t * input, gene_inputfile_position_t * pos){
-	if(input -> file_type == GENE_INPUT_SCRNA_BAM){
-		scBAM_tell(&input -> scBAM_input, &pos -> scBAM_position);
-	}else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ){
-		input_mFQ_tell(&input -> scRNA_fq_input, &pos -> mFQ_position);
-	}else if(input -> file_type == GENE_INPUT_BCL){
-		assert(input -> file_type != GENE_INPUT_BCL);
-	}else if(input -> file_type == GENE_INPUT_GZIP_FASTQ || input -> file_type == GENE_INPUT_GZIP_FASTA){
-		seekgz_tell(( seekable_zfile_t *)input -> input_fp, &pos -> seekable_gzip_position);
-		if(input -> gzfa_last_name[0]) strcpy(pos -> gzfa_last_name, input -> gzfa_last_name);
-		else pos -> gzfa_last_name[0]=0;
-	}else{
-		pos -> simple_file_position = ftello((FILE *)input -> input_fp);
-	}
+        if(input -> file_type == GENE_INPUT_SCRNA_BAM){
+                scBAM_tell(&input -> scBAM_input, &pos -> scBAM_position);
+        }else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ){
+                input_mFQ_tell(&input -> scRNA_fq_input, &pos -> mFQ_position);
+        }else if(input -> file_type == GENE_INPUT_BCL){
+                assert(input -> file_type != GENE_INPUT_BCL);
+        }else if(input -> file_type == GENE_INPUT_GZIP_FASTQ || input -> file_type == GENE_INPUT_GZIP_FASTA){
+                seekgz_tell(( seekable_zfile_t *)input -> input_fp, &pos -> seekable_gzip_position);
+                if(input -> gzfa_last_name[0]) strcpy(pos -> gzfa_last_name, input -> gzfa_last_name);
+                else pos -> gzfa_last_name[0]=0;
+        }else{
+                pos -> simple_file_position = ftello((FILE *)input -> input_fp);
+        }
+}
+void geinput_seek(gene_input_t * input, gene_inputfile_position_t * pos){
+        if(input -> file_type == GENE_INPUT_SCRNA_BAM){
+                scBAM_seek(&input -> scBAM_input, &pos -> scBAM_position);
+        }else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ){
+                input_mFQ_seek(&input -> scRNA_fq_input, &pos -> mFQ_position);
+        }else if(input -> file_type == GENE_INPUT_BCL){
+                assert(input -> file_type != GENE_INPUT_BCL);
+        }else if(input -> file_type == GENE_INPUT_GZIP_FASTQ || input -> file_type == GENE_INPUT_GZIP_FASTA){
+                seekgz_seek(( seekable_zfile_t *)input -> input_fp, &pos -> seekable_gzip_position);
+                if(pos -> gzfa_last_name[0]) strcpy(input -> gzfa_last_name, pos -> gzfa_last_name);
+                else input -> gzfa_last_name[0]=0;
+        }else{
+                fseeko((FILE *)input -> input_fp, pos -> simple_file_position, SEEK_SET);
+        }
 }
 
-void geinput_seek(gene_input_t * input, gene_inputfile_position_t * pos){
-	if(input -> file_type == GENE_INPUT_SCRNA_BAM){
-		scBAM_seek(&input -> scBAM_input, &pos -> scBAM_position);
-	}else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ){
-		input_mFQ_seek(&input -> scRNA_fq_input, &pos -> mFQ_position);
-	}else if(input -> file_type == GENE_INPUT_BCL){
-		assert(input -> file_type != GENE_INPUT_BCL);
-	}else if(input -> file_type == GENE_INPUT_GZIP_FASTQ || input -> file_type == GENE_INPUT_GZIP_FASTA){
-		seekgz_seek(( seekable_zfile_t *)input -> input_fp, &pos -> seekable_gzip_position);
-		if(pos -> gzfa_last_name[0]) strcpy(input -> gzfa_last_name, pos -> gzfa_last_name);
-		else input -> gzfa_last_name[0]=0;
-	}else{
-		fseeko((FILE *)input -> input_fp, pos -> simple_file_position, SEEK_SET);
-	}
-}
 
 int trim_read_inner(char * read_text, char * qual_text, int rlen, short t_5, short t_3)
 {
@@ -768,20 +769,38 @@ int geinput_next_read(gene_input_t * input, char * read_name, char * read_string
 {
 	return geinput_next_read_trim( input, read_name, read_string,  quality_string, 0, 0, NULL);
 }
+// returns read length if OK 
+int geinput_next_read_with_lock(gene_input_t * input, char * read_name, char * read_string, char * quality_string){
+	if(input -> file_type == GENE_INPUT_BCL) {
+		int rv = cacheBCL_next_read(&input -> bcl_input, read_name, read_string, quality_string, NULL);
+		if(rv<=0) return -1;
+		return rv;
+	} else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ) {
+		int rv = input_mFQ_next_read(&input -> scRNA_fq_input, read_name, read_string, quality_string);
+		if(rv<=0) return rv;
+		return rv;
+	} else if(input -> file_type == GENE_INPUT_SCRNA_BAM) {
+		int rv = scBAM_next_read(&input -> scBAM_input, read_name, read_string, quality_string);
+		if(rv<=0) return -1;
+		return rv;
+	}
+
+	return 0;
+}
 
 // returns read length if OK 
 int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_string, char * quality_string, short trim_5, short trim_3, int * is_secondary)
 {
-	if(input -> file_type == GENE_INPUT_BCL) {
-		int rv = cacheBCL_next_read(&input -> bcl_input, read_name, read_string, quality_string, NULL);
-		if(rv<=0) return -1;
-		if(trim_5 || trim_3) rv = trim_read_inner(read_string, quality_string, rv, trim_5, trim_3);
-		return rv;
-	} else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ) {
-		int rv = input_mFQ_next_read(&input -> scRNA_fq_input, read_name, read_string, quality_string);
-		if(rv<=0) return -1;
-		if(trim_5 || trim_3) rv = trim_read_inner(read_string, quality_string, rv, trim_5, trim_3);
-		return rv;
+        if(input -> file_type == GENE_INPUT_BCL) {
+                int rv = cacheBCL_next_read(&input -> bcl_input, read_name, read_string, quality_string, NULL);
+                if(rv<=0) return -1;
+                if(trim_5 || trim_3) rv = trim_read_inner(read_string, quality_string, rv, trim_5, trim_3);
+                return rv;
+        } else if(input -> file_type == GENE_INPUT_SCRNA_FASTQ) {
+                int rv = input_mFQ_next_read(&input -> scRNA_fq_input, read_name, read_string, quality_string);
+                if(rv<=0) return rv;
+                if(trim_5 || trim_3) rv = trim_read_inner(read_string, quality_string, rv, trim_5, trim_3);
+                return rv;
 	} else if(input -> file_type == GENE_INPUT_SCRNA_BAM) {
 		int rv = scBAM_next_read(&input -> scBAM_input, read_name, read_string, quality_string);
 		if(rv<=0) return -1;
@@ -2519,6 +2538,21 @@ int SAM_pairer_warning_file_open_limit(){
 	return 0;
 }
 
+#define BAM_EOF_BLOCK_BIN "\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\xff\x06\x00\x42\x43\x02\x00\x1b\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00" 
+#define BAM_EOF_BLOCK_LEN 28
+
+int BAM_check_EOF_block(char * in_file){
+	char testingbin [BAM_EOF_BLOCK_LEN];
+	FILE * fp = f_subr_open(in_file, "rb");
+	if(!fp) return 0; // this fuction doesn't care whether the file exists.
+	fseeko(fp, -BAM_EOF_BLOCK_LEN, SEEK_END);
+	int frl = fread(testingbin, BAM_EOF_BLOCK_LEN,1, fp);
+	fclose(fp);
+	if(frl<1) return -1;
+	if(memcmp(testingbin, BAM_EOF_BLOCK_BIN, BAM_EOF_BLOCK_LEN)!=0) return -1;
+	return 0;
+}
+
 // Tiny_Mode only write the following information:
 // Name   Flag   Chro   Pos   Mapq   Cigar   MateChro   MatePos   Tlen  N  I  NH:i:xx  HI:i:xx
 // Tiny_Mode does not work when output and input are both in BAM format
@@ -2535,9 +2569,13 @@ int SAM_pairer_create(SAM_pairer_context_t * pairer, int all_threads, int bin_bu
 	}else
 		strncpy(pairer -> in_file_name, in_file, MAX_FILE_NAME_LENGTH);
 
+	if(BAM_input && in_file[0]!='<' && BAM_check_EOF_block(in_file)){
+		SUBREADprintf("ERROR: the BAM input file, '%s', doesn't have a valid EOF block.\n", in_file);
+		return 1;
+	}
+
 	pairer -> input_fp = f_subr_open(in_file, "rb");
 	if(NULL == pairer -> input_fp) return 1;
-
 	SAM_pairer_warning_file_open_limit();
 
 	pairer -> input_is_BAM = BAM_input;
@@ -2626,7 +2664,6 @@ void SAM_pairer_print_keys(void * key, void * hashed_obj, HashTable * tab){
 }
 
 void SAM_pairer_destroy(SAM_pairer_context_t * pairer){
-
 	int x1;
 	srInt_64 all_orphants = 0;
 	for(x1 = 0; x1 < pairer -> total_threads ; x1++){
@@ -2652,6 +2689,8 @@ void SAM_pairer_destroy(SAM_pairer_context_t * pairer){
 	subread_destroy_lock(&pairer -> input_fp_lock);
 	subread_destroy_lock(&pairer -> SAM_BAM_table_lock);
 
+//#warning "==== NOT DELETING TEMP ===="
+//	if(0)
 	delete_with_prefix(pairer -> tmp_file_prefix);
 	fclose(pairer -> input_fp);
 	free(pairer -> threads);
@@ -2856,13 +2895,14 @@ int SAM_pairer_fetch_BAM_block(SAM_pairer_context_t * pairer , SAM_pairer_thread
 			int test_read_bin = SAM_pairer_find_start(pairer, thread_context);
 			if(test_read_bin<1 && thread_context -> input_buff_BIN_used >= 32  ){
 				pairer -> is_bad_format = 1;
-				SUBREADprintf("ERROR: cannot find the start of the next BAM block.\n");
+				//SUBREADprintf("ERROR: cannot find the start of the next BAM block.\n");
+				print_in_box(80,0,0,"   Switch to the safe mode.");
 			}
 		}
 		//SUBREADprintf("FETCHED BLOCK DECOMP=%d FROM COMP=%d\n", have, used_BAM);
 	} else {
 		if(ret == -5){
-			SUBREADprintf("Cannot parse the input BAM file. If the BAM file contains long reads, please run featureCounts on the long-read mode.\n");
+			SUBREADprintf("Cannot parse the input BAM file.\n");
 		}else{
 			SUBREADprintf("GZIP ERROR:%d\n", ret);
 		}
@@ -3435,7 +3475,7 @@ int SAP_pairer_skip_tag_body_len(char *bin){
 		else if(cell_type == 'i' || cell_type == 'f')skip_content *= 4;
 		skip_content += 4+1; // 32-bit count, 1 byte type
 	}else{
-		SUBREADprintf("UnknownTag=%c\n", bin[2]);
+		SUBREADprintf("UnknownTag=%c\n\n", bin[2]);
 		assert(0);
 	}
 	return skip_content+3;
@@ -4779,22 +4819,23 @@ int fix_load_next_block(FILE * in, char * binbuf, z_stream * strm){
 
 int  fix_write_block(FILE * out, char * bin, int binlen, z_stream * strm){
 	int is_end_mode = binlen == 0, written=0;
-	//SUBREADprintf("FIX_WRTR : %d\n", binlen);
+//	SUBREADprintf("FIX_WRTR : %d\n", binlen);
 
 	while(1){
 		if(binlen - written<1 && !is_end_mode) return 0;
 
 		char * bam_buf = malloc(70000);
-		int x1, bam_len = 0, old_in= 0, this_sec_len = 0, old_start = written;
+		int x1, bam_len = 0, this_sec_len = 0, old_start = written;
 	
 		if(binlen - written > 0){
-			old_in = strm -> avail_in = binlen - written;
+			this_sec_len = binlen - written;
+			if(this_sec_len>61000) this_sec_len=61000;
+			strm -> avail_in = this_sec_len;
 			strm -> next_in = (unsigned char*)bin + written;
 			strm -> avail_out = 70000;
 			strm -> next_out = (unsigned char*)bam_buf;
 			deflate(strm , Z_FINISH);
 			bam_len = 70000 - strm -> avail_out;
-			this_sec_len = old_in - strm -> avail_in;
 			written += this_sec_len;
 
 			deflateReset(strm);
@@ -4815,10 +4856,11 @@ int  fix_write_block(FILE * out, char * bin, int binlen, z_stream * strm){
 			nstrm.next_out = (unsigned char*)bam_buf;
 			deflate(&nstrm, Z_FINISH);
 			bam_len = 70000 - nstrm.avail_out;
+
 			deflateEnd(&nstrm);
 		}
 	
-		//SUBREADprintf("FIX_COMPR: %d -> %d  RET=%d\n", binlen , bam_len, retbam);
+//		SUBREADprintf("    FIX_COMPR: %d -> %d\n", this_sec_len , bam_len);
 	
 		unsigned int crc0 = crc32(0, NULL, 0);
 		unsigned int crc = crc32(crc0, (unsigned char *) bin + old_start, this_sec_len);
@@ -4846,7 +4888,7 @@ int  fix_write_block(FILE * out, char * bin, int binlen, z_stream * strm){
 		int write_len = fwrite( bam_buf , 1,bam_len, out );
 		
 		fwrite( &crc, 4, 1, out );
-		fwrite( &binlen, 4, 1, out );
+		fwrite( &this_sec_len, 4, 1, out );
 	
 		free(bam_buf);
 	
@@ -4960,7 +5002,7 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 	FIX_FLASH_OUT;
 
 	// ===== The reads
-	int seq_len = 0, name_len = 0, cigar_opts = 0;
+	int seq_len = 0, name_len = 0, cigar_opts = 0, block_no=0;
 	srInt_64 reads =0;
 	pairer -> is_bad_format = 0;
 
@@ -4985,6 +5027,8 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 		if(pairer -> tiny_mode){
 			// block_remainder
 			int extag_new_len = 0;
+//			if(block_no>280000)SUBREADprintf("DOING BLOCK %d\n", block_no);
+			block_no ++ ;
 			for(x1 = 0; x1 < block_size; x1++){
 				FIX_GET_NEXT_NCH;
 				if(nch < 0) return -1;
@@ -5002,8 +5046,6 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 					}
 				}
 
-				//#warning "+===================== REMOVE -59999 IN NEXT LINE ================"
-				//if(x1==32)SUBREADprintf("SEQ_LEN=%d, REC_LEN=%d\n", seq_len, block_size);
 				if( x1 == 32 && seq_len >= pairer -> long_read_minimum_length){
 					is_longcigar = 1;
 					int x2;
@@ -5012,14 +5054,6 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 						readname[x2] = nch;
 					}
 					break;
-				}
-
-	//			#warning "================ THIS BLOCK WAS DISABLED ON 03OCT2019; MAKE SURE IT WORKS ON LONG READS/LONG READ RECORDS =============="
-				if(0 && x1 == 32 && block_size > 60000 ){
-					print_in_box(80,0,0,"");
-					print_in_box(80,0,0,"   ERROR: Alignment record is too long.");
-					print_in_box(80,0,0,"	  Please use the long read mode.");
-					return -1;
 				}
 
 				char etag_name0 = -1, etag_name1, etag_type;
@@ -5039,8 +5073,6 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 						etag_type = nch;
 						x1 += 3;
 
-						//SUBREADprintf("ETAG_NAME: %c%c (%c), x1 = %d < %d\n", etag_name0,etag_name1,etag_type, x1, block_size);
-
 						if((( etag_name0 == 'H' && etag_name1 == 'I' ) ||
 						    ( etag_name0 == 'N' && etag_name1 == 'H' ) ||
 						    ( etag_name0 == 'R' && etag_name1 == 'G' ) ||
@@ -5051,7 +5083,6 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 							FIX_APPEND_READ(&etag_name1,1);
 							FIX_APPEND_READ(&etag_type,1);
 							this_tag_output = 1;
-						//	SUBREADprintf("ADDED INTO BAM\n");
 						}
 						if(etag_type == 'Z'||etag_type =='H'){
 							if(this_tag_output) extag_new_len +=3;
@@ -5105,14 +5136,12 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 					break;
 				}
 				FIX_APPEND_READ(&nch, 1);
-				//SUBREADprintf("WR[%d]: %d = %c, SL=%d, RNL=%d, COP=%d\n", out_bin_ptr, nch, nch, seq_len, name_len, cigar_opts);
 			}
 
 			if(!is_longcigar){
 				seq_len = min(1, seq_len);
 				sqlen_ptr[0]=seq_len; sqlen_ptr[1]=0, sqlen_ptr[2]=0; sqlen_ptr[3]=0;
 				new_block_size = 32 + name_len + 4 * cigar_opts + seq_len + (seq_len+1)/2 + extag_new_len;
-				//SUBREADprintf("ETAG_NLEN=%d, ETAGS=%d\n", new_block_size, extag_new_len);
 				memcpy(block_size_ptr, &new_block_size, 4);
 			}
 		}else{
@@ -5144,12 +5173,10 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 
 		reads ++;
 		if(out_bin_ptr > 60000){
-	//		SUBREADprintf("WRIR3: TINY=%d\n", pairer -> tiny_mode);
 			FIX_FLASH_OUT;
 		}
 	}
 	FIX_FLASH_OUT;
-	//SUBREADprintf("FIX READS=%llu\n", reads);
 	disk_is_full |= fix_write_block(new_fp, out_bin, 0, &out_strm);
 	deflateEnd(&out_strm);
 	inflateEnd(&in_strm);
@@ -5689,6 +5716,7 @@ int SAM_pairer_run( SAM_pairer_context_t * pairer){
 	}else for(corrected_run = 0; corrected_run < 2  ; corrected_run ++){
 		pairer -> is_final_run = corrected_run;
 		SAM_pairer_run_once(pairer);
+		//SUBREADprintf("RUN %d : BAD_format %d\n", corrected_run, pairer -> is_bad_format);
 		if(pairer -> is_bad_format && pairer->input_is_BAM && ( ! pairer -> is_internal_error )  && ( ! pairer -> is_incomplete_BAM )){
 			//#warning ">>>>>> REMOVE '+ 1' FROM NEXT LINE IN RELEASE <<<<<<"
 			assert(1 != corrected_run);
@@ -6708,10 +6736,26 @@ int probe_file_type_EX(char * fname, int * is_first_read_PE, srInt_64 * SAMBAM_h
 	return ret;
 }
 
+// this function doesn't do chrX=>X conversion nor alias conversion because these conversions have been done when the annotations were loaded from GTF/SAF files.
+int warning_array_hash_numbers(ArrayList * t1, HashTable * t2, int * matched){
+	int ti_i, all_mismatched=1;
+	for(ti_i = 0; ti_i < t1 -> numOfElements; ti_i++){
+		char * t1chro = (char *) ArrayListGet(t1, ti_i);
+		if(!t1chro) continue;
+		char * t2chro = HashTableGet(t2, t1chro);
+		int found = t2chro != NULL;
+		if(found){
+			(*matched)++;
+			all_mismatched = 0;
+		}
+	}
+	return all_mismatched;
+}
+
 void warning_hash_hash(HashTable * t1, HashTable * t2, char * msg){
-	int buck_i, shown = 0;
-	for(buck_i = 0; buck_i < t1 -> numOfBuckets; buck_i++){
-		KeyValuePair * cursor = t1 -> bucketArray[buck_i];
+	int ti_i, shown = 0;
+	for(ti_i = 0; ti_i < t1 -> numOfBuckets; ti_i++){
+		KeyValuePair * cursor = t1 -> bucketArray[ti_i];
 		while(cursor){
 			char * t1chro = (char *) cursor -> key;
 			int found = HashTableGet(t2, t1chro) != NULL;

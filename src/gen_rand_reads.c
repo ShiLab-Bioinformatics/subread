@@ -413,7 +413,7 @@ int grc_gen( genRand_context_t *grc ){
 		unsigned long long expected_reads = ArrayListGet(num_of_frags_per_transcript, read_i)-NULL;
 		if(seq_len >= min_seq_len)
 			#ifdef __MINGW32__
-			fprintf(grc->counts_out_fp, "%s\t%d\t%I64u\n", seq_name, seq_len, expected_reads);
+			fprintf(grc->counts_out_fp, "%s\t%d\t%" PRIu64 "\n", seq_name, seq_len, expected_reads);
 			#else
 			fprintf(grc->counts_out_fp, "%s\t%d\t%llu\n", seq_name, seq_len, expected_reads);
 			#endif
@@ -459,7 +459,7 @@ int grc_finalize(genRand_context_t *grc){
 	fclose(grc->counts_out_fp);
 	free(grc->cmd_line);
 	#ifdef __MINGW32__
-	SUBREADprintf("Finished. Actual sample size : I64u\n", grc->applied_M);
+	SUBREADprintf("Finished. Actual sample size : %" PRIu64 "\n", grc->applied_M);
 	#else
 	SUBREADprintf("Finished. Actual sample size : %llu\n", grc->applied_M);
 	#endif

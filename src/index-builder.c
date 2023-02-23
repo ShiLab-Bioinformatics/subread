@@ -632,6 +632,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 				}
 
 				offset ++;
+				//if(offset % 100000 == 0) SUBREADprintf("SCANNEDOF %d BASES; LLBASE %d\n", offset, next_char);
 				(*actual_total_bases_inc_marging)++;
 				read_len ++;
 
@@ -1015,9 +1016,9 @@ int main(int argc,char ** argv)
 int main_buildindex(int argc,char ** argv)
 #endif
 {
-	int threshold = 100, optindex=0;
+	int threshold = 100, optindex=0, c;
 	int memory_limit;	// 8000 MBytes
-	char output_file[MAX_FILE_NAME_LENGTH], c, tmp_fa_file[MAX_FILE_NAME_LENGTH], log_file_name[MAX_FILE_NAME_LENGTH+20];
+	char output_file[MAX_FILE_NAME_LENGTH],tmp_fa_file[MAX_FILE_NAME_LENGTH], log_file_name[MAX_FILE_NAME_LENGTH+20];
 	char *ptr_tmp_fa_file[1];
 	unsigned int * chromosome_lengths;
 	begin00_ftime = miltime();
@@ -1037,8 +1038,9 @@ int main_buildindex(int argc,char ** argv)
 	SUBREADprintf("\n");
 
 	optind = 0;
-	
-	while ((c = getopt_long (argc, argv, "kvcBFM:o:f:Db?", ib_long_options, &optindex)) != -1)
+	while (1){
+		c = getopt_long (argc, argv, "kvcBFM:o:f:Db?", ib_long_options, &optindex);
+		if(c==-1 || c > 255) break;
 		switch(c)
 		{
 			case 'b':
@@ -1074,8 +1076,10 @@ int main_buildindex(int argc,char ** argv)
 				MARK_NONINFORMATIVE_SUBREADS = 1;
 				break;	
 			case '?':
-				return -1 ;
+			default :
+				return -1;
 		}
+	}
 
 	if (argc == optind || !output_file[0])
 	{

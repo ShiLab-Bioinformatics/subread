@@ -229,6 +229,10 @@ void SamBam_writer_finish_header( SamBam_Writer * writer );
 void SamBam_writer_finalise_one_thread(SamBam_Writer * writer);
 int SamBam_writer_add_read_line(SamBam_Writer * writer, int thread_no, char * rline, int commitable);
 char *duplicate_TAB_record_field(char * rline, int fld_no, int toend);
+int SamBam_reg2bin(int beg, int end);
+unsigned int SamBam_CRC32(char * dat, int len);
+
+
 
 
 
@@ -238,8 +242,6 @@ struct simple_bam_writer_index_per_chro{
 	ArrayList * index_binP0_list;
 	ArrayList * win16k_list;
 };
-
-
 
 #define MERGER_WORKER_BINSIZE 66000
 typedef struct {
@@ -253,13 +255,14 @@ typedef struct {
 	HashTable * index_per_chro;
 } simple_bam_writer;
 
+//#define MAX_ALLOWED_GAP_IN_BAI_CHUNK 10  // 10 blocks
 
 unsigned int FC_CRC32(char * dat, int len);
+void simple_bam_writer_deallocate_index_per_chro(void * p);
 struct simple_bam_writer_index_per_chro * simple_bam_writer_new_index_per_chro();
-void simple_bam_writer_update_index(simple_bam_writer * writer, char * rbin, int binlen, srInt_64 block_number, int inbin_pos);
 void simple_bam_write_compressed_block(simple_bam_writer * writer,char *obuf, int olen, int ilen, unsigned int crcval, srInt_64 block_number);
 void simple_bam_write(void * bin, int binlen, simple_bam_writer * writer, int force_flush);
 simple_bam_writer * simple_bam_create(char * fname);
 void simple_bam_close(simple_bam_writer * writer);
-void simple_bam_writer_deallocate_index_per_chro(void * p);
+void simple_bam_writer_update_index(simple_bam_writer * writer, char * rbin, int binlen, srInt_64 block_number, int inbin_pos);
 #endif

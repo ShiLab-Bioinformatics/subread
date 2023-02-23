@@ -22,6 +22,7 @@
 \newcommand{\DGEList}{\textsf{DGEList}}
 \newcommand{\voom}{\textsf{voom}}
 \newcommand{\featureCounts}{\textsf{featureCounts}}
+\newcommand{\cellCounts}{\textsf{cellCounts}}
 \newcommand{\repair}{\textsf{repair}}
 \newcommand{\R}{\textsf{R}}
 \newcommand{\C}{\textsf{C}}
@@ -36,19 +37,17 @@
 \begin{center}
 {\Huge\bf Rsubread/Subread Users Guide}\\
 \vspace{1 cm}
-{\centering\large Subread v2.0.1/Rsubread v2.2.0\\}
+{\centering\large Rsubread v2.12.3/Subread v2.0.4\\}
 \vspace{1 cm}
-\centering 13 May 2020\\
+\centering 20 February 2023\\
 \vspace{5 cm}
 \Large Wei Shi and Yang Liao\\
 \vspace{1 cm}
 \small
 {\large Olivia Newton-John Cancer Research Institute\\
-Walter and Eliza Hall Institute of Medical Research\\
-University of Melbourne\\
-Australia\\}
+Melbourne, Australia\\}
 \vspace{7 cm}
-\centering Copyright \small{\copyright}  2011 - 2020\\
+\centering Copyright \small{\copyright}  2011 - 2023\\
 \end{center}
 
 \end{titlepage}
@@ -125,6 +124,18 @@ The Subread aligner: fast, accurate and scalable read mapping by seed-and-vote.
 \\
 {\color{blue}{\url{http://www.ncbi.nlm.nih.gov/pubmed/23558742}} }
 \end{quote}
+
+If you use {\Rsubread} inbuilt annotations, you can cite:
+
+\begin{quote}
+Chisanga D, Liao Y and Shi W (2022). 
+Impact of gene annotation choice on the quantification of RNA‑seq data.
+\emph{BMC Bioinformatics}, 23(1):107.
+\\
+{\color{blue}{\url{http://www.ncbi.nlm.nih.gov/pubmed/35354358}} }
+\end{quote}
+
+
 
 \newpage
 
@@ -327,13 +338,13 @@ An index must be built for the reference first and then the read mapping can be 
 \code{subread-align -t 1 -T 5 -i my\_index -r reads.txt.gz -o subread\_results.bam}\\
 
 \noindent Map paired-end reads:\\
-\code{subread-align -t 1 -d 50 -D 600 -i my\_index -r reads1.txt -R reads2.txt \newline -o subread\_results.sam}\\
+\code{subread-align -t 1 -d 50 -D 600 -i my\_index -r reads1.txt -R reads2.txt \newline -o subread\_results.bam}\\
 
 \noindent Detect indels of up to 16bp:\\
-\code{subread-align -t 1 -I 16 -i my\_index -r reads.txt -o subread\_results.sam}\\
+\code{subread-align -t 1 -I 16 -i my\_index -r reads.txt -o subread\_results.bam}\\
 
 \noindent Report up to three best mapping locations:\\
-\code{subread-align -t 1 --multiMapping -B 3 -i my\_index -r reads.txt -o subread\_results.sam}\\
+\code{subread-align -t 1 --multiMapping -B 3 -i my\_index -r reads.txt -o subread\_results.bam}\\
 
 
 \section{A quick start for using Bioconductor {\Rsubread} package}
@@ -624,7 +635,7 @@ The files can be gzipped.\\
 The commands used by {\Subread} to align RNA-seq reads are the same as those used to align gDNA-seq reads.
 Below is an example of using {\Subread} to map single-end RNA-seq reads.\\
 
-\code{subread-align -t 0 -i my\_index -r rnaseq-reads.txt -o subread\_results.sam}\\
+\code{subread-align -t 0 -i my\_index -r rnaseq-reads.txt -o subread\_results.bam}\\
 
 \noindent Another RNA-seq aligner included in this package is the {\Subjunc} aligner.
 {\Subjunc} not only performs read alignments but also detects exon-exon junctions.
@@ -719,10 +730,10 @@ Screen output includes a brief mapping summary, including percentage of uniquely
 \section{Mapping microRNA sequencing reads (miRNA-seq)}
 
 To use {\Subread} aligner to map miRNA-seq reads, a full index must be built for the reference genome before read mapping can be carried out.
-For example, the following command builds a full index for mouse reference genome \emph{mm10}:
+For example, the following command builds a full index for mouse reference genome \emph{mm39}:
 
 \code{\\
-subread-buildindex -F -B -o mm10\_full\_index mm10.fa \\
+subread-buildindex -F -B -o mm39\_full\_index mm39.fa \\
 }
 
 The full index includes 16bp mers extracted from every genomic location in the genome.
@@ -751,8 +762,8 @@ Below is an example of mapping 50bp long reads (adaptor sequences were included 
 Note that `-t' option should have a value of 1 since miRNA-seq reads are more similar to gDNA-seq reads than mRNA-seq reads from the read mapping point of vew.
 
 \code{\\
-subread-align -t 1 -i mm10\_full\_index -n 35 -m 4 -M 3 -T 10 -I 0
---multiMapping -B 10 -r miRNA\_reads.fastq -o result.sam\\
+subread-align -t 1 -i mm39\_full\_index -n 35 -m 4 -M 3 -T 10 -I 0
+--multiMapping -B 10 -r miRNA\_reads.fastq -o result.bam\\
 }
 
 The `-B 10' parameter instructs {\Subread} aligner to report up to 10 best mapping locations (equally best) in the mapping results.
@@ -836,7 +847,7 @@ Chromosomal names included in the \code{Chr} column must match the chromosomal n
 
 \subsection{In-built annotations}
 
-In-built gene annotations for genomes \emph{hg38}, \emph{hg19}, \emph{mm10} and \emph{mm9} are included in both Bioconductor {\Rsubread} package and SourceForge {\Subread} package.
+In-built gene annotations for genomes \emph{hg38}, \emph{hg19}, \emph{mm39}, \emph{mm10} and \emph{mm9} are included in both Bioconductor {\Rsubread} package and SourceForge {\Subread} package.
 These annotations were downloaded from NCBI RefSeq database and then adapted by merging overlapping exons from the same gene to form a set of disjoint exons for each gene.
 Genes with the same Entrez gene identifiers were also merged into one gene.
 
@@ -990,13 +1001,13 @@ input\_files \newline (\code{files}) & Give the names of input read files that i
 \hline
 -A \newline (\code{chrAliases}) & Provide a chromosome name alias file to match chr names in annotation with those in the reads. This should be a two-column comma-delimited text file. Its first column should include chr names in the annotation and its second column should include chr names in the reads. Chr names are case sensitive. No column header should be included in the file.\\
 \hline
--B \newline (\code{requireBothEndsMapped}) & If specified, only fragments that have both ends successfully aligned will be considered for summarization. This option should be used together with \code{-p} (or \code{isPairedEnd} in {\Rsubread} {\featureCounts}).\\
+-B \newline (\code{requireBothEndsMapped}) & If specified, only fragments that have both ends successfully aligned will be considered for summarization. This option is only applicable for the counting of fragments (read pairs).\\
 \hline
--C \newline (\code{countChimericFragments}) & If specified, the chimeric fragments (those fragments that have their two ends aligned to different chromosomes) will NOT be counted. This option should be used together with \code{-p} (or \code{isPairedEnd} in {\Rsubread} {\featureCounts}).\\
+-C \newline (\code{countChimericFragments}) & If specified, the chimeric fragments (those fragments that have their two ends aligned to different chromosomes) will NOT be counted. This option is only applicable for the counting of fragments (read pairs).\\
 \hline
--d $<int>$ \newline (\code{minFragLength}) & Minimum fragment/template length, 50 by default. This option must be used together with \code{-p} and \code{-P}.\\
+-d $<int>$ \newline (\code{minFragLength}) & Minimum fragment/template length, 50 by default.\\
 \hline
--D $<int>$ \newline (\code{maxFragLength}) & Maximum fragment/template length, 600 by default. This option must be used together with \code{-p} and \code{-P}.\\
+-D $<int>$ \newline (\code{maxFragLength}) & Maximum fragment/template length, 600 by default.\\
 \hline
 -f \newline (\code{useMetaFeatures}) & If specified, read summarization will be performed at feature level (eg. exon level). Otherwise, it is performed at meta-feature level (eg. gene level).\\
 \hline
@@ -1007,7 +1018,7 @@ input\_files \newline (\code{files}) & Give the names of input read files that i
 -G $<string>$ \newline (\code{genome}) & Provide the name of a FASTA-format file that contains the reference sequences used in
 read mapping that produced the provided SAM/BAM files. This optional argument can be used with `-J' option to improve read counting for junctions.\\
 \hline
--J \newline (\code{juncCounts}) & Count the number of reads supporting each exon-exon junction. Junctions are identified from those exon-spanning reads (containing `N' in CIGAR string) in input data (note that options `--splitOnly' and `--nonSplitOnly' are not considered by this parameter). The output result includes names of primary and secondary genes that overlap at least one of the two splice sites of a junction. Only one primary gene is reported, but there might be more than one secondary gene reported. Secondary genes do not overlap more splice sites than the primary gene. When the primary and secondary genes overlap same number of splice sites, the gene with the smallest leftmost base position is selected as the primary gene. Also included in the output result are the position information for the left splice site (`Site1') and the right splice site (`Site2') of a junction. These include chromosome name, coordinate and strand of the splice site. In the last columns of the output, number of supporting reads is provided for each junction for each library.\\
+-J \newline (\code{juncCounts}) & Count the number of reads supporting each exon-exon junction. Junctions will be identified from all the exon-spanning reads (containing `N' in CIGAR string) included in the input data (note that options `--splitOnly' and `--nonSplitOnly' are not considered by this parameter). The output result includes names of primary and secondary genes that overlap at least one of the two splice sites of a junction. Only one primary gene is reported, but there might be more than one secondary gene reported. Secondary genes do not overlap more splice sites than the primary gene. When the primary and secondary genes overlap same number of splice sites, the gene with the smallest leftmost base position is selected as the primary gene. Also included in the output result are the position information for the left splice site (`Site1') and the right splice site (`Site2') of a junction. These include chromosome name, coordinate and strand of the splice site. In the last columns of the output, number of supporting reads is provided for each junction for each library.\\
 \hline
 -L \newline (\code{isLongRead}) & Turn on long-read counting mode. This option should be used when counting long reads such as Nanopore or PacBio reads.\\
 \hline
@@ -1015,11 +1026,11 @@ read mapping that produced the provided SAM/BAM files. This optional argument ca
 \hline
 -o $<string>$ & Give the name of the output file. The output file contains the number of reads assigned to each meta-feature (or each feature if \code{-f} is specified). Note that the {\featureCounts} function in {\Rsubread} does not use this parameter. It returns a \code{list} object including read summarization results and other data. \\
 \hline
--O \newline (\code{allowMultiOverlap}) & If specified, reads (or fragments if \code{-p} is specified) will be allowed to be assigned to more than one matched meta-feature (or feature if \code{-f} is specified). Reads/fragments overlapping with more than one meta-feature/feature will be counted more than once. Note that when performing meta-feature level summarization, a read (or fragment) will still be counted once if it overlaps with multiple features within the same meta-feature (as long as it does not overlap with other meta-features). Also note that this parameter is applied to each individual alignment when there are more than one alignment reported for a read (ie. multi-mapping read). See section ``Count multi-mapping reads and multi-overlapping reads'' for more details.\\
+-O \newline (\code{allowMultiOverlap}) & If specified, reads (or fragments) will be allowed to be assigned to more than one matched meta-feature (or feature if \code{-f} is specified). Reads/fragments overlapping with more than one meta-feature/feature will be counted more than once. Note that when performing meta-feature level summarization, a read (or fragment) will still be counted once if it overlaps with multiple features within the same meta-feature (as long as it does not overlap with other meta-features). Also note that this parameter is applied to each individual alignment when there are more than one alignment reported for a read (ie. multi-mapping read). See section ``Count multi-mapping reads and multi-overlapping reads'' for more details.\\
 \hline
--p \newline (\code{isPairedEnd}) & If specified, fragments (or templates) will be counted instead of reads. This option is only applicable for paired-end reads.\\
+-p \newline (\code{isPairedEnd}) & Specify that input data contain paired-end reads. {\featureCounts} will terminate if the type of input reads (single-end or paired-end) is different from the specified type. To count fragments (instead of reads) for paired-end reads, the \code{--countReadPairs} parameter should also be specified. \\
 \hline
--P \newline (\code{checkFragLength}) & If specified, the fragment length will be checked when assigning fragments to meta-features or features. This option must be used together with \code{-p}. The fragment length thresholds should be specified using \code{-d} and \code{-D} options.\\
+-P \newline (\code{checkFragLength}) & If specified, the fragment length will be checked when assigning fragments to meta-features or features. This option is only applicable for fragment counting. The fragment length thresholds should be specified using \code{-d} and \code{-D} options.\\
 \hline
 -Q $<int>$ \newline (\code{minMQS}) & The minimum mapping quality score a read must satisfy in order to be counted. For paired-end reads, at least one end should satisfy this criteria. 0 by default.\\
 \hline
@@ -1034,6 +1045,8 @@ read mapping that produced the provided SAM/BAM files. This optional argument ca
 -v & Output version of the program. \\
 \hline
 $--$byReadGroup \newline (\code{byReadGroup}) & Count reads by read group. Read group information is identified from the header of BAM/SAM input files and the generated count table will include counts for each group in each library.\\
+\hline
+$--$countReadPairs \newline (\code{countReadPairs}) & Read pairs will be counted instead of reads. This parameter is only applicable when paired-end data were provided.\\
 \hline
 $--$donotsort \newline (\code{autosort}) & If specified, paired end reads will not be re-ordered even if reads from the same pair were found not to be next to each other in the input.\\
 \hline
@@ -1088,10 +1101,10 @@ $--$verbose \newline (\code{verbose}) & Output verbose information for debugging
 You need to provide read mapping results (in either SAM or BAM format) and an annotation file for the read summarization.
 The example commands below assume your annotation file is in GTF format.\\
 
-\noindent Summarize SAM format single-end reads using 5 threads:\\
+\noindent Summarize BAM format single-end reads using 5 threads:\\
 
 \noindent\code{featureCounts -T 5 -a annotation.gtf -t exon -g gene\_id \\
- -o counts.txt mapping\_results\_SE.sam}\\
+ -o counts.txt mapping\_results\_SE.bam}\\
 
 \noindent Summarize BAM format single-end read data:\\
 
@@ -1105,22 +1118,22 @@ The example commands below assume your annotation file is in GTF format.\\
 
 \noindent Summarize paired-end reads and count fragments (instead of reads):\\
 
-\noindent\code{featureCounts -p -a annotation.gtf -t exon -g gene\_id \\
+\noindent\code{featureCounts -p --countReadPairs -a annotation.gtf -t exon -g gene\_id \\
 -o counts.txt mapping\_results\_PE.bam}\\
 
 \noindent Count fragments satisfying the fragment length criteria, eg. [50bp, 600bp]:\\
 
-\noindent\code{featureCounts -p -P -d 50 -D 600 -a annotation.gtf -t exon -g gene\_id\\
+\noindent\code{featureCounts -p --countReadPairs -P -d 50 -D 600 -a annotation.gtf -t exon -g gene\_id\\
 -o counts.txt mapping\_results\_PE.bam}\\
 
 \noindent Count fragments which have both ends successfully aligned without considering the fragment length constraint:\\
 
-\noindent\code{featureCounts -p -B -a annotation.gtf -t exon -g gene\_id\\
+\noindent\code{featureCounts -p --countReadPairs -B -a annotation.gtf -t exon -g gene\_id\\
  -o counts.txt mapping\_results\_PE.bam}\\
 
 \noindent Exclude chimeric fragments from the fragment counting:\\
 
-\noindent\code{featureCounts -p -C -a annotation.gtf -t exon -g gene\_id\\
+\noindent\code{featureCounts -p --countReadPairs -C -a annotation.gtf -t exon -g gene\_id\\
  -o counts.txt mapping\_results\_PE.bam}
 
 
@@ -1135,22 +1148,22 @@ The example commands below assume your annotation file is in GTF format.\\
 library(Rsubread)
 \end{Rcode}
 
-\noindent Summarize single-end reads using built-in RefSeq annotation for mouse genome `mm10' (`mm10' is the default inbuilt genome annotation):
+\noindent Summarize single-end reads using built-in RefSeq annotation for mouse genome `mm39' (`mm39' is the default inbuilt genome annotation):
 \begin{Rcode}
-featureCounts(files="mapping_results_SE.sam")
+featureCounts(files="mapping_results_SE.bam")
 \end{Rcode}
 
 \noindent Summarize single-end reads using a user-provided GTF annotation file:
 
 \begin{Rcode}
-featureCounts(files="mapping_results_SE.sam",annot.ext="annotation.gtf",
+featureCounts(files="mapping_results_SE.bam",annot.ext="annotation.gtf",
 isGTFAnnotationFile=TRUE,GTF.featureType="exon",GTF.attrType="gene_id")
 \end{Rcode}
 
 \noindent Summarize single-end reads using 5 threads:
 
 \begin{Rcode}
-featureCounts(files="mapping_results_SE.sam",nthreads=5)
+featureCounts(files="mapping_results_SE.bam",nthreads=5)
 \end{Rcode}
 
 \noindent Summarize BAM format single-end read data:
@@ -1190,16 +1203,139 @@ featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE,requireBothEndsMap
 featureCounts(files="mapping_results_PE.bam",isPairedEnd=TRUE,countChimericFragments=FALSE)
 \end{Rcode}
 
-\chapter{Mapping and quantification of single-cell data}
 
+
+
+
+
+\chapter{Quantify single-cell RNA-seq data}
 \section{cellCounts}
 
-The \emph{cellCounts} program was developed to process single-cell RNA-seq (scRNA-seq) data to generate UMI counts for genes, exons or other genomic features.
-It calls \emph{align} function to perform mapping of scRNA-seq reads and calls \emph{featureCounts} functions to generate UMI counts.
-\emph{cellCounts} demultiplexes cell barcodes and also deduplicates reads.
-It accepts BCL or FASTQ files as input.
-Quantification of a scRNA-seq dataset can be simply done by a single \emph{cellCounts} function call.
-It is much faster than other scRNA-seq quantification tools.
+The {\cellCounts} program is developed for quantifying single-cell RNA-seq (scRNA-seq) data generated from the 10X platform.
+With {\cellCounts}, the entire quantification process is simply done by just one function call.
+
+{\cellCounts} takes raw scRNA-seq reads (BCL or FASTQ format) as input, maps them to the reference genome and then produces UMI (Unique Molecular Identifier) counts for each gene in each cell. 
+The seed-and-vote paradigm is used in {\cellCounts} read mapping. 
+The {\featureCounts} function was adapted for read assignment performed within {\cellCounts}. 
+{\cellCounts} also carries out sample demultiplexing, read deduplication (UMI generation) and cell barcode calling before generating a UMI count matrix. 
+It can process multiple datasets at the same time.
+Parameters of the {\cellCounts} function are described below:
+
+\begin{longtable}{|p{4.5cm}|p{11cm}|}
+\multicolumn{2}{p{16cm}}{Table 4: Arguments used by the \code{cellCounts} program.
+The arguments are listed in the alphabetical order.}
+\endfirsthead
+\hline
+Arguments & Description \\
+\hline
+annot.ext & Specify an external annotation for UMI counting. See \code{featureCounts} function for more details. \code{NULL} by default.\\
+\hline
+annot.inbuilt & Specify an inbuilt annotation for UMI counting. See \code{featureCounts} function for more details. \code{mm39} by default.\\
+\hline
+cell.barcode & A character string giving the name of a text file (can be gzipped) that contains the set of cell barcodes used in sample preparation. If \code{NULL}, a cell barcode set will be determined for the input data by \code{cellCounts} based on the matching of cell barcodes sequences of the first 100,000 reads in the data with the three cell barcode sets used by 10X Genomics. \code{NULL} by default.\\
+\hline
+GTF.attrType & See \code{featureCounts} function for more details. \code{gene\_id} by default. \\
+\hline
+GTF.featureType & See \code{featureCounts} function for more details. \code{exon} by default. \\
+\hline
+index & A character string giving the base name of index files generated for a reference genome by the \code{buildindex} function. \\
+\hline
+input.mode & A character string specifying the input mode. The supported input modes include \code{BCL}, \code{FASTQ}, \code{FASTQ-dir} and \code{BAM}. \code{BCL} is the BCL format of raw reads generated by the sequencers such as Illumina sequencers. \code{FASTQ} is the FASTQ format of sequencing reads. \code{FASTQ-dir} is a directory where FASTQ-format reads are saved. \code{FASTQ-dir} is useful for providing \code{cellCounts} the FASTQ data generated by \code{bcl2fastq} program or \code{bamtofastq} program (developed by 10X). \code{BAM} is the BAM format of mapped read data with cell barcodes and UMI sequences included. \code{BCL} by default.\\
+\hline
+isGTFAnnotationFile & See \code{featureCounts} function for more details. \code{FALSE} by default. \\
+\hline
+maxMismatches & Numeric value giving the maximum number of mismatched bases allowed in the mapping of a read. \code{10} by default. Mismatches found in soft-clipped bases are not counted.\\
+\hline
+minMappedLength & Numeric value giving the minimum number of mapped bases in a read required for reporting a hit. \code{1} by default.\\
+\hline
+minVotes & Numeric value giving the minimum number of votes required for reporting a hit. \code{1} by default.\\
+\hline
+nBestLocations & A numeric value giving the maximum number of reported alignments for each multi-mapping read. \code{1} by default.\\
+\hline
+nsubreads & Numeric value giving the number of subreads (seeds) extracted from each read. \code{15} by default.\\
+\hline
+nthreads & A numeric value giving the number of threads used for read mapping and counting. \code{10} by default. \\
+\hline
+reportExcludedBarcodes & If \code{TRUE}, report UMI counts for those cell barcodes that were filtered out during cell calling. \code{FALSE} by default. \\
+\hline
+sample & A data frame or a character string providing sample-related information, including location of the data, sample names and index set names. If the input format is \code{BCL} (ie. \code{input.mode="BCL"}), a data frame like the example below should be provided:
+\linebreak
+
+{\begin{tabular}{@{}p{3.5cm}p{1cm}p{2.5cm}p{2cm}@{}}
+InputDirectory & Lane & SampleName & IndexSetName \\
+/path/to/dataset1 & 1 & Sample1 & SI-GA-E1 \\
+/path/to/dataset1 & 1 & Sample2 & SI-GA-E2 \\
+/path/to/dataset1 & 2 & Sample1 & SI-GA-E1 \\
+/path/to/dataset1 & 2 & Sample2 & SI-GA-E2 \\
+/path/to/dataset2 & 1 & Sample3 & SI-GA-E3 \\
+/path/to/dataset2 & 1 & Sample4 & SI-GA-E4 \\
+/path/to/dataset2 & 2 & Sample3 & SI-GA-E3 \\
+/path/to/dataset2 & 2 & Sample4 & SI-GA-E4 \\
+... & & & \\
+\end{tabular}}{}
+\linebreak
+\linebreak
+
+It is compulsory to have the four column headers shown in the example above when generating this data frame for a 10X dataset.
+If more than one datasets are provided for analysis, the \code{InputDirectory} column should include more than one distinct directory.
+Note that this data frame is different from the Sample Sheet generated by the Illumina sequencer.
+The \code{cellCounts} function uses the index set names included in this data frame to generate an Illumina Sample Sheet and then uses it to demultiplex all the samples. 
+\linebreak
+\linebreak
+If the input format is \code{FASTQ}, a data frame object containing the following three columns, \code{BarcodeUMIFile}, \code{ReadFile} and \code{SampleName}, should be provided to the \code{sample} parameter.
+Each row in the data frame represents a sample.
+The \code{ReadFile} column includes names of FASTQ files that contain read data for the samples.
+Each FASTQ file corresponds to a sample.
+The read data included in these FASTQ files only contain genomic sequences of the reads.
+The cell barcode and UMI sequences of these reads can be found in the corresponding FASTQ files included in the \code{BarcodeUMIFile} column.
+\linebreak
+\linebreak
+Finally, if the input format is \code{FASTQ-dir}, a character string, which includes the path to the directory where the FASTQ-format read data are stored, should be provided to the \code{sample} parameter.
+The data in this directory are expected to be generated by the \code{bcl2fastq} program or the \code{bamtofastq} program (a program developed by 10X).\\
+\hline
+umi.cutoff & Specify a UMI count cutoff for cell calling. All the cells with a total UMI count greater than this cutoff will be called. If \code{NULL}, a bootstrapping procedure will be performed to determine this cutoff. \code{NULL} by default. \\
+\hline
+uniqueMapping & A logical value indicating if only uniquely mapped reads should be reported. \code{FALSE} by default. \\
+\hline
+useMetaFeatures & Specify if UMI counting should be carried out at the meta-feature level (eg. gene level). See \code{featureCounts} function for more details. \code{TRUE} by default. \\
+\hline
+\end{longtable}
+
+
+\noindent The \code{cellCounts} function returns a \code{List} object to R.
+It also outputs a BAM file for each sample.
+The BAM file includes location-sorted read mapping results. 
+If the input mode is \code{BCL} or \code{BAM}, it will also output a gzipped FASTQ file including cell barcode and UMI
+sequences (R1), a gzipped FASTQ file including sample index sequences (I1), a gzipped FASTQ file including sequences of the second sample index if dual-indexed library is used (I2) and a gzipped FASTQ file including genomic sequences of the reads (R2).\\
+
+\noindent The returned \code{List} object contains the following components:\\
+\code{counts}\\
+A \code{List} object including UMI counts for each sample.
+Each component in this object is a matrix that contains UMI counts for a sample. 
+Rows in the matrix are genes and columns are cells.
+
+\noindent\code{annotation}\\
+A \code{data.frame} object containing a gene annotation. 
+This is the annotation that was used for the assignment of UMIs to genes during quantification. 
+Rows in the annotation are genes. 
+Columns of the annotation include \code{GeneID}, \code{Chr}, \code{Start}, \code{End} and \code{Length}.
+
+\noindent\code{sample.info}\\ 
+A \code{data.frame} object containing sample information and quantification statistics.
+It includes the following columns: \code{SampleName}, \code{InputDirectory} (if the input format is \code{BCL}), \code{TotalCells}, \code{HighConfidenceCells} (if \code{umi.cutoff} is \code{NULL}), \code{RescuedCells} (if \code{umi.cutoff} is \code{NULL}), \code{TotalUMI}, \code{MinUMI}, \code{MedianUMI}, \code{MaxUMI}, \code{MeanUMI}, \code{TotalReads}, \code{MappedReads} and \code{AssignedReads}.
+Each row in the data frame is a sample.
+
+\noindent\code{cell.confidence}\\
+A \code{List} object indicating if a cell is a high-confidence cell or a rescued cell (low confidence). 
+Each component in the object is a logical vector indicating which cells in a sample are high-confidence cells. 
+\code{cell.confidence} is included in the output only if \code{umi.cutoff} is \code{NULL}.
+
+\noindent\code{counts.excluded.barcodes}\\
+A \code{List} object including UMI counts for excluded cell barcodes for each sample.
+Each UMI count matrix is stored as a \code{sparseMatrix} object here.
+
+
+
 
 \chapter{SNP calling}
 
@@ -1225,13 +1361,13 @@ It has been found to be an order of magnitude faster than existing SNP callers.
 \section{exactSNP}
 
 Below is the command for running \code{exactSNP} program.
-The complete list of parameters used by \code{exactSNP} can be found in Table 4.\\
+The complete list of parameters used by \code{exactSNP} can be found in Table 5.\\
 
 \noindent\code{exactSNP [options] -i input -g reference\_genome -o output}\\
 
 
 \begin{longtable}{|p{4.5cm}|p{11cm}|}
-\multicolumn{2}{p{16cm}}{Table 4: Arguments used by the \code{exactSNP} program included in the SourceForge {\Subread} package in alphabetical order.
+\multicolumn{2}{p{16cm}}{Table 5: Arguments used by the \code{exactSNP} program included in the SourceForge {\Subread} package in alphabetical order.
 Arguments included in parenthesis are the equivalent parameters used by \code{exactSNP} function in Bioconductor {\Rsubread} package.}
 \endfirsthead
 \hline
@@ -1327,8 +1463,7 @@ B\_1 and B\_2 are treated as biological replicates as well.
 
 Note that these libraries only included reads originating from human chromosome 1 (according to {\Subread} aligner).
 Reads were generated by the MAQC/SEQC Consortium.
-Data used in this case study can be downloaded from\\
-\url{http://bioinf.wehi.edu.au/RNAseqCaseStudy/data.tar.gz} (283MB).
+Data used in this case study can be downloaded by clicking \href{https://latrobeuni-my.sharepoint.com/:u:/g/personal/yliao_ltu_edu_au/ESba1-VojYlMlQHVXxfc1d4BrONjXa_1qd4e1qz97tIe-w?e=nnYXyV}{here} (283MB).
 Both read data and reference sequence for chromosome 1 of human genome (GRCh37) were included in the data.
 
 After downloading the data, you can uncompress it and save it to your current working directory.

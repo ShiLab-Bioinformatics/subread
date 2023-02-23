@@ -59,6 +59,13 @@ void * ArrayListShift(ArrayList * list){
 	return ret;
 }
 
+void * ArrayListSet(ArrayList * list, srInt_64 n, void * new_elem){
+	if(list->numOfElements<=n) return NULL;
+	void * ret = list->elementList [n];
+	list->elementList [n] = new_elem;
+	return ret;
+}
+
 void * ArrayListPop(ArrayList * list){
 	if(list->numOfElements<1) return NULL;
 	return list->elementList [ -- list->numOfElements];
@@ -189,6 +196,10 @@ void ArrayListSort(ArrayList * list, int compare_L_minus_R(void * L_elem, void *
 		merge_sort(sortdata, list -> numOfElements, ArrayListSort_compare, ArrayListSort_exchange, ArrayListSort_merge);
 	else
 		basic_sort(sortdata, list -> numOfElements, ArrayListSort_compare, ArrayListSort_exchange);
+}
+
+int ArrayListStringComparison(void * L_elem, void * R_elem){
+	return strcmp((char*)L_elem, (char*)R_elem);
 }
 
 int ArrayListLLUComparison(void * L_elem, void * R_elem){

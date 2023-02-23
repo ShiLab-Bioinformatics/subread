@@ -421,13 +421,21 @@ int cacheBCL_next_chunk(cache_BCL_t * cache_input){
 	return 0;
 }
 
+void iCache_copy_readbin(cache_BCL_t * cache_input, int * readlane, char * readbin, srInt_64 rno){
+	int bii, readno = cache_input -> read_no_in_chunk, blen=cache_input -> total_bases_in_each_cluster; 
+	for(bii = 0; bii < blen; bii++) readbin[bii] = cache_input -> bcl_bin_cache[bii][readno];
+
+	(* readlane) = cache_input -> lane_no_in_chunk[readno];
+	cache_input -> read_no_in_chunk=1+readno;
+	return;
+}
 
 int iCache_copy_read(cache_BCL_t * cache_input, char * read_name, char * seq, char * qual, srInt_64 rno){
 	int bii, idx_offset, base_offset;
 	int * srii = cache_input -> single_read_lengths;
 
 	#ifdef __MINGW32__
-	sprintf(read_name, "R%011I64u:", rno);
+	sprintf(read_name, "R%011" PRIu64 ":", rno);
 	#else
 	sprintf(read_name, "R%011llu:", rno);
 	#endif
@@ -470,7 +478,23 @@ int iCache_copy_read(cache_BCL_t * cache_input, char * read_name, char * seq, ch
 	return srii[2+is_dual_index];
 }
 
+int cacheBCL_next_readbin(cache_BCL_t * cache_input, int * readlane, char rbin[BCL_READBIN_ITEMS_LOCAL][BCL_READBIN_SIZE], int max_readbin_buffer, srInt_64 * start_allread_no){
+	int ii;
+	srInt_64 rnumb;
+	for(ii=0; ii< max_readbin_buffer; ii++){
+		if(cache_input -> read_no_in_chunk >= cache_input -> reads_available_in_chunk){
+			if(cache_input -> last_chunk_in_cache) break; 
+			cacheBCL_next_chunk(cache_input);
+			if(cache_input -> read_no_in_chunk >= cache_input -> reads_available_in_chunk) // no reads are loaded in the previous step
+				break;
+		}
 
+		rnumb =(cache_input -> chunk_no -1)*1ll * cache_input -> reads_per_chunk +(cache_input -> read_no_in_chunk);
+		if(!ii) (*start_allread_no) = rnumb;
+		iCache_copy_readbin(cache_input, readlane+ii, rbin[ii], rnumb);
+	}
+	return ii;
+}
 
 int cacheBCL_next_read(cache_BCL_t * cache_input, char * read_name, char * seq, char * qual, srInt_64 * read_number_in_all){
 	if(cache_input -> read_no_in_chunk >= cache_input -> reads_available_in_chunk){
@@ -502,7 +526,7 @@ int iBLC_current_lane_next_read(input_BLC_t * blc_input, char * readname , char 
 	int bii, idx_offset, base_offset;
 
 	#ifdef __MINGW32__
-	sprintf(readname, "R%011I64u:", blc_input -> read_number +1);
+	sprintf(readname, "R%011" PRIu64 ":", blc_input -> read_number +1);
 	#else
 	sprintf(readname, "R%011llu:", blc_input -> read_number +1);
 	#endif
@@ -747,6 +771,7 @@ HashTable * input_BLC_parse_SampleSheet(char * fname){
 			stat1_line = 0;
 		}
 	}
+	fclose(fp);
 	if(state <1){
 		SUBREADprintf("ERROR: the sample sheet doesn't contain any sample.\n");
 		return NULL;
@@ -1003,7 +1028,7 @@ int cacheBCL_qualTest_BAMmode(char * datadir, int testing_reads, int known_cell_
 		base[0]=qual[0]=rname[0]=0;
 		ret = scBAM_next_read(scBAM_input, rname , base, qual);
 		if(ret<=0)break;
-		char *cell_barcode = NULL, *sample_barcode=NULL, *lane_str=NULL;
+		char *cell_barcode = NULL;
 
 		int xx=0;
 		char *testi;
@@ -1012,10 +1037,7 @@ int cacheBCL_qualTest_BAMmode(char * datadir, int testing_reads, int known_cell_
 				xx++;
 				if(xx == 1) {
 					cell_barcode = testi +1;
-				}else if(xx == 2) {
-					sample_barcode = testi +1;
 				}else if(xx == 4){
-					lane_str = testi+1;
 					break;
 				}
 			}
@@ -1043,7 +1065,6 @@ int cacheBCL_qualTest_FQmode(char * datadir, int testing_reads, int known_cell_b
 		if(ret<=0)break;
 
 		char *cell_barcode = NULL;
-		//SUBREADprintf("RETV=%d, RN=%s\n" ,ret, rname);
 		int xx=0;
 		char *testi;
 		for(testi = rname+1; * testi; testi ++){
@@ -1057,7 +1078,8 @@ int cacheBCL_qualTest_FQmode(char * datadir, int testing_reads, int known_cell_b
 		}
 
 		int cell_no = iCache_get_cell_no(cell_barcode_table, cell_barcode_list, cell_barcode, known_cell_barcode_length);
-		if(cell_no>0) (*valid_cell_barcode)++;
+		//fprintf(stderr,"RETV=%d, RN=%s, CNO=%d, KCBL=%d\n" ,ret, rname, cell_no, known_cell_barcode_length);
+		if(cell_no>=0) (*valid_cell_barcode)++;
 
 		(*tested_reads)++;
 		if((*tested_reads) >= testing_reads)break;
@@ -1392,7 +1414,7 @@ int scBAM_next_read(input_scBAM_t * bam_input, char * read_name, char * seq, cha
 	char * extag_start = qual_start + l_seq;
 	char * tag_str_val=NULL, tag_type = 0;
 
-	for(x1=0;x1<5;x1++){
+	for(x1=0;x1<4;x1++){ // the "RG" isn't used for now
 		char * tagname = NULL;
 		if(x1==0)tagname ="CR";
 		if(x1==1)tagname ="UR";
@@ -1529,13 +1551,19 @@ int input_mFQ_next_read(input_mFQ_t * fqs_input, char * readname , char * read, 
 		ret = autozip_gets(&fqs_input -> autofp1, tmpline, MAX_READ_NAME_LEN);
 		int write_ptr=0;
 		if(ret==0){
+			int R2ret = autozip_gets(&fqs_input -> autofp3, tmpline, MAX_READ_NAME_LEN);
+			if(R2ret >0){
+				SUBREADprintf("ERROR: the cell barcode and UMI reads exhausted before the genomic reads exhausted. The two FASTQ files seem to have different numbers of reads.\n");
+				return -2;
+			}
+
 			ret = input_mFQ_next_file(fqs_input);
 			if(ret >=0) continue;
-			return -1;
+			else return -1;
 		} else if(ret<0) return -1;
 
 		#ifdef __MINGW32__
-		sprintf(readname, "R%011I64d", fqs_input -> current_read_no);
+		sprintf(readname, "R%011" PRId64, fqs_input -> current_read_no);
 		#else
 		sprintf(readname, "R%011lld", fqs_input -> current_read_no);
 		#endif
@@ -1568,7 +1596,10 @@ int input_mFQ_next_read(input_mFQ_t * fqs_input, char * readname , char * read, 
 		}else write_ptr+=sprintf(readname+write_ptr,"|input#%04d@L%03d", fqs_input -> current_file_no, fqs_input  -> current_guessed_lane_no);
 
 		ret = autozip_gets(&fqs_input -> autofp3, tmpline, MAX_READ_NAME_LEN);
-		if(ret<=0) return -1;
+		if(ret<=0){
+			SUBREADprintf("ERROR: the genomic reads exhausted before the cell barcode and UMI reads exhausted. The two FASTQ files seem to have different numbers of reads\n");
+			return -2;
+		}
 		ret = autozip_gets(&fqs_input -> autofp3, read, MAX_READ_LENGTH);
 		ret --; // read length excludes "\n"
 		read[ret]=0;

@@ -59,6 +59,20 @@
 #include "gene-algorithms.h"
 #include "HelperFunctions.h"
 
+void sorting_LLU_array_exchange(void * varr, int i, int j){
+	srUInt_64 *arr = varr;
+	srUInt_64 t = arr[i];
+	arr[i]=arr[j];
+	arr[j]=t;
+}
+
+int sorting_LLU_array_compare(void * varr, int i, int j){
+	srUInt_64 *arr = varr;
+	if(arr[i]>arr[j])return 1;
+	if(arr[i]<arr[j])return -1;
+	return 0;
+}
+
 size_t get_sys_mem_info(char * keyword){
 	FILE * mfp = fopen("/proc/meminfo","r");
 	if(mfp==NULL) return -1;
@@ -102,15 +116,6 @@ char * get_short_fname(char * lname){
 			ret = lname + x1 + 1;
 			break;
 		}
-	}
-	return ret;
-}
-
-int scRNA_hamming_max2_fixlen(char * u1, char * u2, int ulen){
-	int x, ret=0;
-	for(x=0; x<ulen; x++){
-		if(u1[x]!=u2[x]) ret++;
-		if(ret>1)return ret;
 	}
 	return ret;
 }
@@ -1548,7 +1553,7 @@ void md5txt(char *s){
 		SUBREADprintf("%02X", md5v[x]);
 	}
 	#ifdef __MINGW32__
-	SUBREADprintf("\t'%s'\t%016I64X\t%I64u\t%.9f\n", s, randv, randv, randv*1./0xffffffffffffffffllu);
+	SUBREADprintf("\t'%s'\t%016" PRIX64 "\t%" PRIu64 "\t%.9f\n", s, randv, randv, randv*1./0xffffffffffffffffllu);
 	#else
 	SUBREADprintf("\t'%s'\t%016llX\t%llu\t%.9f\n", s, randv, randv, randv*1./0xffffffffffffffffllu);
 	#endif

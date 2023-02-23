@@ -349,6 +349,7 @@ typedef struct{
 
 typedef struct
 {
+
 	unsigned int selected_position;
 	short result_flags;
 	short read_length;
@@ -365,6 +366,7 @@ typedef struct
 	unsigned short confident_coverage_end;
 
 	short subread_quality; 
+
 } mapping_result_t;
 
 typedef struct{
@@ -410,7 +412,10 @@ typedef struct
 // THREE_TOP_UPDATE dictates the number of top-votes.
 
 typedef struct {
-	int is_vote_t_item;
+	union{
+		int is_vote_t_item;
+		int is_exon_item;
+	};
 	int item_index_i;
 	int item_index_j;
 	unsigned int mapping_position;
@@ -693,4 +698,5 @@ int exec_cmd(char * cmd, char * outstr, int out_limit);
 int is_pos_in_annotated_exon_regions(global_context_t * global_context, unsigned int pos);
 char * get_sam_chro_name_from_alias(HashTable * tab, char * anno_chro);
 void subread_rebuild_cmd(int argc, char ** argv, global_context_t * global_context);
+int get_soft_clipping_length(char* CIGAR);
 #endif

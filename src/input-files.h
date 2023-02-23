@@ -223,6 +223,9 @@ int geinput_readline_back(gene_input_t * input, char * linebuffer) ;
 // The memory space for read_string must be at least 512 bytes.
 int geinput_next_read(gene_input_t * input, char * read_name, char * read_string, char * quality_string);
 int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_string, char * quality_string, short trim_5, short trim_3, int * is_secondary);
+int geinput_next_read_with_lock(gene_input_t * input, char * read_name, char * read_string, char * quality_string);
+int * geinput_next_readbin_with_lock(gene_input_t * input, int * read_lane, char * readbin, subread_read_number_t * total_number);
+
 
 void geinput_jump_read(gene_input_t * input);
 
@@ -329,10 +332,15 @@ int SAM_pairer_warning_file_open_limit();
 int SAM_pairer_get_tag_bin_start(char * bin);
 void *delay_realloc(void * old_pntr, size_t old_size, size_t new_size);
 int is_comment_line(const char * l, int file_type, unsigned int lineno);
+void warning_array_hash(ArrayList * t1, HashTable * t2, char * msg);
+// it returns 0 if any chromosome names in t1 and t2 matched, otherwise it returns non-zero.
+// // this function doesn't do chrX=>X conversion nor alias conversion because these conversions have been done when the annotations were loaded from GTF/SAF files.
+int warning_hash_hash_numbers(HashTable * t1, HashTable * t2, int * matched);
+int warning_array_hash_numbers(ArrayList * t1, HashTable * t2, int * matched);
 void warning_hash_hash(HashTable * t1, HashTable * t2, char * msg);
 int geinput_preload_buffer(gene_input_t * input, subread_lock_t* read_lock);
-int geinput_open_scRNA_fqs(char * fnames,  gene_input_t * input, int reads_per_chunk, int threads );
-int geinput_open_scRNA_BAM(char * fnames,  gene_input_t * input, int reads_per_chunk, int threads );
-int geinput_open_bcl( const char * dir_name,  gene_input_t * input, int reads_in_chunk, int threads );
+int geinput_open_scRNA_fqs(char * fnames,  gene_input_t * input, int reads_per_chunk, int threads);
+int geinput_open_scRNA_BAM(char * fnames,  gene_input_t * input, int reads_per_chunk, int threads);
+int geinput_open_bcl( const char * dir_name,  gene_input_t * input, int reads_in_chunk, int threads);
 char *strtokmm(char *str, const char *delim, char ** next);
 #endif

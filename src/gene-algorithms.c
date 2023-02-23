@@ -713,7 +713,7 @@ void compress_cigar(char *cigar, int total_length, char * read, int * pos_offset
 					delta_d = 0;
 	
 					#ifdef __MINGW32__
-					sprintf(cigar_piece,"%I64d%c", last_tmpv, last_operation); 
+					sprintf(cigar_piece,"%" PRId64 "%c", last_tmpv, last_operation); 
 					#else
 					sprintf(cigar_piece,"%lld%c", last_tmpv, last_operation); 
 					#endif
@@ -764,7 +764,7 @@ void compress_cigar(char *cigar, int total_length, char * read, int * pos_offset
 		if(last_operation =='M' || last_operation =='S')
 		{
 			#ifdef __MINGW32__
-			sprintf(cigar_piece,"%I64d%c", tmpv+last_tmpv, last_operation); 
+			sprintf(cigar_piece,"%" PRId64 "%c", tmpv+last_tmpv, last_operation); 
 			#else
 			sprintf(cigar_piece,"%lld%c", tmpv+last_tmpv, last_operation); 
 			#endif
@@ -2228,10 +2228,10 @@ float match_base_quality(gene_value_index_t *array_index, char * read_txt,  unsi
 		{
 			if(!qual_txt)
 				ret += 1000000;
-			else if(FASTQ_PHRED64 == phred_version)
-				ret += (1000000-get_base_error_prob64i(qual_txt[i]));
-			else
+			else if(FASTQ_PHRED33 == phred_version)
 				ret += (1000000-get_base_error_prob33i(qual_txt[i]));
+			else
+				ret += (1000000-get_base_error_prob64i(qual_txt[i]));
 		}
 		else
 		{
@@ -2244,10 +2244,10 @@ float match_base_quality(gene_value_index_t *array_index, char * read_txt,  unsi
 			else
 			{
 				int ql ;
-				if(FASTQ_PHRED64 == phred_version)
-					ql = get_base_error_prob64i(qual_txt[i]);
-				else
+				if(FASTQ_PHRED33 == phred_version)
 					ql = get_base_error_prob33i(qual_txt[i]);
+				else
+					ql = get_base_error_prob64i(qual_txt[i]);
 				/*
 				#ifdef QUALITY_KILL
 					#if QUALITY_KILL > 196
@@ -2472,7 +2472,7 @@ float final_mapping_quality(gene_value_index_t *array_index, unsigned int pos, c
 					{
 						if(begin_copy)
 							#ifdef __MINGW32__
-							sprintf(refined_cigar+strlen(refined_cigar), "%I64d%c", x, cigar_txt[cigar_cursor]);
+							sprintf(refined_cigar+strlen(refined_cigar), "%" PRId64 "%c", x, cigar_txt[cigar_cursor]);
 							#else
 							sprintf(refined_cigar+strlen(refined_cigar), "%lld%c", x, cigar_txt[cigar_cursor]);
 							#endif
@@ -2514,14 +2514,14 @@ void print_votes(gene_vote_t * vote, char *index_prefix)
 	for (i=0; i<GENE_VOTE_TABLE_SIZE; i++)
 		for(j=0; j< vote->items[i]; j++)
 		{
-			locate_gene_position(vote -> pos[i][j], &offsets, &chrname, &chrpos);
+			locate_gene_position(vote -> pos[i][j] +1, &offsets, &chrname, &chrpos);
 			int toli = vote->toli [i][j];
 			int last_offset = vote -> indel_recorder[i][j][toli+2];
-			SUBREADprintf("  %s\tVote = %d , Position is %s,%d (+%u) Coverage is (%d, %d) Indel %d %s (%d)\n", vote->votes[i][j] == vote->max_vote?"***":"   ", vote->votes[i][j] , chrname, chrpos, vote -> pos[i][j], vote -> coverage_start[i][j], vote -> coverage_end[i][j],last_offset, (vote -> masks[i][j])?"NEG":"POS", vote -> masks[i][j]);
+			SUBREADprintf("  %s\tVote = %d , Position is (1-base):%s,%d (+%u) Coverage is (%d, %d) Indel %d %s (%d)\n", vote->votes[i][j] == vote->max_vote?"***":"   ", vote->votes[i][j] , chrname, chrpos, vote -> pos[i][j], vote -> coverage_start[i][j], vote -> coverage_end[i][j],last_offset, (vote -> masks[i][j])?"NEG":"POS", vote -> masks[i][j]);
 
 			if(1){
 				int k;
-				for(k=0; k<=toli; k+=3){
+				for(k=0; k<toli; k+=3){
 					SUBREADprintf("    %d - %d : D=%d    ",  vote -> indel_recorder[i][j][k], vote -> indel_recorder[i][j][k+1], vote -> indel_recorder[i][j][k+2]);
 				}
 				SUBREADputs("");
@@ -2549,7 +2549,7 @@ float get_base_error_prob64(char v)
 static int PROB_QUAL_INT_TABLE[] = { 1000000 , 794328 , 630957 , 501187 , 398107 , 316227 , 251188 , 199526 , 158489 , 125892 , 100000 , 79432 , 63095 , 50118 , 39810 , 31622 , 25118 , 19952 , 15848 , 12589 , 10000 , 7943 , 6309 , 5011 , 3981 , 3162 , 2511 , 1995 , 1584 , 1258 , 1000 , 794 , 630 , 501 , 398 , 316 , 251 , 199 , 158 , 125 , 100 , 79 , 63 , 50 , 39 , 31 , 25 , 19 , 15 , 12 , 10 , 7 , 6 , 5 , 3 , 3 , 2 , 1 , 1 , 1 , 1 , 0 , 0 , 0 , };
 
 
-int get_base_error_prob33i(char v)
+int old_get_base_error_prob33i(char v)
 {
 	return PROB_QUAL_INT_TABLE[v-'!'];
 }
@@ -2576,7 +2576,7 @@ void bad_reverse_cigar(char * cigar)
 		{
 			char ncg2[103];
 			#ifdef __MINGW32__
-			sprintf(ncg2, "%I64d%c", tmpv, cc);
+			sprintf(ncg2, "%" PRId64 "%c", tmpv, cc);
 			#else
 			sprintf(ncg2, "%lld%c", tmpv, cc);
 			#endif

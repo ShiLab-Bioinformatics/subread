@@ -27,7 +27,12 @@
 #include "gene-value-index.h"
 
 #define GEHASH_DEFAULT_SIZE	2000000000
+
+#if __WORDSIZE == 64 || _WIN64
+#define GEHASH_BUCKET_LENGTH (100 - 69)
+#else
 #define GEHASH_BUCKET_LENGTH 100
+#endif
 
 #define gehash_fast_t gehash_t
 #define gehash_destory_fast gehash_destory

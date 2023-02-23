@@ -48,6 +48,7 @@ static struct option long_options[] =
 	{"hamming",  no_argument, 0, 'H'},
 	{"quality",  no_argument, 0, 'Q'},
 	{"fast",  no_argument, 0, 0},
+	{"scRNA_FQinput", no_argument, 0, 0},
 	{"DPMismatch",  required_argument, 0, 'X'},
 	{"DPMatch",  required_argument, 0, 'Y'},
 	{"DPGapOpen",  required_argument, 0, 'G'},
