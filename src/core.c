@@ -2191,7 +2191,7 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 		{
 			int write_len_2 = 100, 
 			#ifdef __MINGW32__
-			write_len = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%", PRId64 ,"\t%s\t%s%s%s\n", read_name_1, flag1, out_chro1, out_offset1, out_mapping_quality1, out_cigar1, mate_chro_for_1, out_offset2, out_tlen1, read_text_1 + display_offset1, qual_text_1, extra_additional_1[0]?"\t":"", extra_additional_1);
+			write_len = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%" PRId64 "\t%s\t%s%s%s\n", read_name_1, flag1, out_chro1, out_offset1, out_mapping_quality1, out_cigar1, mate_chro_for_1, out_offset2, out_tlen1, read_text_1 + display_offset1, qual_text_1, extra_additional_1[0]?"\t":"", extra_additional_1);
 			#else
 			write_len = sambamout_fprintf(global_context -> output_sam_fp , "%s\t%d\t%s\t%u\t%d\t%s\t%s\t%u\t%lld\t%s\t%s%s%s\n", read_name_1, flag1, out_chro1, out_offset1, out_mapping_quality1, out_cigar1, mate_chro_for_1, out_offset2, out_tlen1, read_text_1 + display_offset1, qual_text_1, extra_additional_1[0]?"\t":"", extra_additional_1);
 			#endif
