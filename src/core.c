@@ -168,9 +168,9 @@ void print_in_box(int line_width, int is_boundary, int options, char * pattern,.
 	is_wrapped = (options & PRINT_BOX_WRAPPED)?1:0;
 	
 	content= malloc(1200);
-	int content_len = vsprintf(content, pattern, args);
+	int content_len = vsnprintf(content, 1199, pattern, args);
 	out_line_buff= malloc(1200);
-	out_line_buff[0]=0;;
+	out_line_buff[0]=0;
 
 	if(is_wrapped){
 		int seg_i = 0;
@@ -264,9 +264,9 @@ void print_in_box(int line_width, int is_boundary, int options, char * pattern,.
 			int right_stars = line_width - content_len - 2 - left_stars;
 			strcat(out_line_buff,is_boundary==1?"//":"\\\\");
 			for(x1=0;x1<left_stars-2;x1++) strcat(out_line_buff,"=");
-			sprintf(out_line_buff+strlen(out_line_buff),"%c[36m", CHAR_ESC);
-			sprintf(out_line_buff+strlen(out_line_buff)," %s ", content);
-			sprintf(out_line_buff+strlen(out_line_buff),"%c[0m", CHAR_ESC);
+			SUBreadSprintf(out_line_buff+strlen(out_line_buff), 1200 -strlen(out_line_buff) ,"%c[36m", CHAR_ESC);
+			SUBreadSprintf(out_line_buff+strlen(out_line_buff), 1200 -strlen(out_line_buff)," %s ", content);
+			SUBreadSprintf(out_line_buff+strlen(out_line_buff), 1200 -strlen(out_line_buff),"%c[0m", CHAR_ESC);
 			for(x1=0;x1<right_stars-2;x1++) strcat(out_line_buff,"=");
 			strcat(out_line_buff,is_boundary==1?"\\\\":"//");
 			sublog_printf(SUBLOG_STAGE_RELEASED, SUBLOG_LEVEL_INFO, "%s", out_line_buff);
@@ -317,9 +317,9 @@ void print_in_box(int line_width, int is_boundary, int options, char * pattern,.
 				content[col1w+1]=0;
 				strcat(out_line_buff,content);
 				strcat(out_line_buff," ");
-				sprintf(out_line_buff+strlen(out_line_buff),"%c[36m", CHAR_ESC);
+				SUBreadSprintf(out_line_buff+strlen(out_line_buff), 1200-strlen(out_line_buff),"%c[36m", CHAR_ESC);
 				strcat(out_line_buff,content+col1w+2);
-				sprintf(out_line_buff+strlen(out_line_buff),"%c[0m", CHAR_ESC);
+				SUBreadSprintf(out_line_buff+strlen(out_line_buff), 1200-strlen(out_line_buff),"%c[0m", CHAR_ESC);
 			}
 			else
 				strcat(out_line_buff,content);
@@ -331,7 +331,7 @@ void print_in_box(int line_width, int is_boundary, int options, char * pattern,.
 		spaces[78]='|';
 		
 		right_spaces = max(1,right_spaces);
-		sprintf(out_line_buff+strlen(out_line_buff)," %c[0m%s", CHAR_ESC , spaces + (78 - right_spaces + 1));
+		SUBreadSprintf(out_line_buff+strlen(out_line_buff), 1200-strlen(out_line_buff)," %c[0m%s", CHAR_ESC , spaces + (78 - right_spaces + 1));
 		sublog_printf(SUBLOG_STAGE_RELEASED, SUBLOG_LEVEL_INFO, out_line_buff);
 	}
 	free(out_line_buff);
@@ -347,7 +347,7 @@ int show_summary(global_context_t * global_context)
 #ifndef MAKE_STANDALONE
 	// SAVE summary into files. This is only for Rsubread currently.
 	char sumname[MAX_FILE_NAME_LENGTH+30];
-	sprintf(sumname, "%s.summary", global_context->config.output_prefix);
+	SUBreadSprintf(sumname, MAX_FILE_NAME_LENGTH+30, "%s.summary", global_context->config.output_prefix);
 	FILE * sumfp = fopen(sumname,"w");
 	#ifdef __MINGW32__
 	fprintf(sumfp, "Total_%s\t%" PRIu64 "\n", global_context->input_reads.is_paired_end_reads?"fragments":"reads" , global_context -> all_processed_reads);
@@ -504,8 +504,8 @@ void show_progress(global_context_t * global_context, thread_context_t * thread_
 			char minchr[10];
 			float min_value = (miltime() - global_context -> start_time)*1./60;
 			if(min_value < 9.91)
-				sprintf(minchr, "%.01f", min_value);
-			else sprintf(minchr, "% 3d", (int)min_value);
+				SUBreadSprintf(minchr, 10, "%.01f", min_value);
+			else SUBreadSprintf(minchr, 10, "% 3d", (int)min_value);
 			print_in_box(80,0,0,"   processed % 3d million input reads in %s minutes", current_read_no/1000000, minchr);
 		}
 		//SUBREADprintf("TASK=%d, RNO=%u\n", task, current_read_no);
@@ -575,8 +575,8 @@ void show_progress(global_context_t * global_context, thread_context_t * thread_
 		char minchr[10];
 		float min_value = (miltime() - global_context -> start_time)*1./60;
 		if(min_value < 9.91)
-			sprintf(minchr, "%.01f", min_value);
-		else sprintf(minchr, "% 3d", (int)min_value);
+			SUBreadSprintf(minchr, 10, "%.01f", min_value);
+		else SUBreadSprintf(minchr, 10, "% 3d", (int)min_value);
 
 	//	print_in_box(81,0,0, "%4d%%%% completed, %s mins elapsed, total=%dk %s, rate=%2.1fk/s\r", (int)(finished_rate*100), minchr,(int)(guessed_all_reads*1./1000), global_context -> input_reads.is_paired_end_reads?"frags":"reads", reads_per_second/1000);
 		print_in_box(81,0,0, "%4d%%%% completed, %s mins elapsed, rate=%2.1fk %s per second\r", (int)(finished_rate*100), minchr, reads_per_second/1000, global_context -> input_reads.is_paired_end_reads?"fragments":"reads");
@@ -742,7 +742,7 @@ int parse_opts_core(int argc , char ** argv, global_context_t * global_context)
 				global_context->config.minimum_subread_for_second_read = atoi(optarg);
 				break;
 			case 't':
-				sprintf(global_context->config.temp_file_prefix, "%s/core-temp-sum-%06u-%05u", optarg, getpid(), myrand_rand()
+				SUBreadSprintf(global_context->config.temp_file_prefix, MAX_FILE_NAME_LENGTH, "%s/core-temp-sum-%06u-%05u", optarg, getpid(), myrand_rand()
 				);
 				break;
 			case 'F':
@@ -980,7 +980,7 @@ int convert_BAM_to_SAM(global_context_t * global_context, char * fname, int is_b
 	int disk_is_full = 0;
 	if(is_bam || (global_context->input_reads.is_paired_end_reads && !is_file_sorted))
 	{
-		sprintf(temp_file_name, "%s.sam", global_context->config.temp_file_prefix);
+		SUBreadSprintf(temp_file_name, MAX_FILE_NAME_LENGTH+80, "%s.sam", global_context->config.temp_file_prefix);
 		sambam_reader = SamBam_fopen(fname, is_bam?SAMBAM_FILE_BAM: SAMBAM_FILE_SAM);
 		if(!sambam_reader){
 			SUBREADprintf("Unable to open %s.\n", fname);
@@ -1058,7 +1058,7 @@ int convert_GZ_to_FQ(global_context_t * global_context, char * fname, int half_n
 	if(rawfp)
 	{
 		print_in_box(80,0,0,"Decompress %s...", fname);
-		sprintf(temp_file_name, "%s-%d.fq", global_context->config.temp_file_prefix, half_n);
+		SUBreadSprintf(temp_file_name, MAX_FILE_NAME_LENGTH+30, "%s-%d.fq", global_context->config.temp_file_prefix, half_n);
 		FILE * outfp = fopen(temp_file_name, "w");
 		if(outfp)
 		{
@@ -1368,7 +1368,7 @@ int add_head_tail_cut_softclipping(global_context_t * global_context, unsigned i
 	//SUBREADprintf("ADD_SOFT: %s , %d, %d\n", cigar,head_cut,tail_cut);
 
 	char cigar_added [CORE_MAX_CIGAR_STR_LEN];
-	int cigar_cursor = 0, read_cursor = 0, next_read_cursor = 0;
+	int cigar_cursor = 0, added_cigar_ptr=0, read_cursor = 0, next_read_cursor = 0;
 	int tmpi = 0, nch, has_M = 0;
 	unsigned int linear_cursor = linear;
 
@@ -1403,12 +1403,12 @@ int add_head_tail_cut_softclipping(global_context_t * global_context, unsigned i
 				//SUBREADprintf("OPTR=%c, THREE-LENS=%d,%d,%d\n", nch, head_S, remainder_tmpi, tail_S);
 				if(head_S >0 || tail_S > 0) if(nch !='M') return 0; 
 
-				if(head_S > 0) sprintf(cigar_added + strlen(cigar_added), "%dS", head_S );
+				if(head_S > 0) added_cigar_ptr += SUBreadSprintf(cigar_added + added_cigar_ptr , CORE_MAX_CIGAR_STR_LEN - added_cigar_ptr, "%dS", head_S );
 				if(remainder_tmpi > 0){
-					sprintf(cigar_added + strlen(cigar_added), "%d%c", remainder_tmpi , nch );
+					added_cigar_ptr += SUBreadSprintf(cigar_added + added_cigar_ptr , CORE_MAX_CIGAR_STR_LEN - added_cigar_ptr, "%d%c", remainder_tmpi , nch );
 					if( nch == 'M' ) has_M = 1;
 				}
-				if(tail_S > 0) sprintf(cigar_added + strlen(cigar_added), "%dS", tail_S );
+				if(tail_S > 0) added_cigar_ptr += SUBreadSprintf(cigar_added + added_cigar_ptr, CORE_MAX_CIGAR_STR_LEN - added_cigar_ptr, "%dS", tail_S );
 			}
 
 			read_cursor = next_read_cursor;
@@ -1455,7 +1455,7 @@ int convert_read_to_tmp(global_context_t * global_context , subread_output_conte
 		strcpy(r->cigar, r -> current_cigar_decompress);
 		r->strand = (current_result -> mapping_result -> result_flags & CORE_IS_NEGATIVE_STRAND)?1:0;
 
-		//sprintf(r->additional_information, "\tSM:i:%d",current_result -> final_mismatched_bases);
+		//SUBreadSprintf(r->additional_information, "\tSM:i:%d",current_result -> final_mismatched_bases);
 
 
 		//printf("SM='%s'\n", r->additional_information);
@@ -1483,7 +1483,7 @@ int convert_read_to_tmp(global_context_t * global_context , subread_output_conte
 						int soft_clipping_movement = 0;
 						soft_clipping_movement = get_soft_clipping_length(r->out_cigars[xk1]);
 						assert(chimaric_chr);
-						sprintf(r->additional_information + strlen(r->additional_information), "\tCG:Z:%s\tCP:i:%u\tCT:Z:%c\tCC:Z:%s", r->out_cigars[xk1] , max(1,chimeric_pos + soft_clipping_movement + 1), strand_xor?'-':'+' , chimaric_chr );
+						SUBreadSprintf(r->additional_information + strlen(r->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen(r->additional_information), "\tCG:Z:%s\tCP:i:%u\tCT:Z:%c\tCC:Z:%s", r->out_cigars[xk1] , max(1,chimeric_pos + soft_clipping_movement + 1), strand_xor?'-':'+' , chimaric_chr );
 					}
 					else is_r_OK = 0;
 				}
@@ -1518,14 +1518,14 @@ int convert_read_to_tmp(global_context_t * global_context , subread_output_conte
 
 		if(global_context -> config.do_breakpoint_detection && !(current_result -> realign_flags & CORE_NOTFOUND_DONORS))
 		{
-			sprintf(r->additional_information + strlen(r->additional_information), "\tXS:A:%c", (current_result -> realign_flags & CORE_IS_GT_AG_DONORS)?'+':'-');
+			SUBreadSprintf(r->additional_information + strlen(r->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen(r->additional_information), "\tXS:A:%c", (current_result -> realign_flags & CORE_IS_GT_AG_DONORS)?'+':'-');
 		}
 
 		/*
 		if(global_context -> config.more_accurate_fusions)
 		{
 			
-			sprintf(r->additional_information + strlen(r->additional_information), "\tDF:i:%d", current_result -> best_second_diff_bases >0?current_result -> best_second_diff_bases:9999 );
+			SUBreadSprintf(r->additional_information + strlen(r->additional_information), "\tDF:i:%d", current_result -> best_second_diff_bases >0?current_result -> best_second_diff_bases:9999 );
 		}*/
 
 
@@ -1617,44 +1617,6 @@ int get_junction_right_extension(char * remainder_cigar){
 		}
 	}
 	return ret;
-}
-
-void remove_soft_clipping(char * dst, char * src){
-	unsigned int tmpi = 0, head_clip = 0, tail_clip = 0, last_M = 0;
-	int cigar_cursor, is_first_s = 1, nch, nch2;
-
-	dst[0] = 0;
-
-	for(cigar_cursor = 0;;cigar_cursor++){
-		nch = src[cigar_cursor];
-		nch2 = src[cigar_cursor+1];
-
-		if(0 == nch)break;
-		if(isdigit(nch))tmpi = tmpi*10 + nch - '0';
-		else{
-			if('S' == nch){
-				if(is_first_s)	head_clip = tmpi;
-				if(nch2 == 0)	tail_clip = tmpi;
-			}
-			else if('M' == nch){
-				last_M = tmpi;
-			}
-			else{
-				if(last_M){
-					sprintf(dst + strlen(dst), "%uM", last_M + head_clip);
-					last_M = 0;
-					head_clip = 0;
-				}
-				sprintf(dst + strlen(dst), "%u%c", tmpi, nch);
-			}
-			tmpi=0;
-			is_first_s = 0;
-		}
-	}
-	if(last_M){
-		sprintf(dst + strlen(dst), "%uM" , last_M + tail_clip + head_clip);
-	}
-	
 }
 
 int getFirstM(char * cig){
@@ -2067,12 +2029,12 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 	if(global_context -> config.space_type == GENE_SPACE_BASE){ 
 		if(is_R1_OK) {// && !strstr(rec1->additional_information, "\tNM:i:")){
 			short rec1_edit = calc_edit_dist(global_context, rec1->raw_result, rec1->cigar , rec1->linear_position, read_text_1, raw_r1 -> final_mismatched_bases);
-			sprintf(rec1->additional_information + strlen( rec1->additional_information), "\tNM:i:%d", rec1_edit );
+			SUBreadSprintf(rec1->additional_information + strlen( rec1->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec1->additional_information), "\tNM:i:%d", rec1_edit );
 		}
 		if(global_context->input_reads.is_paired_end_reads && is_R2_OK) //&& !strstr(rec2->additional_information, "\tNM:i:"))
 		{
 			short rec2_edit = calc_edit_dist(global_context, rec2->raw_result, rec2->cigar , rec2->linear_position, read_text_2, raw_r2 -> final_mismatched_bases);
-			sprintf(rec2->additional_information + strlen( rec2->additional_information), "\tNM:i:%d", rec2_edit );
+			SUBreadSprintf(rec2->additional_information + strlen( rec2->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec2->additional_information), "\tNM:i:%d", rec2_edit );
 		}
 	}
 
@@ -3591,7 +3553,7 @@ int read_chunk_circles(global_context_t *global_context)
 	for(block_no = 0; block_no< global_context->index_block_number; block_no++)
 	{
 		char tmp_fname[MAX_FILE_NAME_LENGTH+ 30];
-		sprintf(tmp_fname, "%s.%02d.%c.array", global_context->config.index_prefix, block_no,  global_context->config.space_type == GENE_SPACE_COLOR?'c':'b');
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH + 30, "%s.%02d.%c.array", global_context->config.index_prefix, block_no,  global_context->config.space_type == GENE_SPACE_COLOR?'c':'b');
 		if(gvindex_load(&global_context -> all_value_indexes[block_no], tmp_fname)) return -1;
 	}
 	double period_load_index = miltime() - time_load_index;
@@ -3608,12 +3570,12 @@ int read_chunk_circles(global_context_t *global_context)
 			time_load_index = miltime();
 			if(global_context->index_block_number > 1 || chunk_no == 0)
 			{
-				sprintf(tmp_fname, "%s.%02d.%c.tab", global_context->config.index_prefix, global_context->current_index_block_number,  global_context->config.space_type == GENE_SPACE_COLOR?'c':'b');
+				SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+30, "%s.%02d.%c.tab", global_context->config.index_prefix, global_context->current_index_block_number,  global_context->config.space_type == GENE_SPACE_COLOR?'c':'b');
 				print_in_box(80,0,0, "Load the %d-th index block...",1+ global_context->current_index_block_number);
 
 				if(gehash_load(global_context -> current_index, tmp_fname)) return -1;
 				print_in_box(80,0,0, "The index block has been loaded.");
-				sprintf(tmp_fname, "%s.%02d.%c.array", global_context->config.index_prefix, global_context->current_index_block_number, global_context->config.space_type == GENE_SPACE_COLOR?'c':'b');
+				SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+30, "%s.%02d.%c.array", global_context->config.index_prefix, global_context->current_index_block_number, global_context->config.space_type == GENE_SPACE_COLOR?'c':'b');
 			}
 			period_load_index = miltime() - time_load_index;
 			global_context -> timecost_load_index += period_load_index;
@@ -3884,7 +3846,7 @@ void write_sam_headers(global_context_t * context)
 	if(context -> config.is_BAM_output)
 	{
 		char header_buff[100];
-		sprintf(header_buff, "@HD\tVN:1.0\tSO:%s", sorting_str);
+		SUBreadSprintf(header_buff, 100, "@HD\tVN:1.0\tSO:%s", sorting_str);
 		SamBam_writer_add_header(context -> output_bam_writer, header_buff, 0);
 		int xk1;
 		int last_offset = 0;
@@ -4171,7 +4133,7 @@ int load_global_context(global_context_t * context)
 	{
 		// ====== open output files ======
 		// Only the sam file is opened here; other files like bed, indel and etc are opened in init_modules()
-		sprintf(tmp_fname,"%s", context->config.output_prefix);
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH + 50,"%s", context->config.output_prefix);
 
 		print_in_box(80,0,0,"Create the output %s file.", context -> config.is_BAM_output?"BAM":"SAM");
 		if(context -> config.is_BAM_output)
@@ -4205,7 +4167,7 @@ int load_global_context(global_context_t * context)
 	
 	// ====== check index files, count blocks and load chro table ======
 	print_in_box(80,0,0,"Check the index.");
-	sprintf(tmp_fname, "%s.reads", context->config.index_prefix);
+	SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH + 50, "%s.reads", context->config.index_prefix);
 	if(!does_file_exist(tmp_fname))
 	{
 		sublog_printf(SUBLOG_STAGE_RELEASED, SUBLOG_LEVEL_ERROR,"Unable top open index '%s'. Please make sure that the correct prefix is specified and you have the permission to read these files. For example, if there are files '/opt/my_index.reads', '/opt/my_index.files' and etc, the index prefix should be specified as '/opt/my_index' without any suffix. \n", context->config.index_prefix);
@@ -4219,9 +4181,9 @@ int load_global_context(global_context_t * context)
 	}
 
 	if(context->config.space_type == GENE_SPACE_COLOR)
-		sprintf(tmp_fname, "%s.00.c.tab", context->config.index_prefix);
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH + 50, "%s.00.c.tab", context->config.index_prefix);
 	else
-		sprintf(tmp_fname, "%s.00.b.tab", context->config.index_prefix);
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH + 50, "%s.00.b.tab", context->config.index_prefix);
 	if(!does_file_exist(tmp_fname))
 	{
 		sublog_printf(SUBLOG_STAGE_RELEASED, SUBLOG_LEVEL_ERROR,"Your reads are in the %s space but the index was not built in the same space. Unable to precess the reads.\n", context->config.space_type == GENE_SPACE_COLOR?"color":"base");
@@ -4231,7 +4193,7 @@ int load_global_context(global_context_t * context)
 	context->index_block_number = 0; 
 	while(1)
 	{
-		sprintf(tmp_fname, "%s.%02d.%c.tab", context->config.index_prefix, context->index_block_number, context->config.space_type == GENE_SPACE_COLOR?'c':'b');
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH + 50, "%s.%02d.%c.tab", context->config.index_prefix, context->index_block_number, context->config.space_type == GENE_SPACE_COLOR?'c':'b');
 		if(!does_file_exist(tmp_fname))break;
 		context->index_block_number ++;
 		if(context->index_block_number>=2 && context->config.max_indel_length > 16)
@@ -4482,7 +4444,7 @@ int write_cigar_part(char *bincigar, char *cigar, int cigar_len , int * bincigar
 		tmpv += dtmpv; 
 	}
 
-	int added_len = sprintf(sec_buf, "%u%c", tmpv, charopt);
+	int added_len = SUBreadSprintf(sec_buf,13, "%u%c", tmpv, charopt);
 	if(added_len > cigar_len)
 		return -1;
 	memcpy(cigar, sec_buf, added_len);
@@ -4501,7 +4463,7 @@ int OLD_bincigar2cigar(char * cigar, int cigar_len, char * bincigar, int binciga
 		int bincigar_move = 0;
 		int cigar_sec_len = write_cigar_part(bincigar + bincigar_cursor, cigar+cigar_cursor, cigar_len-cigar_cursor-1, &bincigar_move);
 		if(cigar_sec_len<0){
-			sprintf(cigar,"%dM", read_len);
+			SUBreadSprintf(cigar, 11,"%dM", read_len);
 			return -1;
 		}
 		//printf("NPC=%s\n", cigar);
@@ -4537,7 +4499,7 @@ void absoffset_to_posstr(global_context_t * global_context, unsigned int pos, ch
 
 	locate_gene_position(pos, &global_context -> chromosome_table, &  ch, &off);
 
-	sprintf(res, "%s:%u", ch, off);
+	SUBreadSprintf(res,100 , "%s:%u", ch, off);
 }
 
 int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos, int is_first_section_negative_strand, int is_first_section_reversed, char * in_cigar, unsigned int * out_poses, char ** out_cigars, char * out_strands, int read_len, short * perfect_lens, char * read_name)
@@ -4641,7 +4603,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 				current_perfect_map_start = current_perfect_cursor;
 				tmpi = 0;
 				if(read_cursor<read_len)
-					sprintf(out_cigars[current_perfect_section_no] + out_cigar_writer_ptr,"%dS", read_len - read_cursor);
+					SUBreadSprintf(out_cigars[current_perfect_section_no] + out_cigar_writer_ptr, 60-out_cigar_writer_ptr,"%dS", read_len - read_cursor);
 
 				perfect_lens [current_perfect_section_no] = perfect_len ;
 				perfect_len = 0;
@@ -4651,7 +4613,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 
 				out_poses[current_perfect_section_no] = current_perfect_map_start - read_cursor;
 				out_strands[current_perfect_section_no] = is_negative?'-':'+';
-				out_cigar_writer_ptr = sprintf(out_cigars[current_perfect_section_no],"%dS", read_cursor);
+				out_cigar_writer_ptr = SUBreadSprintf(out_cigars[current_perfect_section_no], 60,"%dS", read_cursor);
 				is_chimeric_section_end  = 1;
 			}
 		}
@@ -4660,7 +4622,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 		{
 			if(isalpha(ncch))
 			{
-				out_cigar_writer_ptr+=sprintf(out_cigars[current_perfect_section_no]+out_cigar_writer_ptr, "%u%c", tmpi, ncch);
+				out_cigar_writer_ptr+=SUBreadSprintf(out_cigars[current_perfect_section_no]+out_cigar_writer_ptr, 60-out_cigar_writer_ptr, "%u%c", tmpi, ncch);
 			}
 			if(ncch == 'M'|| ncch == 'S')
 			{

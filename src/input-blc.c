@@ -124,7 +124,7 @@ int iBLC_guess_scan(struct iBLC_scan_t * scancon, char * data_dir ){
 				for(tti = 0; tti<22; tti++){
 					strcpy(testfile_name, data_dir);	
 					strcat(testfile_name, SR_PATH_SPLIT_STR);
-					sprintf(testfile_name+strlen(testfile_name), gen_fmt, 1, 2+tti);
+					SUBreadSprintf(testfile_name+strlen(testfile_name), MAX_FILE_NAME_LENGTH-strlen(testfile_name) , gen_fmt, 1, 2+tti);
 					autozip_fp tfp;
 					int resop = autozip_open(testfile_name, &tfp);
 					//printf("%d === %s    %s\n", resop, gen_fmt, testfile_name);
@@ -219,7 +219,7 @@ int iBLC_open_batch(input_BLC_t * blc_input ){
 
 	if(blc_input -> bcl_gzip_fps == NULL) blc_input -> bcl_gzip_fps = calloc( sizeof(void *), blc_input -> total_bases_in_each_cluster ); // for both FILE** and seekgz **
 	for(fii = 0; fii < blc_input -> total_bases_in_each_cluster; fii++){
-		sprintf(fname, blc_input -> bcl_format_string, blc_input -> current_lane, fii+1);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH, blc_input -> bcl_format_string, blc_input -> current_lane, fii+1);
 		if(blc_input -> bcl_is_gzipped){
 			blc_input -> bcl_gzip_fps[fii] = calloc( sizeof(seekable_zfile_t), 1);
 			int rv = seekgz_open(fname, blc_input -> bcl_gzip_fps[fii], NULL);
@@ -238,7 +238,7 @@ int iBLC_open_batch(input_BLC_t * blc_input ){
 		}
 	}
 
-	sprintf(fname, blc_input -> filter_format_string, blc_input -> current_lane,blc_input -> current_lane);
+	SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH, blc_input -> filter_format_string, blc_input -> current_lane,blc_input -> current_lane);
 	if(blc_input -> filter_is_gzipped){
 		blc_input -> filter_gzip_fp = calloc( sizeof(seekable_zfile_t), 1);
 		int rv = seekgz_open(fname, blc_input -> filter_gzip_fp, NULL);
@@ -313,11 +313,11 @@ void iCache_close_one_fp( cache_BCL_t * cache_input, int bcl_no){
 
 int iCache_open_one_fp( cache_BCL_t * cache_input, int bcl_no, int lane_no){
 	autozip_fp * tfp = bcl_no<0?&cache_input-> filter_fp :(cache_input -> bcl_gzip_fps + bcl_no);
-	char fname[MAX_FILE_NAME_LENGTH+1];
+	char fname[MAX_FILE_NAME_LENGTH];
 	if(bcl_no <0)
-		sprintf(fname,  cache_input -> filter_format_string, lane_no, lane_no);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH,  cache_input -> filter_format_string, lane_no, lane_no);
 	else
-		sprintf(fname,  cache_input -> bcl_format_string, lane_no, bcl_no+1);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH,  cache_input -> bcl_format_string, lane_no, bcl_no+1);
 
 	int rv = autozip_open(fname, tfp);
 //	SUBREADprintf("OPEN_AUTO %s = %d\n", fname, rv);
@@ -435,9 +435,9 @@ int iCache_copy_read(cache_BCL_t * cache_input, char * read_name, char * seq, ch
 	int * srii = cache_input -> single_read_lengths;
 
 	#ifdef __MINGW32__
-	sprintf(read_name, "R%011" PRIu64 ":", rno);
+	SUBreadSprintf(read_name, 15, "R%011" PRIu64 ":", rno);
 	#else
-	sprintf(read_name, "R%011llu:", rno);
+	SUBreadSprintf(read_name, 15, "R%011llu:", rno);
 	#endif
 	int is_dual_index = srii[3]>0;
 	idx_offset  = srii[0];
@@ -446,7 +446,7 @@ int iCache_copy_read(cache_BCL_t * cache_input, char * read_name, char * seq, ch
 	read_name[13+idx_offset]='|';
 	read_name[14+2*idx_offset]='|';
 	read_name[15+base_offset+idx_offset]='|';
-	sprintf(read_name +16 +2*base_offset, "|@RgLater@L%03d" , cache_input -> lane_no_in_chunk[cache_input -> read_no_in_chunk]);
+	SUBreadSprintf(read_name +16 +2*base_offset, 20, "|@RgLater@L%03d" , cache_input -> lane_no_in_chunk[cache_input -> read_no_in_chunk]);
 
 	for(bii = 0; bii < cache_input -> total_bases_in_each_cluster; bii++){
 		int nch = cache_input -> bcl_bin_cache[bii][cache_input -> read_no_in_chunk];
@@ -526,9 +526,9 @@ int iBLC_current_lane_next_read(input_BLC_t * blc_input, char * readname , char 
 	int bii, idx_offset, base_offset;
 
 	#ifdef __MINGW32__
-	sprintf(readname, "R%011" PRIu64 ":", blc_input -> read_number +1);
+	SUBreadSprintf(readname, 15, "R%011" PRIu64 ":", blc_input -> read_number +1);
 	#else
-	sprintf(readname, "R%011llu:", blc_input -> read_number +1);
+	SUBreadSprintf(readname, 15, "R%011llu:", blc_input -> read_number +1);
 	#endif
 
 	{
@@ -539,7 +539,7 @@ int iBLC_current_lane_next_read(input_BLC_t * blc_input, char * readname , char 
 	readname[13+idx_offset]='|';
 	readname[14+2*idx_offset]='|';
 	readname[15+base_offset+idx_offset]='|';
-	sprintf(readname +16 +2*base_offset, "|L%03d" , blc_input -> current_lane);
+	SUBreadSprintf(readname +16 +2*base_offset, 7, "|L%03d" , blc_input -> current_lane);
 
 	while(1){
 		int fch = blc_input -> filter_is_gzipped? seekgz_next_int8(blc_input -> filter_gzip_fp) :fgetc(blc_input -> filter_fp);
@@ -1563,9 +1563,9 @@ int input_mFQ_next_read(input_mFQ_t * fqs_input, char * readname , char * read, 
 		} else if(ret<0) return -1;
 
 		#ifdef __MINGW32__
-		sprintf(readname, "R%011" PRId64, fqs_input -> current_read_no);
+		SUBreadSprintf(readname, 13, "R%011" PRId64, fqs_input -> current_read_no);
 		#else
-		sprintf(readname, "R%011lld", fqs_input -> current_read_no);
+		SUBreadSprintf(readname, 13, "R%011lld", fqs_input -> current_read_no);
 		#endif
 		readname[12]='|';
 		ret = autozip_gets(&fqs_input -> autofp1, readname+13, MAX_READ_NAME_LEN);
@@ -1593,7 +1593,7 @@ int input_mFQ_next_read(input_mFQ_t * fqs_input, char * readname , char * read, 
 			for(x1=write_ptr; x1<write_ptr+ret; x1++) if(readname[x1]>='/') readname[x1]++;
 			ret --;
 			readname[write_ptr+ret]=0;
-		}else write_ptr+=sprintf(readname+write_ptr,"|input#%04d@L%03d", fqs_input -> current_file_no, fqs_input  -> current_guessed_lane_no);
+		}else write_ptr+=SUBreadSprintf(readname+write_ptr, 20,"|input#%04d@L%03d", fqs_input -> current_file_no, fqs_input  -> current_guessed_lane_no);
 
 		ret = autozip_gets(&fqs_input -> autofp3, tmpline, MAX_READ_NAME_LEN);
 		if(ret<=0){

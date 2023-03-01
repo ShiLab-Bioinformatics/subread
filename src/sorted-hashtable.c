@@ -1352,10 +1352,10 @@ int gehash_load_option(const char fname [], int option_no, int * result){
 	char tabname[MAX_FILE_NAME_LENGTH];
 	char magic_chars[8];
 	int found = 0, rrtv;
-	sprintf(tabname, "%s.00.b.tab", fname);
+	SUBreadSprintf(tabname, MAX_FILE_NAME_LENGTH, "%s.00.b.tab", fname);
 	FILE * fp = f_subr_open(tabname, "rb");
 	if(fp == NULL){
-		sprintf(tabname, "%s.00.c.tab", fname);
+		SUBreadSprintf(tabname, MAX_FILE_NAME_LENGTH, "%s.00.c.tab", fname);
 		fp = f_subr_open(tabname, "rb");
 	}
 	if(fp){	

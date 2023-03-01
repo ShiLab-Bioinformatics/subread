@@ -250,9 +250,9 @@ FILE * get_FP_by_read_name(propMapped_context * context, char * read_name)
 	{
 		char fname [MAX_FILE_NAME_LENGTH+40];
 		#ifdef __MINGW32__
-		sprintf(fname, "%s-%" PRIu64 ".bin", context->temp_file_prefix, hash_key);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+40, "%s-%" PRIu64 ".bin", context->temp_file_prefix, hash_key);
 		#else
-		sprintf(fname, "%s-%llu.bin", context->temp_file_prefix, hash_key);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+40, "%s-%llu.bin", context->temp_file_prefix, hash_key);
 		#endif
 		ret = f_subr_open(fname, "wb");
 		HashTablePut(context -> split_fp_table, NULL+1+(int)(hash_key), ret);
@@ -315,7 +315,7 @@ int init_PE_sambam(propMapped_context * context)
 
 	if(context->temp_file_prefix[0]==0) strcpy(context->temp_file_prefix, "./");
 
-	sprintf(context->temp_file_prefix+strlen(context->temp_file_prefix), "/prpm-temp-sum-%06u-%s", getpid(), mac_rand);
+	SUBreadSprintf(context->temp_file_prefix+strlen(context->temp_file_prefix), 40, "/prpm-temp-sum-%06u-%s", getpid(), mac_rand);
 
 	_PROPMAPPED_delete_tmp_prefix = context -> temp_file_prefix;
 	signal (SIGTERM, PROPMAPPED_SIGINT_hook);
@@ -373,7 +373,7 @@ int prop_PE(propMapped_context * context)
 		HashTableSetHashFunction(rname_table, fc_chro_hash);
 		HashTableSetDeallocationFunctions(rname_table , free, NULL);
 
-		sprintf(fname, "%s-%d.bin", context->temp_file_prefix, bini);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+25, "%s-%d.bin", context->temp_file_prefix, bini);
 		FILE * fp = f_subr_open(fname, "rb");
 		if(fp)
 		{

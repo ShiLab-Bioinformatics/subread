@@ -622,7 +622,7 @@ int process_snp_votes(FILE *out_fp, unsigned int offset , unsigned int reference
 	long long int reference_len_long = reference_len;
 	char * sprint_line;
 
-	sprintf(temp_file_name , "%s%s-%04u.bin", temp_prefix, chro_name, block_no);
+	SUBreadSprintf(temp_file_name, MAX_FILE_NAME_LENGTH , "%s%s-%04u.bin", temp_prefix, chro_name, block_no);
 	tmp_fp = f_subr_open(temp_file_name, "rb");
 
 	// if no temp file is here, do nothing 
@@ -675,7 +675,7 @@ int process_snp_votes(FILE *out_fp, unsigned int offset , unsigned int reference
 		memset(snp_fisher_BGC, 0, sizeof(float)  * reference_len);
 		memset(snp_fisher_VS, 0, sizeof(float)  * reference_len);
 
-		sprintf(temp_file_name , "%sBGC-%s-%04u.bin", temp_prefix, chro_name, block_no);
+		SUBreadSprintf(temp_file_name, MAX_FILE_NAME_LENGTH , "%sBGC-%s-%04u.bin", temp_prefix, chro_name, block_no);
 		tmp_fp = f_subr_open(temp_file_name, "rb");
 		if(tmp_fp)
 		{
@@ -869,7 +869,7 @@ int process_snp_votes(FILE *out_fp, unsigned int offset , unsigned int reference
 					if(midNexcellent_sup >= parameters->min_alternative_read_number)
 					{
 						char int_buf[12];
-						sprintf(int_buf, "%u", midNexcellent_sup);
+						SUBreadSprintf(int_buf, 11, "%u", midNexcellent_sup);
 						if(snps>0)
 						{
 							base_list[snps*2-1] = ',';
@@ -912,7 +912,7 @@ int process_snp_votes(FILE *out_fp, unsigned int offset , unsigned int reference
 							if(tested_int != true_value_int)
 								BGC_alt_reads += snp_BGC_piles[i*4+tested_int] ;
 						}
-						sprintf( BGC_Qvalue_str, ";CTRL_DP=%d;CTRL_MM=%d;CTRL_QV=%.4f;VS_QV=%.4f",BGC_all_reads, BGC_alt_reads, BGC_Qvalue,max(0,VS_Qvalue));
+						SUBreadSprintf( BGC_Qvalue_str, 120 , ";CTRL_DP=%d;CTRL_MM=%d;CTRL_QV=%.4f;VS_QV=%.4f",BGC_all_reads, BGC_alt_reads, BGC_Qvalue,max(0,VS_Qvalue));
 					}
 
 					snprintf(sprint_line,999, "%s\t%u\t.\t%c\t%s\t%.4f\t.\tDP=%d;MMsum=%d;MM=%s;BGTOTAL=%d;BGMM=%d%s\n", chro_name, BASE_BLOCK_LENGTH*block_no +1 + i, true_value,base_list, Qvalue, all_reads, POI_MM, supporting_list , snp_filter_background_matched[i]+snp_filter_background_unmatched[i], snp_filter_background_unmatched[i], BGC_Qvalue_str);
@@ -1411,7 +1411,7 @@ int SNP_calling(char * in_SAM_file, char * out_BED_file, char * in_FASTA_file, c
 		parameters -> subread_index_offsets = (gene_offset_t*)malloc(sizeof(gene_offset_t));
 		load_offsets (parameters -> subread_index_offsets, parameters->subread_index);
 
-		sprintf(table_fn,"%s.00.b.array", parameters->subread_index);
+		SUBreadSprintf(table_fn, MAX_FILE_NAME_LENGTH+80,"%s.00.b.array", parameters->subread_index);
 		parameters -> subread_index_array = (gene_value_index_t*) malloc(sizeof(gene_value_index_t));
 		if(gvindex_load(parameters -> subread_index_array,table_fn)) return -1;
 	}
@@ -1447,7 +1447,7 @@ int SNP_calling(char * in_SAM_file, char * out_BED_file, char * in_FASTA_file, c
 		char mac_rand[13];
 		mac_or_rand_str(mac_rand);
 
-		sprintf(temp_file_prefix, "%s/temp-snps-%06u-%s-", temp_location, getpid(), mac_rand);
+		SUBreadSprintf(temp_file_prefix, MAX_FILE_NAME_LENGTH, "%s/temp-snps-%06u-%s-", temp_location, getpid(), mac_rand);
 
 		_EXSNP_SNP_delete_temp_prefix = temp_file_prefix;
 
@@ -1470,7 +1470,7 @@ int SNP_calling(char * in_SAM_file, char * out_BED_file, char * in_FASTA_file, c
 		if(parameters -> background_input_file[0])
 		{
 			char temp_file_prefix2[MAX_FILE_NAME_LENGTH+80];
-			sprintf(temp_file_prefix2, "%sBGC-", temp_file_prefix);
+			SUBreadSprintf(temp_file_prefix2, MAX_FILE_NAME_LENGTH+80, "%sBGC-", temp_file_prefix);
 			if(break_SAM_file(parameters -> background_input_file, parameters -> is_BAM_file_input, temp_file_prefix2, NULL, NULL, known_chromosomes, 1, parameters -> bases_ignored_head_tail, parameters->subread_index_array, parameters->subread_index_offsets, NULL, NULL, NULL, NULL, 0,0, parameters -> use_soft_clipping_bases)) return -1;
 		}
 
@@ -1480,7 +1480,7 @@ int SNP_calling(char * in_SAM_file, char * out_BED_file, char * in_FASTA_file, c
 	parameters -> real_read_count = real_read_count;
 
 	char qfname[MAX_FILE_NAME_LENGTH+40];
-	sprintf(qfname, "%s.qStatic", temp_file_prefix);
+	SUBreadSprintf(qfname, MAX_FILE_NAME_LENGTH+40, "%s.qStatic", temp_file_prefix);
 	parameters -> final_phred_score = 0;
 	if (parameters -> delete_piles)
 		unlink(qfname);

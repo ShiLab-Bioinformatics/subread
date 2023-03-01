@@ -270,7 +270,7 @@ int grc_check_parameters(genRand_context_t * grc){
 		ret=1;
 	}else{
 		char outname[MAX_FILE_NAME_LENGTH+30];
-		sprintf(outname, "%s.for_test.log",grc->output_prefix);
+		SUBreadSprintf(outname, MAX_FILE_NAME_LENGTH+30, "%s.for_test.log",grc->output_prefix);
 		FILE * test_out = fopen(outname, "w");
 		if(test_out){
 			fclose(test_out);
@@ -481,7 +481,7 @@ int grc_summary_fasta(genRand_context_t * grc){
 		return -1;
 	}
 
-	sprintf(outname,"%s.faSummary", grc->output_prefix);
+	SUBreadSprintf(outname, MAX_FILE_NAME_LENGTH+30,"%s.faSummary", grc->output_prefix);
 	int ret = autozip_open(grc->transcript_fasta_file, &auto_FP);
 	if(ret<0){
 		SUBREADprintf("Error: cannot open the fasta file as input\n");
@@ -526,7 +526,7 @@ int grc_summary_fasta(genRand_context_t * grc){
 				HelpFuncMD5_Final(md5res, &md5ctx);
 				//SUBREADprintf("%s\t",seq_name);int md5i;for(md5i=0;md5i<16;md5i++)SUBREADprintf("%02X",0xff&(int)md5res[md5i]);SUBREADputs("");
 				char * md5mem = malloc(33);
-				int md5i;for(md5i=0;md5i<16;md5i++)sprintf(md5mem+2*md5i, "%02X", 0xff&(int)md5res[md5i]);
+				int md5i;for(md5i=0;md5i<16;md5i++)SUBreadSprintf(md5mem+2*md5i, 3, "%02X", 0xff&(int)md5res[md5i]);
 
 				long dupval = HashTableGet(seq_duplicate_tab,md5mem)-NULL;
 				dupval++;
@@ -577,7 +577,7 @@ int grc_summary_fasta(genRand_context_t * grc){
 		HelpFuncMD5_Final(md5res, &md5ctx);
 		//SUBREADprintf("%s\t",seq_name);int md5i;for(md5i=0;md5i<16;md5i++)SUBREADprintf("%02X",0xff&(int)md5res[md5i]);SUBREADputs("");
 		char * md5mem = malloc(33);
-		int md5i;for(md5i=0;md5i<16;md5i++)sprintf(md5mem+2*md5i, "%02X", 0xff&(int)md5res[md5i]);
+		int md5i;for(md5i=0;md5i<16;md5i++)SUBreadSprintf(md5mem+2*md5i, 3, "%02X", 0xff&(int)md5res[md5i]);
 		long dupval = HashTableGet(seq_duplicate_tab,md5mem)-NULL;
 		dupval++;
 		HashTablePutReplace( seq_duplicate_tab, md5mem, NULL+dupval ,0);
@@ -766,7 +766,7 @@ int grc_load_env(genRand_context_t *grc){
 			if(NULL != seq_name){
 				char * md5mem = malloc(33); unsigned char md5res[16];
 				HelpFuncMD5_Final(md5res, &md5ctx);
-				int md5i;for(md5i=0;md5i<16;md5i++)sprintf(md5mem+2*md5i, "%02X", 0xff&(int)md5res[md5i]);
+				int md5i;for(md5i=0;md5i<16;md5i++)SUBreadSprintf(md5mem+2*md5i, 3, "%02X", 0xff&(int)md5res[md5i]);
 				char * had_tab = HashTableGet(seq_duplicate_tab, md5mem);
 				long seq_exp = HashTableGet(grc->expression_levels, seq_name)-NULL;
 				if(had_tab && seq_exp>1) total_dup++;//SUBREADprintf("Warning: duplicate sequence was found in '%s' and '%s'.\n", seq_name, had_tab);
@@ -825,7 +825,7 @@ int grc_load_env(genRand_context_t *grc){
 	if(NULL != seq_name && lbuf_used >0){
 		char * md5mem = malloc(33); unsigned char md5res[16];
 		HelpFuncMD5_Final(md5res, &md5ctx);
-		int md5i;for(md5i=0;md5i<16;md5i++)sprintf(md5mem+2*md5i, "%02X", 0xff&(int)md5res[md5i]);
+		int md5i;for(md5i=0;md5i<16;md5i++)SUBreadSprintf(md5mem+2*md5i, 3, "%02X", 0xff&(int)md5res[md5i]);
 		long seq_exp = HashTableGet(grc->expression_levels, seq_name)-NULL;
 		char * had_tab = HashTableGet(seq_duplicate_tab, md5mem);
 		if(had_tab && seq_exp>1)total_dup++;// SUBREADprintf("Warning: duplicate sequence was found in '%s' and '%s'.\n", seq_name, had_tab);
@@ -851,15 +851,15 @@ int grc_load_env(genRand_context_t *grc){
 
 	char outname[MAX_FILE_NAME_LENGTH+30];
 
-	sprintf(outname,"%s.truthCounts", grc->output_prefix);
+	SUBreadSprintf(outname, MAX_FILE_NAME_LENGTH+30,"%s.truthCounts", grc->output_prefix);
 	grc->counts_out_fp = fopen(outname,"w");
 	fprintf(grc->counts_out_fp, "## CMD :%s\nTranscriptID\tLength\tCount\n", grc->cmd_line);
 
-	sprintf(outname,"%s_R1.fastq.gz", grc->output_prefix);
+	SUBreadSprintf(outname, MAX_FILE_NAME_LENGTH+30,"%s_R1.fastq.gz", grc->output_prefix);
 	grc->out_fps[0] = gzopen(outname, "wb");
 
 	if(grc->is_paired_end){
-		sprintf(outname,"%s_R2.fastq.gz", grc->output_prefix);
+		SUBreadSprintf(outname, MAX_FILE_NAME_LENGTH+30,"%s_R2.fastq.gz", grc->output_prefix);
 		grc->out_fps[1] = gzopen(outname, "wb");
 	}else grc->out_fps[1]=NULL;
 
@@ -988,7 +988,7 @@ int gen_rnaseq_reads_main(int argc, char ** argv)
 
 		if(ret && strlen(grc.output_prefix)>0){
 			char delfn[30+MAX_FILE_NAME_LENGTH];
-			sprintf(delfn, "%s.faSummary", grc.output_prefix);
+			SUBreadSprintf(delfn, 30+MAX_FILE_NAME_LENGTH, "%s.faSummary", grc.output_prefix);
 			//SUBREADprintf("UNLINK: %s\n", delfn);
 			unlink(delfn);
 		}

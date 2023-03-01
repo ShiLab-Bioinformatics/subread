@@ -92,7 +92,7 @@ int parse_base_blocks(char * temp_prefix, chromosome_t * chromosomes, int thresh
 			char temp_file[MAX_FILE_NAME_LENGTH];
 			unsigned int block_start_base = BASE_BLOCK_LENGTH * i;
 			int rrtv;
-			sprintf(temp_file , "%s%s-%04u.bin",temp_prefix, chromosomes[chromosome_no].chromosome_name, i);
+			SUBreadSprintf(temp_file, MAX_FILE_NAME_LENGTH , "%s%s-%04u.bin",temp_prefix, chromosomes[chromosome_no].chromosome_name, i);
 			//printf("FNAME:%s\n", temp_file);
 			chromosome_block_no++;
 
@@ -264,7 +264,7 @@ int repeated_read_removal(char * in_SAM_file, int threshold, char * out_SAM_file
 
 	char mac_rand[13];
 	mac_or_rand_str(mac_rand);
-	sprintf(temp_file_prefix, "%s/temp-delrep-%06u-%s-", temp_location==NULL?".":temp_location, getpid(), mac_rand);
+	SUBreadSprintf(temp_file_prefix, MAX_FILE_NAME_LENGTH, "%s/temp-delrep-%06u-%s-", temp_location==NULL?".":temp_location, getpid(), mac_rand);
 
 	if(break_SAM_file(in_SAM_file, input_file_type == FILE_TYPE_BAM, temp_file_prefix, &real_read_count, NULL, known_chromosomes, 0 /* This 0 means that the sequence/quality/cigar fields are not needed in the temp files*/, 0, NULL, NULL, NULL, NULL, NULL, &total_mapped_reads, 0,1, 0)){
 		SUBREADprintf("ERROR: cannot parse the input file.\n");

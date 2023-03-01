@@ -132,7 +132,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 
 	char * fn = malloc(3100);
 	memset(read_offsets,0, chro_table_maxsize*sizeof(int));
-	sprintf(fn, "%s.files", index_prefix);
+	SUBreadSprintf(fn, 3100, "%s.files", index_prefix);
 	unlink(fn);
 
 	status = NEXT_FILE;
@@ -164,12 +164,12 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 					//SUBREADprintf ("Processing chromosome files ...\n");
 
 					if(0==for_measure_buckets){
-						sprintf (fn, "%s.%02d.%c.tab", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
+						SUBreadSprintf (fn, 3100, "%s.%02d.%c.tab", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
 						SUBREADfflush(stdout);
 	
 						if(!dump_res)dump_res |= gehash_dump(&table, fn);
 	
-						sprintf (fn, "%s.%02d.%c.array", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
+						SUBreadSprintf (fn, 3100, "%s.%02d.%c.array", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
 						if(!dump_res)dump_res |= gvindex_dump(&value_array_index, fn);
 						gvindex_destory(&value_array_index) ;
 	
@@ -180,13 +180,13 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 
 					for(i=table_no+1; i<100; i++)
 					{
-						sprintf(fn, "%s.%02d.%c.tab", index_prefix, i, IS_COLOR_SPACE?'c':'b');
+						SUBreadSprintf(fn, 3100, "%s.%02d.%c.tab", index_prefix, i, IS_COLOR_SPACE?'c':'b');
 						unlink(fn);
-						sprintf(fn, "%s.%02d.%c.array", index_prefix, i, IS_COLOR_SPACE?'c':'b');
+						SUBreadSprintf(fn, 3100, "%s.%02d.%c.array", index_prefix, i, IS_COLOR_SPACE?'c':'b');
 						unlink(fn);
 					}
 
-					sprintf (fn, "%s.reads", index_prefix);
+					SUBreadSprintf (fn, 3100, "%s.reads", index_prefix);
 					fp = f_subr_open(fn, "wb");
 					for (i=0; i<read_no; i++)
 						fprintf(fp, "%u\t%s\n", read_offsets[i], read_names+i*MAX_READ_NAME_LEN);
@@ -220,7 +220,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 
 				*(read_names + MAX_READ_NAME_LEN*read_no + i) = 0;
 
-				sprintf(fn, "%s.files", index_prefix);
+				SUBreadSprintf(fn, 3100, "%s.files", index_prefix);
 				FILE * fname_fp = f_subr_open(fn, "a");
 				fprintf(fname_fp, "%s\t%s\t%ld\n", read_names+read_no*MAX_READ_NAME_LEN, ginp -> filename, ftell(ginp -> input_fp));
 				fclose(fname_fp);
@@ -274,11 +274,11 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 				}
 
 				if(0==for_measure_buckets){
-					sprintf(fn, "%s.%02d.%c.tab", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
+					SUBreadSprintf(fn, 3100, "%s.%02d.%c.tab", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
 					SUBREADfflush(stdout);
 
 					if(!dump_res)dump_res |= gehash_dump(&table, fn);
-					sprintf(fn, "%s.%02d.%c.array", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
+					SUBreadSprintf(fn, 3100, "%s.%02d.%c.array", index_prefix, table_no, IS_COLOR_SPACE?'c':'b');
 					if(!dump_res)dump_res |= gvindex_dump(&value_array_index, fn);
 				}
 
@@ -422,19 +422,19 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 	free(read_offsets);
 	if(dump_res){
 		SUBREADprintf("No index was built.\n");
-		sprintf(fn, "%s.files", index_prefix);
+		SUBreadSprintf(fn, 3100, "%s.files", index_prefix);
 		unlink(fn);
-		sprintf(fn, "%s.reads", index_prefix);
+		SUBreadSprintf(fn, 3100, "%s.reads", index_prefix);
 		unlink(fn);
 		int index_i;
 		for(index_i = 0; index_i <= 99; index_i++){
-			sprintf(fn, "%s.%02d.b.tab", index_prefix, index_i);
+			SUBreadSprintf(fn, 3100, "%s.%02d.b.tab", index_prefix, index_i);
 			unlink(fn);
-			sprintf(fn, "%s.%02d.c.tab", index_prefix, index_i);
+			SUBreadSprintf(fn, 3100, "%s.%02d.c.tab", index_prefix, index_i);
 			unlink(fn);
-			sprintf(fn, "%s.%02d.b.array", index_prefix, index_i);
+			SUBreadSprintf(fn, 3100, "%s.%02d.b.array", index_prefix, index_i);
 			unlink(fn);
-			sprintf(fn, "%s.%02d.c.array", index_prefix, index_i);
+			SUBreadSprintf(fn, 3100, "%s.%02d.c.array", index_prefix, index_i);
 			unlink(fn);
 		}
 	}
@@ -518,7 +518,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 	read_no = 0;
 
 	char * fn = malloc(3100);
-	sprintf(fn, "%s.files", index_prefix);
+	SUBreadSprintf(fn, 3100, "%s.files", index_prefix);
 	unlink(fn);
 
 	status = NEXT_FILE;
@@ -1240,9 +1240,9 @@ int main_buildindex(int argc,char ** argv)
 	if(tmp_fa_file[0]==0)strcpy(tmp_fa_file, "./");
 
 	#ifdef __MINGW32__
-	sprintf(tmp_fa_file+strlen(tmp_fa_file), "/subread-index-sam-%06u-%06d", getpid(),(int)(time(NULL) % 1000000));
+	SUBreadSprintf(tmp_fa_file+strlen(tmp_fa_file), 50, "/subread-index-sam-%06u-%06d", getpid(),(int)(time(NULL) % 1000000));
 	#else
-	sprintf(tmp_fa_file+strlen(tmp_fa_file), "/subread-index-sam-%06u-XXXXXX", getpid());
+	SUBreadSprintf(tmp_fa_file+strlen(tmp_fa_file),50, "/subread-index-sam-%06u-XXXXXX", getpid());
 	int tmpfdd = mkstemp(tmp_fa_file);
 	if(tmpfdd == -1){
 		SUBREADprintf("ERROR: cannot create temp file\n");
@@ -1250,7 +1250,7 @@ int main_buildindex(int argc,char ** argv)
 	}
 	#endif
 
-	sprintf(log_file_name, "%s.log", output_file);
+	SUBreadSprintf(log_file_name, MAX_FILE_NAME_LENGTH+20, "%s.log", output_file);
 	FILE * log_fp = f_subr_open(log_file_name,"wb");
 
 	signal (SIGTERM, SIGINT_hook);

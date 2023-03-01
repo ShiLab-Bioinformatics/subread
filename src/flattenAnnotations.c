@@ -119,7 +119,7 @@ int flatAnno_do_anno_1R(char * gene_name, char * transcript_name, char * chro_na
 	}
 	int i, found = 0;
 	char chro_strand[MAX_CHROMOSOME_NAME_LEN+10+FEATURE_NAME_LENGTH];
-	sprintf( chro_strand, "%s\t%s\t%c", gene_name,chro_name,is_negative_strand?'-':'+');
+	SUBreadSprintf( chro_strand, MAX_CHROMOSOME_NAME_LEN+10+FEATURE_NAME_LENGTH, "%s\t%s\t%c", gene_name,chro_name,is_negative_strand?'-':'+');
 	for(i=0; i<chro_strand_list_for_gene->numOfElements; i++){
 		char * old_ch_st = ArrayListGet(chro_strand_list_for_gene,i);
 		if(strcmp(old_ch_st, chro_strand) == 0){

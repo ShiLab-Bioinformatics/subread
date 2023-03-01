@@ -263,7 +263,7 @@ void bktable_append(bucketed_table_t * tab, char * chro, unsigned int pos, void 
 		unsigned int curr_key_pos = twokeys[keyi];
 		if(curr_key_pos == 0xffffffff) continue;
 
-		sprintf(static_key, "%s:%u", chro, curr_key_pos);
+		SUBreadSprintf(static_key, 20 + MAX_CHROMOSOME_NAME_LEN, "%s:%u", chro, curr_key_pos);
 
 		bucketed_table_bucket_t * had_items = HashTableGet(tab -> entry_table, static_key);
 
@@ -317,7 +317,7 @@ int bktable_lookup(bucketed_table_t * tab, char * chro, unsigned int start_pos, 
 	my_key_pos = start_pos - start_pos % tab -> maximum_interval_length;
 
 	char static_key [20 + MAX_CHROMOSOME_NAME_LEN];
-	sprintf(static_key, "%s:%u", chro, my_key_pos);
+	SUBreadSprintf(static_key, 20 + MAX_CHROMOSOME_NAME_LEN, "%s:%u", chro, my_key_pos);
 
 	bucketed_table_bucket_t * had_items = HashTableGet(tab -> entry_table, static_key);
 

@@ -639,7 +639,7 @@ int print_FC_configuration(fc_thread_global_context_t * global_context, char * a
 	char MAC_or_random[13];
 	mac_or_rand_str(MAC_or_random);
 
-	sprintf(sam_used, "%s/featureCounts_test_file_writable-%06d-%s.tmp", global_context -> temp_file_dir, getpid(), MAC_or_random);
+	SUBreadSprintf(sam_used, strlen(sam)+MAX_FILE_NAME_LENGTH, "%s/featureCounts_test_file_writable-%06d-%s.tmp", global_context -> temp_file_dir, getpid(), MAC_or_random);
 	FILE * fp = fopen(sam_used,"w");
 	if(fp){
 		fclose(fp);
@@ -683,11 +683,11 @@ int print_FC_configuration(fc_thread_global_context_t * global_context, char * a
 	next_ntxt[0]=0;
 
 	if(nNonExistFiles)
-		sprintf(next_ntxt, "%d unknown file%s", nNonExistFiles, nNonExistFiles>1?"s":"");
+		SUBreadSprintf(next_ntxt,30, "%d unknown file%s", nNonExistFiles, nNonExistFiles>1?"s":"");
 	if(nBAMfiles)
-		sprintf(bam_ntxt, "%d BAM file%s  ", nBAMfiles, nBAMfiles>1?"s":"");
+		SUBreadSprintf(bam_ntxt, 30, "%d BAM file%s  ", nBAMfiles, nBAMfiles>1?"s":"");
 	if(nfiles-nNonExistFiles-nBAMfiles)
-		sprintf(sam_ntxt, "%d SAM file%s  ", nfiles-nNonExistFiles-nBAMfiles , (nfiles-nNonExistFiles-nBAMfiles)>1?"s":"");
+		SUBreadSprintf(sam_ntxt, 30, "%d SAM file%s  ", nfiles-nNonExistFiles-nBAMfiles , (nfiles-nNonExistFiles-nBAMfiles)>1?"s":"");
 
 
 	strcpy(sam_used, sam);
@@ -717,7 +717,7 @@ int print_FC_configuration(fc_thread_global_context_t * global_context, char * a
 
 	int exp_all_same = 1, ass_all_same = 1;
 
-	sprintf(PEexpectStr,"%s, ", (PE_exp[0]=='1')?"yes":"no");
+	SUBreadSprintf(PEexpectStr, nfiles * 6,"%s, ", (PE_exp[0]=='1')?"yes":"no");
 	char * Ystr = nfiles>5?"Y":"yes";
 	char * Nstr = nfiles>5?"N":"no";
 	if(PE_exp[1]){
@@ -727,12 +727,12 @@ int print_FC_configuration(fc_thread_global_context_t * global_context, char * a
 		if(!exp_all_same){
 			PEexpectStr[0]=0;
 			for(x1=0; PE_exp[x1]; x1++)
-				sprintf(PEexpectStr+strlen(PEexpectStr), "%s, ", (PE_exp[x1]=='1')?Ystr:Nstr);
+				SUBreadSprintf(PEexpectStr+strlen(PEexpectStr), nfiles * 6 - strlen(PEexpectStr), "%s, ", (PE_exp[x1]=='1')?Ystr:Nstr);
 		}
 	}
 	PEexpectStr[strlen(PEexpectStr)-2]=0;
 
-	sprintf(PEassignStr,"%s, ", (PE_ass[0]=='1')?"yes":"no");
+	SUBreadSprintf(PEassignStr, nfiles * 6,"%s, ", (PE_ass[0]=='1')?"yes":"no");
 	if(PE_ass[1]){
 		for(x1=1; PE_ass[x1]; x1++)
 			if(PE_ass[x1]!=PE_ass[0]) ass_all_same=0;
@@ -740,7 +740,7 @@ int print_FC_configuration(fc_thread_global_context_t * global_context, char * a
 		if(!ass_all_same){
 			PEassignStr[0]=0;
 			for(x1=0; PE_ass[x1]; x1++)
-				sprintf(PEassignStr+strlen(PEassignStr), "%s, ", (PE_ass[x1]=='1')?Ystr:Nstr);
+				SUBreadSprintf(PEassignStr+strlen(PEassignStr), nfiles * 6 - strlen(PEassignStr), "%s, ", (PE_ass[x1]=='1')?Ystr:Nstr);
 		}
 	}
 	PEassignStr[strlen(PEassignStr)-2]=0;
@@ -928,23 +928,23 @@ int locate_junc_features(fc_thread_global_context_t *global_context, char * chro
 	if(global_context -> BAM_chros_to_anno_table) {
 		char * anno_chro_name = HashTableGet( global_context -> BAM_chros_to_anno_table , chro);
 		if(anno_chro_name){
-			sprintf(bucket_key, "%s:%u", anno_chro_name, pos - pos % JUNCTION_BUCKET_STEP);
+			SUBreadSprintf(bucket_key, CHROMOSOME_NAME_LENGTH +20, "%s:%u", anno_chro_name, pos - pos % JUNCTION_BUCKET_STEP);
 			list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
 		}
 	}
 
 	if(list == NULL){
-		sprintf(bucket_key, "%s:%u", chro, pos - pos % JUNCTION_BUCKET_STEP);
+		SUBreadSprintf(bucket_key,  CHROMOSOME_NAME_LENGTH +20, "%s:%u", chro, pos - pos % JUNCTION_BUCKET_STEP);
 		list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
 	}
 
 	if(list == NULL && strlen(chro)>3 && memcmp(chro, "chr", 3)==0){
-		sprintf(bucket_key, "%s:%u", chro+3, pos - pos % JUNCTION_BUCKET_STEP);
+		SUBreadSprintf(bucket_key,  CHROMOSOME_NAME_LENGTH +20, "%s:%u", chro+3, pos - pos % JUNCTION_BUCKET_STEP);
 		list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
 	}
 
 	if(list == NULL){
-		sprintf(bucket_key, "chr%s:%u", chro, pos - pos % JUNCTION_BUCKET_STEP);
+		SUBreadSprintf(bucket_key,  CHROMOSOME_NAME_LENGTH +20, "chr%s:%u", chro, pos - pos % JUNCTION_BUCKET_STEP);
 		list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
 	}
 
@@ -1191,7 +1191,7 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 			xk1++;
 		} else if(file_type == FILE_TYPE_GTF) {
 			char feature_name_tmp[FEATURE_NAME_LENGTH];
-			sprintf(feature_name_tmp, "LINE_%07u", xk1 + 1);
+			SUBreadSprintf(feature_name_tmp, FEATURE_NAME_LENGTH, "LINE_%07u", xk1 + 1);
 			char * seq_name = strtok_r(file_line,"\t",&token_temp);
 			strtok_r(NULL,"\t", &token_temp);// source
 			char * feature_type = strtok_r(NULL,"\t", &token_temp);// feature_type
@@ -2099,56 +2099,6 @@ int process_pairer_header (void * pairer_vp, int thread_no, int is_text, unsigne
 }
 
 void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context, char * bin1, char * bin2);
-
-void make_dummy(char * rname, char * bin1, char * out_txt2,  SamBam_Reference_Info * sambam_chro_table){
-	char * tmptr = NULL;
-
-	//SUBREADprintf("S=%s  ", rname);
-	char * realname = strtok_r(rname, "\027", &tmptr);
-	//int len_name = strlen(realname);
-	int r1_chro = atoi(strtok_r(NULL, "\027", &tmptr));
-	int r1_pos = atoi(strtok_r(NULL, "\027", &tmptr));
-	int r2_chro = atoi(strtok_r(NULL, "\027", &tmptr));
-	int r2_pos = atoi(strtok_r(NULL, "\027", &tmptr));
-	int HItag = atoi(strtok_r(NULL, "\027", &tmptr));
-	int mate_FLAG = 0;
-	memcpy(&mate_FLAG, bin1 + 16, 4);
-	mate_FLAG = 0xffff&(mate_FLAG >>16);
-	int mate_tlen = 0;
-	memcpy(&mate_tlen, bin1 + 32, 4);
-
-	if(r1_chro<0) r1_pos=-1;
-	if(r2_chro<0) r2_pos=-1;
-
-	int my_chro = (mate_FLAG&0x40)? r2_chro : r1_chro;
-	int my_pos = (mate_FLAG&0x40)? r2_pos : r1_pos;
-	int mate_chro = (mate_FLAG&0x40)? r1_chro : r2_chro;
-	int mate_pos = (mate_FLAG&0x40)? r1_pos : r2_pos;
-
-	//int bin_mq_nl = (len_name+1);
-	int my_flag = (mate_FLAG&0x40)? 0x80:0x40;
-	my_flag |= 1;
-	if(mate_FLAG & 8)my_flag |=4;
-	if(mate_FLAG & 4)my_flag |=8;
-	if(mate_FLAG & 0x10) my_flag |= 0x20;
-	if(mate_FLAG & 0x20) my_flag |= 0x10;
-
-	char HItagStr[20];
-	if(HItag>=0){
-		sprintf(HItagStr, "\tHI:i:%d", HItag);
-	}else{
-		HItagStr[0]=0;
-	}
-
-	char * my_chro_str = "*";
-	if(my_chro >= 0) my_chro_str = sambam_chro_table[my_chro].chro_name;
-
-	char * mate_chro_str = "*";
-	if(mate_chro >= 0) mate_chro_str = sambam_chro_table[mate_chro].chro_name;
-
-	sprintf(out_txt2, "%s\t%d\t%s\t%d\t0\t*\t%s\t%d\t0\tN\tI\t%s", realname, my_flag, my_chro_str, max(0, my_pos),
-		mate_chro_str, max(0,mate_pos), HItagStr);
-}
 
 int reverse_flag(int mf){
 	int ret = mf & 3;
@@ -3605,8 +3555,9 @@ void add_fragment_supported_junction(	fc_thread_global_context_t * global_contex
 			) j_two -> chromosome_name_left[0]=0;
 		}
 
-		char * this_key = malloc(strlen(j_one->chromosome_name_left) + strlen(j_one->chromosome_name_right)  + 36);
-		sprintf(this_key, "%s\t%u\t%s\t%u", j_one->chromosome_name_left, j_one -> last_exon_base_left, j_one->chromosome_name_right, j_one -> first_exon_base_right);
+		size_t key_maxlen = strlen(j_one->chromosome_name_left) + strlen(j_one->chromosome_name_right)  + 36;
+		char * this_key = malloc(key_maxlen);
+		SUBreadSprintf(this_key, key_maxlen, "%s\t%u\t%s\t%u", j_one->chromosome_name_left, j_one -> last_exon_base_left, j_one->chromosome_name_right, j_one -> first_exon_base_right);
 		void * count_ptr = HashTableGet(junction_counting_table, this_key);
 		srInt_64 count_junc = count_ptr - NULL;
 		HashTablePut(junction_counting_table, this_key, NULL+count_junc + 1);
@@ -3614,10 +3565,12 @@ void add_fragment_supported_junction(	fc_thread_global_context_t * global_contex
 //		#warning "CONTINUE SHOULD BE REMOVED!!!."
 //			continue;
 
-		char * left_key = malloc(strlen(j_one->chromosome_name_left) + 16);
-		char * right_key = malloc(strlen(j_one->chromosome_name_right) + 16);
-		sprintf(left_key, "%s\t%u", j_one->chromosome_name_left, j_one -> last_exon_base_left);
-		sprintf(right_key, "%s\t%u", j_one->chromosome_name_right, j_one -> first_exon_base_right);
+		size_t left_keysize = strlen(j_one->chromosome_name_left) + 16;
+		size_t right_keysize = strlen(j_one->chromosome_name_right) + 16;
+		char * left_key = malloc(left_keysize);
+		char * right_key = malloc(right_keysize);
+		SUBreadSprintf(left_key, left_keysize , "%s\t%u", j_one->chromosome_name_left, j_one -> last_exon_base_left);
+		SUBreadSprintf(right_key, right_keysize, "%s\t%u", j_one->chromosome_name_right, j_one -> first_exon_base_right);
 
 		for( x2 = 0 ; x2 < 2 ; x2++ ){
 			char * lr_key = x2?right_key:left_key;
@@ -4236,9 +4189,9 @@ void scRNA_do_one_batch_UMI_merge_one_cell(ArrayList* structs, int sec_start, in
 			str1 -> cellbc = -1;
 			char replaced_key[40+MAX_UMI_LEN];
 #ifdef __MINGW32__
-			int keyptr = sprintf(replaced_key,"%d-%" PRId64 "-", str1 -> cellbc, str1 -> gene_no);
+			int keyptr = SUBreadSprintf(replaced_key, 40+MAX_UMI_LEN,"%d-%" PRId64 "-", str1 -> cellbc, str1 -> gene_no);
 #else
-			int keyptr = sprintf(replaced_key,"%d-%lld-", str1 -> cellbc, str1 -> gene_no);
+			int keyptr = SUBreadSprintf(replaced_key, 40+MAX_UMI_LEN,"%d-%lld-", str1 -> cellbc, str1 -> gene_no);
 #endif
 			memcpy(replaced_key+keyptr, str1 -> umi, global_context -> scRNA_UMI_length);
 			replaced_key[keyptr+global_context -> scRNA_UMI_length]=0;
@@ -4277,9 +4230,9 @@ void scRNA_do_one_batch_UMI_merge_one_cell(ArrayList* structs, int sec_start, in
 
 							char replaced_key[55+MAX_UMI_LEN];
 #ifdef __MINGW32__
-							int keyptr = sprintf(replaced_key,"%d-%d-%" PRId64 "-", sample_id, try_str -> cellbc, try_str -> gene_no);
+							int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%" PRId64 "-", sample_id, try_str -> cellbc, try_str -> gene_no);
 #else
-							int keyptr = sprintf(replaced_key,"%d-%d-%lld-", sample_id, try_str -> cellbc, try_str -> gene_no);
+							int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%lld-", sample_id, try_str -> cellbc, try_str -> gene_no);
 #endif
 
 							memcpy(replaced_key+keyptr, try_str -> umi, global_context -> scRNA_UMI_length);
@@ -4303,9 +4256,9 @@ void scRNA_do_one_batch_UMI_merge_one_cell(ArrayList* structs, int sec_start, in
 
 						char replaced_key[55+MAX_UMI_LEN];
 #ifdef __MINGW32__
-						int keyptr = sprintf(replaced_key,"%d-%d-%" PRId64 "-", sample_id, try_str -> cellbc, try_str -> gene_no);
+						int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%" PRId64 "-", sample_id, try_str -> cellbc, try_str -> gene_no);
 #else
-						int keyptr = sprintf(replaced_key,"%d-%d-%lld-", sample_id, try_str -> cellbc, try_str -> gene_no);
+						int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%lld-", sample_id, try_str -> cellbc, try_str -> gene_no);
 #endif
 						memcpy(replaced_key+keyptr, try_str -> umi, global_context -> scRNA_UMI_length);
 						replaced_key[keyptr+global_context -> scRNA_UMI_length]=0;
@@ -4450,7 +4403,7 @@ int two_long_compare(void * k1, void * k2){
 #define ADD_key_FMT1 "%d-%d-%lld-%s"
 #endif
 #define ADD_key_struct { char my_key [50+MAX_UMI_LEN]; \
-	sprintf(my_key,ADD_key_FMT1, sample_id, cell_no, gene_no, UMI_str); \
+	SUBreadSprintf(my_key, 50+MAX_UMI_LEN,ADD_key_FMT1, sample_id, cell_no, gene_no, UMI_str); \
 	srInt_64 supp_reads = HashTableGet(supp_reads_SCGU, my_key)-NULL; \
 	if(1>supp_reads) HashTablePut(supp_reads_SCGU, strdup(my_key), NULL+1); \
 	else HashTablePutReplaceEx(supp_reads_SCGU, my_key, NULL+supp_reads+1, 0,0,0); }
@@ -4479,7 +4432,7 @@ void * scRNA_do_one_batch(void * paramsp1){
 		pthread_spin_unlock(&global_context -> scRNA_do_one_batch_runner_lock);
 		if(0>this_batch_no)break;
 		char tmp_fname[MAX_FILE_NAME_LENGTH+80];
-		sprintf(tmp_fname, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), this_batch_no);
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+80, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), this_batch_no);
 		FILE * fp = fopen(tmp_fname, "rb");
 		fseek(fp, 0, SEEK_END);
 		srInt_64 batch_fsize = ftello(fp);
@@ -4602,9 +4555,9 @@ void * scRNA_do_one_batch(void * paramsp1){
 			char SCGU_key [40+MAX_UMI_LEN];
 
 #ifdef __MINGW32__
-			int keyptr = sprintf(SCGU_key,"%d-%d-%" PRId64 "-", sampleid, cellid,  (gene_no & (1LLU<<63))? geneno_0: gene_no);
+			int keyptr = SUBreadSprintf(SCGU_key, 40+MAX_UMI_LEN,"%d-%d-%" PRId64 "-", sampleid, cellid,  (gene_no & (1LLU<<63))? geneno_0: gene_no);
 #else
-			int keyptr = sprintf(SCGU_key,"%d-%d-%lld-", sampleid, cellid,  (gene_no & (1LLU<<63))? geneno_0: gene_no);
+			int keyptr = SUBreadSprintf(SCGU_key, 40+MAX_UMI_LEN,"%d-%d-%lld-", sampleid, cellid,  (gene_no & (1LLU<<63))? geneno_0: gene_no);
 #endif
 			memcpy(SCGU_key+keyptr, umi, global_context -> scRNA_UMI_length);
 			SCGU_key[keyptr+global_context -> scRNA_UMI_length] = 0;
@@ -5085,7 +5038,7 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 
 					if(assigned_list)ArrayListDestroy(assigned_list);
 
-					if(is_etc) sprintf(final_feture_names + strlen(final_feture_names), "... (%d names ommited),", is_etc);
+					if(is_etc) SUBreadSprintf(final_feture_names + strlen(final_feture_names), GENE_NAME_LIST_BUFFER_SIZE-strlen(final_feture_names), "... (%d names ommited),", is_etc);
 					final_feture_names[GENE_NAME_LIST_BUFFER_SIZE-1]=0;
 
 					if(RG_name){
@@ -5196,12 +5149,7 @@ void scRNA_merge_write_copy_gene_nos(void * ky, void * va , HashTable *tab){
 	srInt_64 UMIs = HashTableGet(used_gene_table, ky)-NULL;
 	HashTablePut(used_gene_table, ky, NULL + UMIs + one_sampl_gene_to_cell_umis -> numOfElements);
 }
-int scRNA_merge_write_zero_gene(fc_thread_global_context_t * global_context, char * linebuf, ArrayList * high_confid_barcode_index_list){
-	int ret=0;
-	srInt_64 x1;
-	for(x1=0;x1<high_confid_barcode_index_list->numOfElements;x1++)ret += sprintf(linebuf + ret,"\t0");
-	return ret;
-}
+
 
 //#warning "======== SCRNA_ALLOWED_MAX_HAMMING_DIFF IS ZERO !! ========"
 #define SCRNA_ALLOWED_MAX_HAMMING_DIFF 1
@@ -5441,7 +5389,7 @@ int scRNA_merged_bootstrap_a_sample(fc_thread_global_context_t * global_context,
 
 void build_exon_name(fc_thread_global_context_t * global_context, fc_feature_info_t * loaded_features, int sorted_order, char * exon_name, HashTable * sorted_order_p1_to_i_p1_tab){
 	srInt_64 i = HashTableGet( sorted_order_p1_to_i_p1_tab , NULL+1+sorted_order )-NULL-1;
-	sprintf(exon_name, "%s:fc@R@Spl:%s:fc@R@Spl:%u:fc@R@Spl:%u:fc@R@Spl:%c", global_context -> unistr_buffer_space + loaded_features[i].feature_name_pos,
+	SUBreadSprintf(exon_name, FEATURE_NAME_LENGTH+60, "%s:fc@R@Spl:%s:fc@R@Spl:%u:fc@R@Spl:%u:fc@R@Spl:%c", global_context -> unistr_buffer_space + loaded_features[i].feature_name_pos,
 	   global_context-> unistr_buffer_space + loaded_features[i].feature_name_pos + loaded_features[i].chro_name_pos_delta,
 	   loaded_features[i].start, loaded_features[i].end, loaded_features[i].is_negative_strand == 1?'N':(  loaded_features[i].is_negative_strand ==  0? 'P':'X'));
 }
@@ -5467,12 +5415,12 @@ int scRNA_merged_write_sparse_matrix(fc_thread_global_context_t * global_context
 	int x1,x2;
 
 	char ofname[MAX_FILE_NAME_LENGTH + 100];
-	sprintf(ofname,"%s.scRNA.%03d.%s.summary",global_context->input_file_name, sample_index+1,tabtype);
-	sprintf(ofname,"%s.scRNA.%03d.%s.BCtab",global_context->input_file_name, sample_index+1,tabtype);
+	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.summary",global_context->input_file_name, sample_index+1,tabtype);
+	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.BCtab",global_context->input_file_name, sample_index+1,tabtype);
 	FILE * ofp_bcs = fopen( ofname , "w" );
-	sprintf(ofname,"%s.scRNA.%03d.%s.GENEtab",global_context->input_file_name, sample_index+1,tabtype);
+	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.GENEtab",global_context->input_file_name, sample_index+1,tabtype);
 	FILE * ofp_genes = fopen( ofname , "w" );
-	sprintf(ofname,"%s.scRNA.%03d.%s.spmtx",global_context->input_file_name, sample_index+1,tabtype);
+	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.spmtx",global_context->input_file_name, sample_index+1,tabtype);
 	FILE * ofp_mtx = fopen( ofname , "w" );
 	fprintf(ofp_mtx,"%%%%MatrixMarket matrix coordinate integer general\n");
 
@@ -5571,7 +5519,7 @@ void scRNA_merged_45K_to_90K_sum(fc_thread_global_context_t * global_context, Ha
 	HashTableIteration( cellP1_geneP1_UMIs_tab, scRNA_merged_45K_to_90K_sum_SUM );
 
 	char ofname[MAX_FILE_NAME_LENGTH + 100];
-	sprintf(ofname,"%s.scRNA.%03d.AmbSum",global_context->input_file_name, sample_no+1);
+	SUBreadSprintf(ofname, MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.AmbSum",global_context->input_file_name, sample_no+1);
 	FILE * write_fp = fopen(ofname,"w");
 	fprintf(write_fp,"GeneID\tUMIs\n");
 	summed_gene_to_umis -> appendix1 = global_context;
@@ -5605,7 +5553,7 @@ void scRNA_merged_write_nozero_geneids_WRT(void *k, void *v, HashTable* me){
 
 void scRNA_merged_write_nozero_geneids(fc_thread_global_context_t * global_context, HashTable * no0genes, int samplenno, fc_feature_info_t * loaded_features, HashTable * sorted_order_p1_to_i_p1_tab){
 	char ofname[MAX_FILE_NAME_LENGTH + 100];
-	sprintf(ofname,"%s.scRNA.%03d.no0Genes",global_context->input_file_name, samplenno+1);
+	SUBreadSprintf(ofname, MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.no0Genes",global_context->input_file_name, samplenno+1);
 	FILE * fp = fopen( ofname , "w" );
 	no0genes -> appendix1 =fp;
 	void * tv2[2];
@@ -5636,7 +5584,7 @@ void scRNA_merged_to_tables_write_build_UMIcounts(void * ky, void * val, HashTab
 // Cols: Cell_Barcode +"."+ SampleName
 void scRNA_merged_to_tables_write( fc_thread_global_context_t * global_context, HashTable ** cellP1_to_geneP1_to_umis, fc_feature_info_t * loaded_features, srInt_64 nexons){
 	char ofname[MAX_FILE_NAME_LENGTH + 20];
-	sprintf(ofname,"%s.scRNA.SampleTable",global_context->input_file_name);
+	SUBreadSprintf(ofname, MAX_FILE_NAME_LENGTH + 20,"%s.scRNA.SampleTable",global_context->input_file_name);
 	FILE * sample_tab_fp = fopen( ofname , "w" );
 	int x1;
 
@@ -5926,7 +5874,7 @@ int fc_thread_merge_results(fc_thread_global_context_t * global_context, read_co
 		
 		for(xk1=0; xk1<global_context -> scRNA_barcode_batched_bin_no+2; xk1++){
 			char tmp_fname[MAX_FILE_NAME_LENGTH+80];
-			sprintf(tmp_fname, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", global_context -> temp_file_dir, getpid(), xk1);
+			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+80, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", global_context -> temp_file_dir, getpid(), xk1);
 			input_fps[xk1] = fopen(tmp_fname,"rb");
 			if(xk1 == global_context -> scRNA_barcode_batched_bin_no+1)break;
 
@@ -6342,7 +6290,7 @@ int fc_thread_merge_results(fc_thread_global_context_t * global_context, read_co
 
 		char pct_str[10];
 		if(total_input_reads>0)
-			sprintf(pct_str,"(%.1f%%%%)", (*nreads_mapped_to_exon)*100./total_input_reads);
+			SUBreadSprintf(pct_str, 10,"(%.1f%%%%)", (*nreads_mapped_to_exon)*100./total_input_reads);
 		else	pct_str[0]=0;
 	
 		int show_summary = 1;
@@ -6382,7 +6330,7 @@ void fc_thread_init_input_files(fc_thread_global_context_t * global_context, cha
 
 		(*out_ptr) = malloc(MAX_FILE_NAME_LENGTH);
 		mac_or_rand_str(MAC_or_random);
-		sprintf(*out_ptr, "%s/temp-core-%06u-%s.sam", global_context -> temp_file_dir, getpid(), MAC_or_random);
+		SUBreadSprintf(*out_ptr, MAX_FILE_NAME_LENGTH, "%s/temp-core-%06u-%s.sam", global_context -> temp_file_dir, getpid(), MAC_or_random);
 
 		SUBREADprintf("\nReading data from <STDIN> for featureCounts ...\n\n");
 		
@@ -6515,8 +6463,8 @@ void scRNA_sample_SamBam_writers_new_files(void *k, void *v, HashTable * tab){
 
 	char * samplename = k;
 	char fname [MAX_FILE_NAME_LENGTH+20], fnamet[MAX_FILE_NAME_LENGTH+20];
-	sprintf(fname, "%s.bam", samplename);
-	sprintf(fnamet, "del4-cC-tmp0-%s.del", samplename);
+	SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s.bam", samplename);
+	SUBreadSprintf(fnamet, MAX_FILE_NAME_LENGTH+20, "del4-cC-tmp0-%s.del", samplename);
 	simple_bam_writer * wtr = simple_bam_create(fname);
 	parallel_gzip_writer_t * gzipR1fq=NULL, * gzipI1fq=NULL, * gzipR2fq=NULL, *gzipI2fq =NULL;
 
@@ -6525,15 +6473,15 @@ void scRNA_sample_SamBam_writers_new_files(void *k, void *v, HashTable * tab){
 		gzipI1fq = calloc(sizeof(parallel_gzip_writer_t),1);
 		if(global_context -> scRNA_dual_index)gzipI2fq = calloc(sizeof(parallel_gzip_writer_t),1);
 		gzipR2fq = calloc(sizeof(parallel_gzip_writer_t),1);
-		sprintf(fname, "%s_R1.fastq.gz", samplename);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_R1.fastq.gz", samplename);
 		parallel_gzip_writer_init(gzipR1fq, fname, global_context -> thread_number);
-		sprintf(fname, "%s_I1.fastq.gz", samplename);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_I1.fastq.gz", samplename);
 		parallel_gzip_writer_init(gzipI1fq, fname, global_context -> thread_number);
 		if(gzipI2fq){
-			sprintf(fname, "%s_I2.fastq.gz", samplename);
+			SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_I2.fastq.gz", samplename);
 			parallel_gzip_writer_init(gzipI2fq, fname, global_context -> thread_number);
 		}
-		sprintf(fname, "%s_R2.fastq.gz", samplename);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_R2.fastq.gz", samplename);
 		parallel_gzip_writer_init(gzipR2fq, fname, global_context -> thread_number);
 	}
 
@@ -6645,7 +6593,7 @@ void fc_thread_init_global_context(fc_thread_global_context_t * global_context, 
 		global_context -> scRNA_barcode_batched_bins = malloc(sizeof(FILE*)*(global_context -> scRNA_barcode_batched_bin_no+2));
 		for(x1=0; x1<global_context -> scRNA_barcode_batched_bin_no+2; x1++){
 			char tmp_fname[MAX_FILE_NAME_LENGTH+20];
-			sprintf(tmp_fname, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), x1);
+			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+20, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), x1);
 			//SUBREADprintf("CREATE TEMP FILE %s\n" , tmp_fname);
 			global_context -> scRNA_barcode_batched_bins[x1]=fopen(tmp_fname, "wb");
 			pthread_spin_init(global_context -> scRNA_barcode_batched_locks+x1, PTHREAD_PROCESS_PRIVATE);
@@ -6733,11 +6681,11 @@ int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_
 		if(global_context -> read_details_path[0]) applied_detail_path = global_context -> read_details_path;
 
 		if( global_context -> input_file_unique ){
-			sprintf(tmp_fname, "%s/%s.featureCounts%s", applied_detail_path, global_context -> input_file_short_name, global_context -> is_read_details_out == FILE_TYPE_BAM?".bam":(global_context -> is_read_details_out == FILE_TYPE_SAM?".sam":""));
+			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+20, "%s/%s.featureCounts%s", applied_detail_path, global_context -> input_file_short_name, global_context -> is_read_details_out == FILE_TYPE_BAM?".bam":(global_context -> is_read_details_out == FILE_TYPE_SAM?".sam":""));
 			global_context -> read_details_out_FP = f_subr_open(tmp_fname, "w");
 			//SUBREADprintf("FCSSF=%s\n", tmp_fname);
 		} else {
-			sprintf(tmp_fname, "%s.featureCounts%s", global_context -> raw_input_file_name, global_context -> is_read_details_out == FILE_TYPE_BAM?".bam":(global_context -> is_read_details_out == FILE_TYPE_SAM?".sam":""));
+			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+20, "%s.featureCounts%s", global_context -> raw_input_file_name, global_context -> is_read_details_out == FILE_TYPE_BAM?".bam":(global_context -> is_read_details_out == FILE_TYPE_SAM?".sam":""));
 			modified_fname = tmp_fname;
 			while(modified_fname[0]=='/' || modified_fname[0]=='.' || modified_fname[0]=='\\'){
 				modified_fname ++;
@@ -6747,7 +6695,7 @@ int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_
 				i++;
 			}
 			char tmp_fname2[MAX_FILE_NAME_LENGTH*2+100];
-			sprintf(tmp_fname2, "%s/%s", applied_detail_path, modified_fname);
+			SUBreadSprintf(tmp_fname2, MAX_FILE_NAME_LENGTH*2+100, "%s/%s", applied_detail_path, modified_fname);
 			global_context -> read_details_out_FP = f_subr_open(tmp_fname2, "w");
 			//SUBREADprintf("FCSSF=%s\n", tmp_fname2);
 		}
@@ -6875,9 +6823,9 @@ int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_
 	char MAC_or_random[13];
 	mac_or_rand_str(MAC_or_random);
 	char rand_prefix[MAX_FILE_NAME_LENGTH+100];
-	sprintf(rand_prefix, "%s/temp-core-%06u-%s.sam", global_context -> temp_file_dir, getpid(), MAC_or_random);
-	if(global_context -> use_stdin_file) sprintf(new_fn, "<%s",  global_context -> input_file_name );
-	else sprintf(new_fn, "%s",  global_context -> input_file_name );
+	SUBreadSprintf(rand_prefix, MAX_FILE_NAME_LENGTH+100, "%s/temp-core-%06u-%s.sam", global_context -> temp_file_dir, getpid(), MAC_or_random);
+	if(global_context -> use_stdin_file) SUBreadSprintf(new_fn, MAX_FILE_NAME_LENGTH+10, "<%s",  global_context -> input_file_name );
+	else SUBreadSprintf(new_fn, MAX_FILE_NAME_LENGTH+10, "%s",  global_context -> input_file_name );
 
 	int pairer_error = SAM_pairer_create(&global_context -> read_pairer, global_context -> thread_number , global_context -> max_BAM_header_size/1024/1024+2, !global_context-> is_SAM_file, !( global_context -> is_read_details_out == FILE_TYPE_BAM ||global_context -> is_read_details_out == FILE_TYPE_SAM ) , !global_context -> is_paired_end_mode_assign, global_context ->is_paired_end_mode_assign && global_context -> do_not_sort, global_context -> assign_reads_to_RG ,0, new_fn, process_pairer_reset, process_pairer_header, process_pairer_output, rand_prefix, global_context,  global_context -> long_read_minimum_length);
 
@@ -7142,7 +7090,7 @@ void fc_write_final_gene_results(fc_thread_global_context_t * global_context, in
 								out_extra_column_size[xk4] = max(ollen + exlen +2, out_extra_column_size[xk4]);
 								out_extra_columns[xk4] = realloc(out_extra_columns[xk4], out_extra_column_size[xk4]);
 							}
-							sprintf(out_extra_columns[xk4]+ollen,";%s", this_col);
+							SUBreadSprintf(out_extra_columns[xk4]+ollen, out_extra_column_size[xk4]-ollen,";%s", this_col);
 							this_col = strtok_r(NULL, "\t", &this_col_ptr);
 						}
 					}
@@ -7168,11 +7116,11 @@ void fc_write_final_gene_results(fc_thread_global_context_t * global_context, in
 							BUFstrcat(out_chr_list, matched_chr, &tmp_chr_list);
 							BUFstrcat(out_chr_list, ";", &tmp_chr_list);
 
-							sprintf(numbbuf,"%u;", input_start_stop_list[xk3 * 2]);
+							SUBreadSprintf(numbbuf,12,"%u;", input_start_stop_list[xk3 * 2]);
 							BUFstrcat(out_start_list, numbbuf, &tmp_start_list);
-							sprintf(numbbuf,"%u;", input_start_stop_list[xk3 * 2 + 1] - 1);
+							SUBreadSprintf(numbbuf,12,"%u;", input_start_stop_list[xk3 * 2 + 1] - 1);
 							BUFstrcat(out_end_list, numbbuf, &tmp_end_list);
-							sprintf(numbbuf,"%c;", (matched_strand==1)?'-':( ( matched_strand==0 )? '+':'.'));
+							SUBreadSprintf(numbbuf,12,"%c;", (matched_strand==1)?'-':( ( matched_strand==0 )? '+':'.'));
 							BUFstrcat(out_strand_list, numbbuf, &tmp_strand_list);
 
 						}
@@ -7251,7 +7199,7 @@ void fc_write_final_counts(fc_thread_global_context_t * global_context, const ch
 	char fname[MAX_FILE_NAME_LENGTH];
 	int i_files, xk1, disk_is_full = 0;
 
-	sprintf(fname, "%s.summary", out_file);
+	SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH, "%s.summary", out_file);
 	FILE * fp_out = f_subr_open(fname,"w");
 
 	if(!fp_out){
@@ -7828,7 +7776,7 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 	merge_sort(key_list,  merged_junction_table -> numOfElements , junckey_sort_compare, junckey_sort_exchange, junckey_sort_merge);
 
 	char outfname[MAX_FILE_NAME_LENGTH];
-	sprintf(outfname, "%s.jcounts", output_file_name);
+	SUBreadSprintf(outfname, MAX_FILE_NAME_LENGTH, "%s.jcounts", output_file_name);
 
 	int max_junction_genes = 3000;
 	char * gene_names = malloc(max_junction_genes * FEATURE_NAME_LENGTH), * gene_name_tail;
@@ -7922,9 +7870,9 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 		if(1 == max_supp){
 			if(found_features_small > 0 && found_features_large > 0){
 				char junc_key [FEATURE_NAME_LENGTH + 15]; 
-				sprintf(junc_key, "%s\t%u", chro_small, pos_small);
+				SUBreadSprintf(junc_key, FEATURE_NAME_LENGTH+15, "%s\t%u", chro_small, pos_small);
 				unsigned int supp_small = HashTableGet(merged_splicing_table, junc_key) - NULL;
-				sprintf(junc_key, "%s\t%u", chro_large, pos_large);
+				SUBreadSprintf(junc_key, FEATURE_NAME_LENGTH+15, "%s\t%u", chro_large, pos_large);
 				unsigned int supp_large = HashTableGet(merged_splicing_table, junc_key) - NULL;
 
 				if(supp_small !=supp_large){
@@ -7963,7 +7911,7 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 		for(ky_i2 = 0; ky_i2 < unique_junctions; ky_i2 ++){
 			fc_junction_gene_t * tested_key = junction_key_list[ky_i2];
 			if(tested_key && tested_key != primary_gene)
-				gene_name_tail += sprintf(gene_name_tail, "%s,", tested_key -> gene_name);
+				gene_name_tail += SUBreadSprintf(gene_name_tail, max_junction_genes * FEATURE_NAME_LENGTH , "%s,", tested_key -> gene_name);
 		}
 		if( gene_names[0] ) gene_name_tail[-1]=0;
 		else strcpy(gene_names, "NA");
@@ -8572,7 +8520,7 @@ int readSummary(int argc,char *argv[]){
 					if(2==umfpi) ftype = "I1";
 					if(3==umfpi) ftype = "I2";
 					if(4==umfpi) ftype = "R2";
-					sprintf(fname, "UnassignedReads%03d_%s.fastq.gz", scrna_total_BAM_no, ftype);
+					SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "UnassignedReads%03d_%s.fastq.gz", scrna_total_BAM_no, ftype);
 					parallel_gzip_writer_init(global_context.scRNA_fastq_unassigned_writer+(umfpi-1), fname, global_context.thread_number);
 				}
 				pthread_spin_init(&global_context.scRNA_fastq_unassigned_lock, PTHREAD_PROCESS_PRIVATE);
@@ -8642,7 +8590,7 @@ int readSummary(int argc,char *argv[]){
 							int file_len = strlen(mem_file_name);
 		
 							char * rg_file_name = malloc(rg_name_len + 3 + file_len);
-							sprintf(rg_file_name, "%s:%s", mem_file_name, rg_name);
+							SUBreadSprintf(rg_file_name, rg_name_len + 3 + file_len, "%s:%s", mem_file_name, rg_name);
 							
 							ArrayListPush(table_column_names, rg_file_name);
 							ArrayListPush(table_columns, tab4[0]);
@@ -8739,7 +8687,7 @@ int readSummary(int argc,char *argv[]){
 
 		for(x1=0; x1<global_context.scRNA_barcode_batched_bin_no +2; x1++){
 			char tmp_fname[MAX_FILE_NAME_LENGTH+20];
-			sprintf(tmp_fname, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), x1);
+			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+20, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), x1);
 			unlink(tmp_fname);
 			pthread_spin_destroy(global_context.scRNA_barcode_batched_locks+x1);
 		}
@@ -8811,7 +8759,7 @@ void register_buckets(fc_thread_global_context_t * global_context , HashTable * 
 			
 			for(x1 = gene -> pos_first_base - gene -> pos_first_base % JUNCTION_BUCKET_STEP; x1 <= gene -> pos_last_base ; x1 += JUNCTION_BUCKET_STEP){
 				char bucket_key[CHROMOSOME_NAME_LENGTH + 20];
-				sprintf(bucket_key, "%s:%u", chro_name, x1);
+				SUBreadSprintf(bucket_key, CHROMOSOME_NAME_LENGTH + 20, "%s:%u", chro_name, x1);
 				gene_info_list_t * list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
 				if(list == NULL){
 					list = malloc(sizeof(gene_info_list_t));
@@ -8854,7 +8802,7 @@ void scRNA_generate_BAM_FASTQ(fc_thread_global_context_t * global_context){
 	char MAC_or_random[13];
 	mac_or_rand_str(MAC_or_random);
 	char rand_prefix[MAX_FILE_NAME_LENGTH+100];
-	sprintf(rand_prefix, "%s/temp-core-%06u-%s.sam", global_context -> temp_file_dir, getpid(), MAC_or_random);
+	SUBreadSprintf(rand_prefix, MAX_FILE_NAME_LENGTH+100, "%s/temp-core-%06u-%s.sam", global_context -> temp_file_dir, getpid(), MAC_or_random);
 
 	SAM_pairer_create(&global_context -> scRNA_read_pairer, global_context -> thread_number , global_context -> max_BAM_header_size/1024/1024+2, 1 /* is bam */, 0 /* do not drop seq/qual */ , 1 /*single end*/, 0 /*do not sort*/,0 /* no RG*/ ,0, global_context -> input_file_name, NULL, NULL, process_pairer_scRNAr2_output, rand_prefix, global_context,  9999);
 	SAM_pairer_run(&global_context -> scRNA_read_pairer);
@@ -8955,7 +8903,7 @@ int feature_count_main(int argc, char ** argv)
 	char feature_block_size_str[15];
 	char * Strand_Sensitive_Str = "0";
 	char * old_zero_smode = Strand_Sensitive_Str;
-	char strFeatureFracOverlap[15];
+	char strFeatureFracOverlap[20];
 	char Pair_Orientations[3];
 	char * extra_column_names = NULL;
 	char * very_long_file_names;
@@ -9022,7 +8970,7 @@ int feature_count_main(int argc, char ** argv)
 			cmd_rebuilt_size*=2;
 			cmd_rebuilt = realloc(cmd_rebuilt, cmd_rebuilt_size);
 		}
-		sprintf(cmd_rebuilt+strlen(cmd_rebuilt), "\"%s\" ", argv[c]);
+		SUBreadSprintf(cmd_rebuilt+strlen(cmd_rebuilt), cmd_rebuilt_size-strlen(cmd_rebuilt), "\"%s\" ", argv[c]);
 	}
 
 	optind=0;
@@ -9368,21 +9316,21 @@ int feature_count_main(int argc, char ** argv)
 	very_long_file_names[strlen(very_long_file_names)-1]=0;
 	std_input_output_mode = (strcmp(very_long_file_names, "") == 0?1:0);
 
-	sprintf(strFiveEndExtension, "%d", fiveEndExtension);
-	sprintf(strThreeEndExtension, "%d", threeEndExtension);
-	sprintf(strMinFragmentOverlap, "%d", minFragmentOverlap);
-	sprintf(nthread_str,"%d", threads);
-	sprintf(min_dist_str,"%d",min_dist);
-	sprintf(max_dist_str,"%d",max_dist);
-	sprintf(min_qual_score_str,"%d", min_qual_score);
-	sprintf(feature_block_size_str,"%d", feature_block_size);
-	sprintf(fracOverlapStr, "%g", fracOverlap);
-	sprintf(std_input_output_mode_str,"%d",std_input_output_mode);
-	sprintf(long_read_mode_str, "%d", long_read_mode);
-	sprintf(strFeatureFracOverlap, "%g", fracOverlapFeature);
-	sprintf(max_missing_bases_in_feature_str, "%d", max_missing_bases_in_feature);
-	sprintf(max_missing_bases_in_read_str, "%d", max_missing_bases_in_read);
-	sprintf(read_shift_size_str, "%d", read_shift_size);
+	SUBreadSprintf(strFiveEndExtension, 11, "%d", fiveEndExtension);
+	SUBreadSprintf(strThreeEndExtension,11, "%d", threeEndExtension);
+	SUBreadSprintf(strMinFragmentOverlap,11, "%d", minFragmentOverlap);
+	SUBreadSprintf(nthread_str,11,"%d", threads);
+	SUBreadSprintf(min_dist_str,11,"%d",min_dist);
+	SUBreadSprintf(max_dist_str,11,"%d",max_dist);
+	SUBreadSprintf(min_qual_score_str,11,"%d", min_qual_score);
+	SUBreadSprintf(feature_block_size_str,11,"%d", feature_block_size);
+	SUBreadSprintf(fracOverlapStr,20, "%g", fracOverlap);
+	SUBreadSprintf(std_input_output_mode_str,11,"%d",std_input_output_mode);
+	SUBreadSprintf(long_read_mode_str,11, "%d", long_read_mode);
+	SUBreadSprintf(strFeatureFracOverlap,20, "%g", fracOverlapFeature);
+	SUBreadSprintf(max_missing_bases_in_feature_str,11, "%d", max_missing_bases_in_feature);
+	SUBreadSprintf(max_missing_bases_in_read_str,11, "%d", max_missing_bases_in_read);
+	SUBreadSprintf(read_shift_size_str,11, "%d", read_shift_size);
 
 	Rargv[0] = "CreadSummary";
 	Rargv[1] = annot_name;

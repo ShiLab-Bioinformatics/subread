@@ -1401,11 +1401,11 @@ void fix_cigar_SAM14(char * cig){
 				tmpM += tmpi;
 			}else{
 				if(tmpM > 0){
-					wi += sprintf(ncig + wi, "%dM", tmpM);
+					wi += SUBreadSprintf(ncig + wi,11, "%dM", tmpM);
 					tmpM = 0;
 				}
 				if(0 == nch) break;
-				else wi += sprintf(ncig + wi, "%d%c", tmpi, nch);
+				else wi += SUBreadSprintf(ncig + wi,11, "%d%c", tmpi, nch);
 			}
 			tmpi = 0;
 		}
@@ -1522,7 +1522,7 @@ int get_read_block(char *chro, unsigned int pos, char *temp_file_suffix, chromos
 	if(pos >= known_chromosomes[chro_no].known_length) return 1;
 
 	int block_no = (pos-1) / BASE_BLOCK_LENGTH;
-	sprintf(temp_file_suffix , "%s-%04u.bin", chro, block_no);
+	SUBreadSprintf(temp_file_suffix , MAX_FILE_NAME_LENGTH, "%s-%04u.bin", chro, block_no);
 	if(max_base_position)*max_base_position=min((block_no+1)*BASE_BLOCK_LENGTH, max_known_chromosome);
 
 	return 0;
@@ -1833,7 +1833,7 @@ void break_VCF_file(char * vcf_file, HashTable * fp_table, char * temp_file_pref
 		unsigned int max_section_pos;
 
 		if(get_read_block(chro, atoi(pos_str) , temp_file_suffix, known_chromosomes, &max_section_pos))continue;
-		sprintf(tmpfname, "%s%s", temp_file_prefix , temp_file_suffix);
+		SUBreadSprintf(tmpfname, MAX_FILE_NAME_LENGTH, "%s%s", temp_file_prefix , temp_file_suffix);
 		FILE * temp_fp = get_temp_file_pointer(tmpfname, fp_table, &close_now);
 		if(temp_fp)
 		{
@@ -2071,7 +2071,7 @@ int break_SAM_file(char * in_SAM_file, int is_BAM_file, char * temp_file_prefix,
 								}
 
 								if(need_write  && insert_length > 0 && sequence[0]!='*') {
-									sprintf(temp_file_name, "%s%s", temp_file_prefix , temp_file_suffix);
+									SUBreadSprintf(temp_file_name, MAX_FILE_NAME_LENGTH, "%s%s", temp_file_prefix , temp_file_suffix);
 									temp_fp = get_temp_file_pointer(temp_file_name, fp_table, &close_now);
 									if(!temp_fp) return -1;
 									if(all_mapped_bases)
@@ -2137,7 +2137,7 @@ int break_SAM_file(char * in_SAM_file, int is_BAM_file, char * temp_file_prefix,
 					read_number ++;
 					continue;
 				}
-				sprintf(temp_file_name, "%s%s", temp_file_prefix , temp_file_suffix);
+				SUBreadSprintf(temp_file_name, MAX_FILE_NAME_LENGTH, "%s%s", temp_file_prefix , temp_file_suffix);
 	
 				temp_fp = get_temp_file_pointer(temp_file_name, fp_table, &close_now);
 				is_error |= write_read_block_file(temp_fp , read_number, read_name, flags, chro, pos, cigar, mapping_quality, sequence , quality_string, rl , is_sequence_needed, is_negative_strand, 0,rl, 0);
@@ -3036,9 +3036,9 @@ int SAM_pairer_get_next_read_BIN( SAM_pairer_context_t * pairer , SAM_pairer_thr
 						memcpy(margin_data, &margin_size, 4);
 						memcpy(margin_data+4,  thread_context -> input_buff_BIN + thread_context -> input_buff_BIN_ptr, thread_context -> input_buff_BIN_used - thread_context -> input_buff_BIN_ptr);
 						#ifdef __MINGW32__
-						sprintf(margin_key,"E%lu",  (unsigned long)thread_context -> input_buff_SBAM_file_end);
+						SUBreadSprintf(margin_key, 40,"E%lu",  (unsigned long)thread_context -> input_buff_SBAM_file_end);
 						#else
-						sprintf(margin_key,"E%llu", thread_context -> input_buff_SBAM_file_end);
+						SUBreadSprintf(margin_key, 40,"E%llu", thread_context -> input_buff_SBAM_file_end);
 						#endif
 						subread_lock_occupy(&pairer -> SAM_BAM_table_lock);
 
@@ -3595,7 +3595,7 @@ int SAM_pairer_get_read_full_name( SAM_pairer_context_t * pairer , SAM_pairer_th
 		if(full_name[slash_pos] == '/') break;
 	}
 
-	rlen = slash_pos + sprintf(full_name+slash_pos, "\027%d\027%u\027%d\027%u\027%d", r1_refID, old_read_pos, r2_refID, new_dummy_pos, HItag);
+	rlen = slash_pos + SUBreadSprintf(full_name+slash_pos, 50, "\027%d\027%u\027%d\027%u\027%d", r1_refID, old_read_pos, r2_refID, new_dummy_pos, HItag);
 
 	return rlen;
 }
@@ -3893,13 +3893,13 @@ void SAM_pairer_register_matcher(SAM_pairer_context_t * pairer , unsigned int ch
 	memcpy(mem_bin, bin , bin_len);
 	subread_lock_occupy(&pairer -> unsorted_notification_lock);
 	char * mem_name = malloc(24);
-	sprintf(mem_name, "B:%u:%d", chunk_number , (readno_in_chunk>0)?1:0);
+	SUBreadSprintf(mem_name, 24, "B:%u:%d", chunk_number , (readno_in_chunk>0)?1:0);
 	HashTablePut(pairer -> unsorted_notification_table, mem_name, mem_bin);
 
 	mem_bin = malloc(bin_len);
-	sprintf(mem_bin,"%010u %d", chunk_number, (readno_in_chunk>0)?1:0);
+	SUBreadSprintf(mem_bin, bin_len,"%010u %d", chunk_number, (readno_in_chunk>0)?1:0);
 	mem_name = malloc(strlen(read_full_name) + 5);
-	sprintf(mem_name, "C:%s:%d", read_full_name , (this_flags & 0x80)?1:0);
+	SUBreadSprintf(mem_name, 24, "C:%s:%d", read_full_name , (this_flags & 0x80)?1:0);
 
 	HashTablePut(pairer -> unsorted_notification_table, mem_name, mem_bin);
 	subread_lock_release(&pairer -> unsorted_notification_lock);
@@ -4083,7 +4083,7 @@ int merge_level_fps(SAM_pairer_context_t * pairer, char * fname, FILE ** fps, in
 	int max_name_len = MAX_READ_NAME_LEN*2 +80, x1, is_disk_full = 0;
 
 	char tmp_fname[MAX_FILE_NAME_LENGTH+30];
-	sprintf(tmp_fname, "%s-MERGE-TMP.tmp", pairer->tmp_file_prefix);
+	SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+30, "%s-MERGE-TMP.tmp", pairer->tmp_file_prefix);
 
 	char * names = malloc(  fps_no  * max_name_len );
 
@@ -4132,14 +4132,15 @@ int merge_level_fps(SAM_pairer_context_t * pairer, char * fname, FILE ** fps, in
 				pairer -> output_function(pairer, 0, (char*) bin_tmp1, (char*)bin_tmp2);
 
 				if(0 && 0 == pairer -> is_unsorted_notified){
-					char * name_tmp_1 = malloc(strlen(names+(min_name_fileno * max_name_len))+5), *name_tmp_2 = malloc(strlen(names+(min_name_fileno * max_name_len))+5);
+					int name_tmp_len = strlen(names+(min_name_fileno * max_name_len))+5;
+					char * name_tmp_1 = malloc(name_tmp_len), *name_tmp_2 = malloc(name_tmp_len);
 					char * min1_chunk_info, * min2_chunk_info;
-					sprintf(name_tmp_1, "C:%s:%d", names+(min_name_fileno * max_name_len), 0);
-					sprintf(name_tmp_2, "C:%s:%d", names+(min2_name_fileno * max_name_len), 1);
+					SUBreadSprintf(name_tmp_1, name_tmp_len, "C:%s:%d", names+(min_name_fileno * max_name_len), 0);
+					SUBreadSprintf(name_tmp_2, name_tmp_len, "C:%s:%d", names+(min2_name_fileno * max_name_len), 1);
 					min1_chunk_info = HashTableGet( pairer -> unsorted_notification_table , name_tmp_1);
 					min2_chunk_info = HashTableGet( pairer -> unsorted_notification_table , name_tmp_2);
 					if(min1_chunk_info == NULL || min2_chunk_info == NULL || !SAM_pairer_is_matched_chunks(min1_chunk_info, min2_chunk_info)){
-						sprintf(name_tmp_1, "B:%s:%d", names+(min_name_fileno * max_name_len), 0);
+						SUBreadSprintf(name_tmp_1, name_tmp_len, "B:%s:%d", names+(min_name_fileno * max_name_len), 0);
 						if( pairer -> unsorted_notification ){
 							//SUBREADprintf("FINAL STEP\n");
 							//SUBREADprintf("UNSORT2\n");
@@ -4198,7 +4199,7 @@ int SAM_pairer_probe_maxfp( SAM_pairer_context_t * pairer){
 	memset(thread_fps, 0, sizeof(int) * pairer -> total_threads);
 	for( thno = 0 ; thno < pairer -> total_threads ; thno ++ ){
 		for( bkno = 0 ; ; bkno++){
-			sprintf(tmp_fname, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
+			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+50, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
 			FILE * in_fp = fopen(tmp_fname, "rb");
 			if(NULL == in_fp) break;
 			thread_fps[thno] = bkno;
@@ -4212,7 +4213,7 @@ int SAM_pairer_probe_maxfp( SAM_pairer_context_t * pairer){
 	FILE ** orphant_fps = malloc(sizeof(FILE *) * orphant_fp_size);
 
 	for( bkno = 0 ; bkno < 5; bkno++){
-		sprintf(tmp_fname, "%s-FTEST-%d.tmp", pairer->tmp_file_prefix, bkno);
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+50, "%s-FTEST-%d.tmp", pairer->tmp_file_prefix, bkno);
 		FILE * tfp = fopen(tmp_fname, "w");
 		if(NULL == tfp){
 			has_limit = 1;
@@ -4224,7 +4225,7 @@ int SAM_pairer_probe_maxfp( SAM_pairer_context_t * pairer){
 	for( thno = 0 ; thno < pairer -> total_threads ; thno ++ ){
 		if(has_limit) break;
 		for( bkno = 0 ; ; bkno++){
-			sprintf(tmp_fname, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
+			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+50, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
 			FILE * in_fp = fopen(tmp_fname, "rb");
 			if(NULL == in_fp){
 				if( bkno <= thread_fps[thno] ) has_limit = 1;
@@ -4252,7 +4253,7 @@ int SAM_pairer_probe_maxfp( SAM_pairer_context_t * pairer){
 		for( thno = 0 ; thno < pairer -> total_threads ; thno ++ ){
 			for( bkno = 0 ; ; bkno++){
 				char tmp_fname[MAX_FILE_NAME_LENGTH+50];
-				sprintf(tmp_fname, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
+				SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+50, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
 
 				FILE * in_fp = fopen(tmp_fname, "rb");
 				if(NULL == in_fp) break;
@@ -4262,7 +4263,7 @@ int SAM_pairer_probe_maxfp( SAM_pairer_context_t * pairer){
 				level_merge_fps[current_opened_fp_no ++] = in_fp;
 				processed_orphant ++;
 				if(current_opened_fp_no >= SAM_pairer_get_merge_max_fp(pairer) || processed_orphant == orphant_fp_no){
-					sprintf(tmp_fname, "%s-LEVELMERGE.tmp", pairer->tmp_file_prefix);
+					SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+50, "%s-LEVELMERGE.tmp", pairer->tmp_file_prefix);
 
 	//				#warning ">>>> COMMENT DEBUG OUTPUT <<<<"
 	//				SUBREADprintf("Merging temp files\n");
@@ -4302,7 +4303,7 @@ void * SAM_pairer_rescure_orphants_max_FP(void * params){
 
 	//SUBREADprintf("merged = %d\n", pairer -> merge_level_finished);
 	if(pairer -> merge_level_finished){
-		sprintf(tmp_fname, "%s-LEVELMERGE.tmp", pairer->tmp_file_prefix);
+		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+50, "%s-LEVELMERGE.tmp", pairer->tmp_file_prefix);
 		FILE * in_fp = fopen(tmp_fname, "rb");
 		orphant_fps[0] = in_fp;
 		orphant_fp_no=1;
@@ -4310,7 +4311,7 @@ void * SAM_pairer_rescure_orphants_max_FP(void * params){
 		orphant_fp_no = 0;
 		for( thno = 0 ; thno < pairer -> total_threads ; thno ++ ){
 			for( bkno = 0 ; ; bkno++){
-				sprintf(tmp_fname, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
+				SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+50, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix,  thno, bkno);
 
 				FILE * in_fp = fopen(tmp_fname, "rb");
 				if(NULL == in_fp) break;
@@ -4362,28 +4363,6 @@ void * SAM_pairer_rescure_orphants_max_FP(void * params){
 			if( min2_name_fileno >=0){
 				SAM_pairer_osr_next_bin( orphant_fps[ min2_name_fileno ] , bin_tmp2);
 				pairer -> output_function(pairer, thread_no, (char*) bin_tmp1, (char*)bin_tmp2);
-
-				if(0 && 0 == pairer -> is_unsorted_notified){
-					char *name_tmp_1 = malloc(strlen(names+(min_name_fileno * max_name_len))+5), *name_tmp_2 = malloc(strlen(names+(min_name_fileno * max_name_len))+5);
-					char * min1_chunk_info, * min2_chunk_info;
-					sprintf(name_tmp_1, "C:%s:%d", names+(min_name_fileno * max_name_len), 0);
-					sprintf(name_tmp_2, "C:%s:%d", names+(min2_name_fileno * max_name_len), 1);
-					min1_chunk_info = HashTableGet( pairer -> unsorted_notification_table , name_tmp_1);
-					min2_chunk_info = HashTableGet( pairer -> unsorted_notification_table , name_tmp_2);
-					//#warning ">>>>>>> COMMENT NEXT LINE <<<<<<<<"
-					//SUBREADprintf("RESCURE MATCHER:  %s , %s ==  %s , %s, %s\n", name_tmp_1, name_tmp_2, min1_chunk_info, min2_chunk_info,
-					//	SAM_pairer_is_matched_chunks(min1_chunk_info, min2_chunk_info)?"MATCH":"XXXXX");
-
-					if(min1_chunk_info == NULL || min2_chunk_info == NULL || !SAM_pairer_is_matched_chunks(min1_chunk_info, min2_chunk_info)){
-						sprintf(name_tmp_1, "B:%s:%d", names+(min_name_fileno * max_name_len), 0);
-						if( pairer -> unsorted_notification ){
-							SUBREADprintf("UNSORT3\n");
-							//SUBREADprintf("FINAL STEP\n");
-							pairer -> unsorted_notification(pairer ,  HashTableGet( pairer -> unsorted_notification_table , name_tmp_1), NULL);
-						}
-						pairer -> is_unsorted_notified = 1;
-					}
-				}
 
 				int read_has = SAM_pairer_osr_next_name( orphant_fps[min2_name_fileno],  names + max_name_len*min2_name_fileno, thread_no,  pairer-> total_threads);
 				if(!read_has) *(names + max_name_len*min2_name_fileno)=0;
@@ -4445,7 +4424,7 @@ int SAM_pairer_update_orphant_table(SAM_pairer_context_t * pairer , SAM_pairer_t
 	merge_sort(sort_data, thread_context->orphant_table->numOfElements, SAM_pairer_sort_compare, SAM_pairer_sort_exchange, SAM_pairer_sort_merge);
 
 	char tmp_fname[MAX_FILE_NAME_LENGTH+40];
-	sprintf(tmp_fname, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix, thread_context -> thread_id, thread_context -> orphant_block_no++);
+	SUBreadSprintf(tmp_fname,  MAX_FILE_NAME_LENGTH+40, "%s-TH%02d-BK%06d.tmp", pairer->tmp_file_prefix, thread_context -> thread_id, thread_context -> orphant_block_no++);
 	FILE * tmp_fp = fopen(tmp_fname, "wb");
 	if(tmp_fp){
 		for(x1 = 0; x1 < x2;  x1 ++){
@@ -4576,9 +4555,9 @@ int SAM_pairer_find_start(SAM_pairer_context_t * pairer , SAM_pairer_thread_t * 
 				memcpy(margin_data, &start_pos, 4);
 				memcpy(margin_data+4,  thread_context -> input_buff_BIN, start_pos);
 				#ifdef __MINGW32__
-				sprintf(margin_key,"S%lu", (unsigned long) thread_context -> input_buff_SBAM_file_start);
+				SUBreadSprintf(margin_key, 22,"S%lu", (unsigned long) thread_context -> input_buff_SBAM_file_start);
 				#else
-				sprintf(margin_key,"S%llu", thread_context -> input_buff_SBAM_file_start);
+				SUBreadSprintf(margin_key, 22,"S%llu", thread_context -> input_buff_SBAM_file_start);
 				#endif
 				subread_lock_occupy(&pairer -> SAM_BAM_table_lock);
 				HashTablePut(pairer -> bam_margin_table, margin_key, margin_data);
@@ -4914,7 +4893,7 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 	fseeko(old_fp, 0, SEEK_SET);
 	char tmpfname [MAX_FILE_NAME_LENGTH+14], readname[256];
 
-	sprintf(tmpfname, "%s.fixbam", pairer -> tmp_file_prefix);
+	SUBreadSprintf(tmpfname, MAX_FILE_NAME_LENGTH+14, "%s.fixbam", pairer -> tmp_file_prefix);
 
 	FILE * new_fp = f_subr_open(tmpfname, "wb");
 	char * in_bin = malloc(1024*70);
@@ -5752,17 +5731,17 @@ int sort_SAM_create(SAM_sort_writer * writer, char * output_file, char * tmp_pat
 		}
 		if(slash_pos >= 0){
 			memcpy(writer -> tmp_path, output_file, slash_pos+1);
-			sprintf(writer -> tmp_path + slash_pos+1, "temp-sort-%06u-%s-", getpid(), mac_rand);
-		}else sprintf(writer -> tmp_path, "./temp-sort-%06u-%s-", getpid(), mac_rand);
+			SUBreadSprintf(writer -> tmp_path + slash_pos+1, MAX_FILE_NAME_LENGTH - slash_pos-1, "temp-sort-%06u-%s-", getpid(), mac_rand);
+		}else SUBreadSprintf(writer -> tmp_path, MAX_FILE_NAME_LENGTH, "./temp-sort-%06u-%s-", getpid(), mac_rand);
 		
-	}else sprintf(writer -> tmp_path, "%s/temp-sort-%06u-%s-", tmp_path, getpid(), mac_rand);
+	}else SUBreadSprintf(writer -> tmp_path, MAX_FILE_NAME_LENGTH, "%s/temp-sort-%06u-%s-", tmp_path, getpid(), mac_rand);
 
 	//#warning " >>>>>>>>>>>>>>>> REMOVE THE NEXT LINE <<<<<<<<<<<<<<<<<<<< "
 	//SUBREADprintf("TMP_SORT=%s  FROM %s\n", writer -> tmp_path, output_file);
 
 	_SAMSORT_SNP_delete_temp_prefix = writer -> tmp_path;
 
-	sprintf(tmp_fname, "%s%s", writer -> tmp_path, "headers.txt");
+	SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH, "%s%s", writer -> tmp_path, "headers.txt");
 	writer -> all_chunks_header_fp = f_subr_open(tmp_fname,"w");
 	if(!writer -> all_chunks_header_fp) return -1;
 	fclose(writer -> all_chunks_header_fp);
@@ -5778,7 +5757,7 @@ void find_tag_out(char * read_line_buf, char * tag, char * hi_tag_out)
 {
 	int hi_tag = -1;
 	char tag_str[10];
-	sprintf(tag_str , "\t%s:i:", tag);
+	SUBreadSprintf(tag_str, 10 , "\t%s:i:", tag);
 	char * hi_tag_str = strstr(read_line_buf, tag_str);
 	if(hi_tag_str)
 	{
@@ -5797,7 +5776,7 @@ void find_tag_out(char * read_line_buf, char * tag, char * hi_tag_out)
 
 	if(hi_tag >=0)
 	{
-		sprintf(hi_tag_out,"\t%s:i:%d", tag, hi_tag);
+		SUBreadSprintf(hi_tag_out, 18,"\t%s:i:%d", tag, hi_tag);
 	}else hi_tag_out[0] = 0;
 
 
@@ -5826,7 +5805,7 @@ int sort_SAM_finalise(SAM_sort_writer * writer)
 		for(x1_chunk = 0; x1_chunk < writer -> current_chunk; x1_chunk++)
 		{
 			char tmpfname[MAX_FILE_NAME_LENGTH+40];
-			sprintf(tmpfname, "%sCHK%08d-BLK%03d.bin", writer -> tmp_path, x1_chunk , x1_block);
+			SUBreadSprintf(tmpfname, MAX_FILE_NAME_LENGTH+40, "%sCHK%08d-BLK%03d.bin", writer -> tmp_path, x1_chunk , x1_block);
 
 			FILE * bbfp = f_subr_open(tmpfname,"rb");
 			if(!bbfp) continue;
@@ -5896,7 +5875,7 @@ int sort_SAM_finalise(SAM_sort_writer * writer)
 		for(x1_chunk = 0; x1_chunk < writer -> current_chunk; x1_chunk++)
 		{
 			char tmpfname[MAX_FILE_NAME_LENGTH+40];
-			sprintf(tmpfname, "%sCHK%08d-BLK%03d.bin", writer -> tmp_path, x1_chunk , x1_block);
+			SUBreadSprintf(tmpfname, MAX_FILE_NAME_LENGTH+40, "%sCHK%08d-BLK%03d.bin", writer -> tmp_path, x1_chunk , x1_block);
 
 	//		printf("START_BLOCK: %s\n", tmpfname);
 
@@ -6246,14 +6225,14 @@ int sort_SAM_add_line(SAM_sort_writer * writer, char * SAM_line, int line_len)
 
 		char hi_key [13];
 		if(hi_tag >=0)// && pos_1 && pos_2)
-			sprintf(hi_key, ":%d", hi_tag);
+			SUBreadSprintf(hi_key, 13, ":%d", hi_tag);
 		else
 			hi_key[0]=0;
 
 		if(flags & SAM_FLAG_SECOND_READ_IN_PAIR)
-			sprintf(read_name+strlen(read_name), "\t%s:%u:%s:%u%s",chromosome_2_name, pos_2, chromosome_1_name, pos_1, hi_key);
+			SUBreadSprintf(read_name+strlen(read_name), MAX_READ_NAME_LEN + MAX_CHROMOSOME_NAME_LEN * 2 + 26-strlen(read_name), "\t%s:%u:%s:%u%s",chromosome_2_name, pos_2, chromosome_1_name, pos_1, hi_key);
 		else
-			sprintf(read_name+strlen(read_name), "\t%s:%u:%s:%u%s",chromosome_1_name, pos_1, chromosome_2_name, pos_2, hi_key);
+			SUBreadSprintf(read_name+strlen(read_name), MAX_READ_NAME_LEN + MAX_CHROMOSOME_NAME_LEN * 2 + 26-strlen(read_name), "\t%s:%u:%s:%u%s",chromosome_1_name, pos_1, chromosome_2_name, pos_2, hi_key);
 
 		//if(memcmp("V0112_0155:7:1101:4561:132881", read_name, 27)==0)
 		//	printf("RRN=%s\n", read_name);
@@ -6265,7 +6244,7 @@ int sort_SAM_add_line(SAM_sort_writer * writer, char * SAM_line, int line_len)
 		if(!writer -> current_block_fp_array[block_id])
 		{
 			char tmpfname[MAX_FILE_NAME_LENGTH+40];
-			sprintf(tmpfname,"%sCHK%08d-BLK%03d.bin", writer -> tmp_path , writer -> current_chunk , block_id);
+			SUBreadSprintf(tmpfname, MAX_FILE_NAME_LENGTH+40,"%sCHK%08d-BLK%03d.bin", writer -> tmp_path , writer -> current_chunk , block_id);
 			writer -> current_block_fp_array[block_id] = f_subr_open(tmpfname, "wb");
 		}
 
@@ -6762,7 +6741,7 @@ void warning_hash_hash(HashTable * t1, HashTable * t2, char * msg){
 			if(!found) if(strlen(t1chro)>3 &&  t1chro[0]=='c'&&t1chro[1]=='h'&&t1chro[2]=='r' ) found = HashTableGet(t2, t1chro+3) != NULL;
 			if(!found) {
 				char tmp_t1chro [MAX_CHROMOSOME_NAME_LEN+1];
-				sprintf(tmp_t1chro, "chr%s", t1chro);
+				SUBreadSprintf(tmp_t1chro, MAX_CHROMOSOME_NAME_LEN+1, "chr%s", t1chro);
 				found = HashTableGet(t2, tmp_t1chro) != NULL;
 			}
 

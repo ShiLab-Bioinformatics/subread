@@ -91,8 +91,6 @@ void final_matchingness_scoring(const char read_str[], const char quality_str[],
 
 float match_read(const char read_str[], int read_len, unsigned int potential_position,  gene_value_index_t * my_array_index, int space_type, int indel_tolerance, const char quality_str [], int quality_scale) ;
 
-void show_cigar(char * info, int len, int is_reversed_map, char * buf, int max_indel, int total_subreads, char * read, int * pos_offset, int * adjust_rl);
-
 int dynamic_align(char * read, int read_len, gene_value_index_t * index, unsigned int begin_position, int max_indel, char * movement_buffer, int expected_offset,int begin_read_offset, int end_read_offset, short **dynamic_programming_short ,  char** dynamic_programming_char );
 
 int window_indel_align(char * read, int read_len, gene_value_index_t * index, unsigned int begin_position, int max_indel, char * movement_buffer, int expected_offset,int begin_read_offset, int end_read_offset);
@@ -110,8 +108,6 @@ int bad_quality_base_number(char * qualityb, int rl , int format);
 int min_matched_bases(char * qualityb, int rl , int format, float match_score);
 
 float read_quality_score(char * qualityb, int rl , int format);
-
-void compress_cigar(char * cigar,  int read_len, char *read, int * position_offset, int * adjust_rl);
 
 void print_votes(gene_vote_t * vote, char *index_prefix);
 

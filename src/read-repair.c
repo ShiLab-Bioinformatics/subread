@@ -116,7 +116,7 @@ int main_read_repair(int argc, char ** argv)
 	char mac_rand[13];
 	mac_or_rand_str(mac_rand);
 
-	sprintf(rand_prefix, "fsbm-p%06d-%s", getpid(), mac_rand);
+	SUBreadSprintf(rand_prefix, 40, "fsbm-p%06d-%s", getpid(), mac_rand);
 
 	SAM_pairer_context_t pairer;
 	SAM_pairer_writer_main_t writer_main;

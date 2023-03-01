@@ -146,7 +146,7 @@ unsigned int reverse_cigar(unsigned int pos, char * cigar, char * new_cigar) {
 
 			if(cigar [cigar_cursor] !=0)
 			{
-				sprintf(jump_mode, "%u%c", tmpi,  cigar [cigar_cursor] == 'b'?'n':'b');
+				SUBreadSprintf(jump_mode, 13, "%u%c", tmpi,  cigar [cigar_cursor] == 'b'?'n':'b');
 				jmlen = strlen(jump_mode);
 			}
 
@@ -901,7 +901,7 @@ int mac_str(char * str_buff)
 				}
 				free(ifname);
 
-				sprintf(str_buff,"%02X%02X%02X%02X%02X%02X",  *ptr, *(ptr+1), *(ptr+2),
+				SUBreadSprintf(str_buff,13,"%02X%02X%02X%02X%02X%02X",  *ptr, *(ptr+1), *(ptr+2),
 					*(ptr+3), *(ptr+4), *(ptr+5));
 				ret = 0;
 				break;
@@ -947,7 +947,7 @@ int mac_str(char * str_buff)
 	memcpy(mac_address, ifr.ifr_hwaddr.sa_data, 6);
 	    int x1;
 	    for(x1 = 0; x1 < 6; x1++){
-		 sprintf(str_buff+2*x1, "%02X",mac_address[x1]);
+		 SUBreadSprintf(str_buff+2*x1, 3, "%02X",mac_address[x1]);
 	    }
 		return 0;
 	}
@@ -963,7 +963,7 @@ int rand_str(char * str_buff){
 	if(fp){
 		int x1;
 		for(x1=0; x1<6; x1++){
-			sprintf(str_buff + 2*x1 , "%02X", fgetc(fp));
+			SUBreadSprintf(str_buff + 2*x1,3 , "%02X", fgetc(fp));
 		}
 		fclose(fp);
 		ret = 0;
@@ -975,7 +975,7 @@ int mathrand_str(char * str_buff){
 	myrand_srand((int)(miltime()*100));
 	int x1;
 	for(x1 = 0; x1 < 6; x1++){
-		sprintf(str_buff+2*x1, "%02X", myrand_rand() & 0xff );
+		SUBreadSprintf(str_buff+2*x1, 3, "%02X", myrand_rand() & 0xff );
 	}
 	return 0;
 }
@@ -1278,7 +1278,7 @@ int rebuild_command_line(char ** lineptr, int argc, char ** argv){
 			linecap += cline+500;
 			*lineptr = realloc(*lineptr, linecap);
 		}
-		sprintf((*lineptr) + strlen(*lineptr), "\"%s\" ", argv[c]);
+		SUBreadSprintf((*lineptr) + strlen(*lineptr), linecap-strlen(*lineptr), "\"%s\" ", argv[c]);
 	}
 
 	return strlen(*lineptr);
@@ -1565,7 +1565,7 @@ int TESTHelpermain(){
 	int xx;
 	for(xx=0; xx<100; xx++){
 		char xt[10];
-		sprintf(xt, "%08d", xx);
+		SUBreadSprintf(xt, 10, "%08d", xx);
 		md5txt(xt);
 	}
 	
@@ -1814,7 +1814,7 @@ int TEST256Helpermain(){
 	int xx;
 	for(xx=0; xx<100; xx++){
 		char xt[10];
-		sprintf(xt, "%08d", xx);
+		SUBreadSprintf(xt, 10, "%08d", xx);
 		sha256txt(xt);
 	}
 	return 0;
@@ -2136,7 +2136,7 @@ void TNbignum_to_string(struct bn* n, char* str, int nbytes)
   /* reading last array-element "MSB" first -> big endian */
   while ((j >= 0) && (nbytes > (i + 1)))
   {
-    sprintf(&str[i], SPRINTF_FORMAT_STR, n->array[j]);
+    SUBreadSprintf(&str[i],10000, SPRINTF_FORMAT_STR, n->array[j]);
     //printf("WRITE:%d %s\n" , i, str+i);
     i += (2 * WORD_SIZE); /* step WORD_SIZE hex-byte(s) forward in the string. */
     j -= 1;               /* step one element back in the array. */
@@ -2878,4 +2878,11 @@ void *windows_memmem(const void *haystack_start, size_t haystack_len, const void
     }
 
     return NULL;
+}
+
+size_t SUBreadSprintf(char * content, size_t bufflen, char * pattern,...){
+        va_list args;
+        va_start(args , pattern);
+		size_t content_len = vsnprintf(content, bufflen, pattern, args);
+		return content_len;
 }

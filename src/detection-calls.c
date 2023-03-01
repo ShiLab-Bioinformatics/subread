@@ -170,7 +170,7 @@ unsigned int DTCtotal_GC_bases(DTCcontext_t * context, char * chro, unsigned int
 	//SUBREADprintf("TCHO: %s : %p , len = %u , range = %u ~ %u\n", chro, bin2, chro_len, start, end);
 	if(NULL == bin2 && strlen(chro) <3){
 		char tna [MAX_CHROMOSOME_NAME_LEN];
-		sprintf(tna, "chr%s", chro);
+		SUBreadSprintf(tna, MAX_CHROMOSOME_NAME_LEN, "chr%s", chro);
 		bin2 = HashTableGet(context -> chro_4bit_table, tna);
 		chro_len = HashTableGet(context -> chro_length_table, tna) - NULL;
 		//HashTableIteration(context -> chro_length_table, DTCprint_lentab_items);
@@ -204,7 +204,7 @@ void DTCanno_fill_gap(DTCcontext_t * context, char * chro_name, unsigned int sta
 		unsigned int GCs = DTCtotal_GC_bases(context, chro_name, cur, bin_end - 1, &binlens);
 		char bin_name[40];
 
-		sprintf(bin_name, "_fill_bin_%07d", context -> filled_bins++);
+		SUBreadSprintf(bin_name, 40, "_fill_bin_%07d", context -> filled_bins++);
 		DTCadd_annotation(context, bin_name, chro_name, cur, bin_end - 1, 0, GCs, binlens, 1);
 		if(bin_end >= stop) break;
 	}
@@ -268,7 +268,7 @@ int DTCparse_GTF_and_Genome(DTCcontext_t * context){
 		}
 		if(NULL == in_chro_exons && strlen(current_chro) < 3){
 			char tchro[MAX_CHROMOSOME_NAME_LEN];
-			sprintf(tchro, "chr%s", current_chro);
+			SUBreadSprintf(tchro, MAX_CHROMOSOME_NAME_LEN, "chr%s", current_chro);
 			in_chro_exons = HashTableGet(chro_to_exons_table , tchro);
 		}
 		if(NULL == in_chro_exons) continue;
@@ -494,7 +494,7 @@ int DTCinit_context(DTCcontext_t ** context, int argc, char ** argv){
 	
 	ret -> out_FP_genes = fopen(ret -> out_file_name,"w");
 	char binfn[MAX_FILE_NAME_LENGTH+12];
-	sprintf(binfn,"%s-bins", ret -> out_file_name);
+	SUBreadSprintf(binfn, MAX_FILE_NAME_LENGTH+12,"%s-bins", ret -> out_file_name);
 	ret -> out_FP_bins = fopen(binfn,"w");
 
 	fprintf(ret -> out_FP_genes, "GeneID\tChr\tStart\tEnd\tStrand\tGCfraction\n");

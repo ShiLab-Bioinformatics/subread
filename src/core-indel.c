@@ -1249,7 +1249,7 @@ int do_juncs_add_feature(char * gene_name, char * transcript_id, char * chro_nam
 	}
 
 	char sort_key[ MAX_CHROMOSOME_NAME_LEN * 3 + 2 ];
-	sprintf(sort_key, "%s:%s", gene_name, chro_name);
+	SUBreadSprintf(sort_key,  MAX_CHROMOSOME_NAME_LEN * 3 + 2, "%s:%s", gene_name, chro_name);
 	int * old_features = HashTableGet(feature_sorting_table, sort_key), x1;
 	int written_space = -1, written_last_item = 0;
 	if(old_features){
@@ -1914,7 +1914,7 @@ int find_new_indels(global_context_t * global_context, thread_context_t * thread
 				//#warning ">>>>>>> COMMENT NEXT BLOCK IN RELEASE <<<<<<<<"
 				if(0) {
 					char outstr[1000];
-					sprintf(outstr, "OCT27-STEPDD-IR %s     %d  %d~%d ", read_name, dyna_steps, last_correct_base, first_correct_base);
+					SUBreadSprintf(outstr, 1000, "OCT27-STEPDD-IR %s     %d  %d~%d ", read_name, dyna_steps, last_correct_base, first_correct_base);
 
 					for(x1=0; x1<dyna_steps;x1++)
 					{
@@ -1923,7 +1923,7 @@ int find_new_indels(global_context_t * global_context, thread_context_t * thread
 						else if(mv==1)mc='D';
 						else if(mv==2)mc='I';
 						else mc='X';
-						sprintf(outstr+strlen(outstr),"%c",mc);
+						SUBreadSprintf(outstr+strlen(outstr), 1000-strlen(outstr),"%c",mc);
 					}
 					puts(outstr);
 				}
@@ -2240,7 +2240,7 @@ int write_indel_final_results(global_context_t * global_context)
 	FILE * ofp = NULL;
 
 	fn2 = malloc(MAX_FILE_NAME_LENGTH+30);
-	sprintf(fn2, "%s.indel.vcf", global_context->config.output_prefix);
+	SUBreadSprintf(fn2, MAX_FILE_NAME_LENGTH+30, "%s.indel.vcf", global_context->config.output_prefix);
 
 	ofp = f_subr_open(fn2, "wb");
 
@@ -2450,7 +2450,7 @@ int write_local_reassembly(global_context_t *global_context, HashTable *pileup_f
 		char temp_file_name[MAX_FILE_NAME_LENGTH+40];
 		int close_now = 0;
 
-		sprintf(temp_file_name,"%s@%s-%04u.bin", global_context -> config.temp_file_prefix, chro_name , chro_offset / BASE_BLOCK_LENGTH );
+		SUBreadSprintf(temp_file_name, MAX_FILE_NAME_LENGTH+40,"%s@%s-%04u.bin", global_context -> config.temp_file_prefix, chro_name , chro_offset / BASE_BLOCK_LENGTH );
 
 		FILE * pileup_fp = get_temp_file_pointer(temp_file_name, pileup_fp_table, &close_now); 
 		//assert(read_len == strlen(read_text) && read_len > 90);
@@ -4042,7 +4042,7 @@ int finalise_pileup_file_by_voting(global_context_t * global_context , char * te
 				{
 					fprintf(stderr, "LLLX: %u [%d] :: START READ = %u ; FN=%s ; BASES=%u\n", window_start_pos, xk1, this_start_read_no, temp_file_name , window_base_number[xk1]);
 					char fname [100];
-					sprintf(fname, "DP-%d-%d", getpid(), xk1);
+					SUBreadSprintf(fname, "DP-%d-%d", getpid(), xk1);
 					gehash_dump(&block_context.voting_indexes[xk1], fname);
 				}*/
 
@@ -4097,7 +4097,7 @@ int finalise_pileup_file_by_voting(global_context_t * global_context , char * te
 							}*/
 
 							is_indel_contig=1;
-							sprintf(contig_CIGAR+strlen(contig_CIGAR), "%dM%d%c", indels_read_positions[xk2] - read_position_cursor, abs(indels), indels<0?'I':'D');  
+							SUBreadSprintf(contig_CIGAR+strlen(contig_CIGAR), 22, "%dM%d%c", indels_read_positions[xk2] - read_position_cursor, abs(indels), indels<0?'I':'D');  
 							read_position_cursor = indels_read_positions[xk2];
 							if(indels<0) read_position_cursor -= indels;
 
@@ -4268,7 +4268,7 @@ int finalise_long_insertions_by_hashtable(global_context_t * global_context)
 	unsigned int chro_start_pos = 0;
 	char tmp_fname[MAX_FILE_NAME_LENGTH+40];
 
-	sprintf(tmp_fname,"%s.reassembly.fa", global_context->config.output_prefix);
+	SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+40,"%s.reassembly.fa", global_context->config.output_prefix);
 	global_context->long_insertion_FASTA_fp = f_subr_open(tmp_fname ,"wb");
 
 	for(chro_i=0; chro_i < global_context -> chromosome_table.total_offsets ; chro_i++)
@@ -4280,7 +4280,7 @@ int finalise_long_insertions_by_hashtable(global_context_t * global_context)
 			char temp_file_name[MAX_FILE_NAME_LENGTH + 50];
 			int block_no = chro_current_pos / BASE_BLOCK_LENGTH;
 
-			sprintf(temp_file_name,"%s@%s-%04u.bin", global_context -> config.temp_file_prefix, global_context -> chromosome_table.read_names+chro_i*MAX_CHROMOSOME_NAME_LEN , block_no );
+			SUBreadSprintf(temp_file_name,MAX_FILE_NAME_LENGTH + 50,"%s@%s-%04u.bin", global_context -> config.temp_file_prefix, global_context -> chromosome_table.read_names+chro_i*MAX_CHROMOSOME_NAME_LEN , block_no );
 
 			finalise_pileup_file(global_context , temp_file_name, global_context -> chromosome_table.read_names+MAX_CHROMOSOME_NAME_LEN*chro_i, block_no);
 	
@@ -4554,7 +4554,7 @@ void init_core_temp_path(global_context_t * context){
 	}
 
 	if(context->config.temp_file_prefix[0] == 0)strcpy(context->config.temp_file_prefix, "./");
-	sprintf(context->config.temp_file_prefix+strlen(context->config.temp_file_prefix), "/core-temp-sum-%06u-%s", getpid(), mac_rand );
+	SUBreadSprintf(context->config.temp_file_prefix+strlen(context->config.temp_file_prefix), MAX_FILE_NAME_LENGTH-strlen(context->config.temp_file_prefix), "/core-temp-sum-%06u-%s", getpid(), mac_rand );
 	_COREMAIN_delete_temp_prefix = context->config.temp_file_prefix;
 }
 

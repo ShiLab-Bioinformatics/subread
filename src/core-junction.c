@@ -3088,7 +3088,7 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 	if(is_wrong_cigar || rebuilt_read_len != read_len || my_non_clipped_length < global_context->config.min_mapped_fraction){
 		(*mismatched_bases)=99999;
 		all_matched_bases = 0;
-		sprintf(cigar_string, "%dM", read_len);
+		SUBreadSprintf(cigar_string, 11, "%dM", read_len);
 	}
 	else if((head_soft_clipped>0 || tail_soft_clipped>0))
 	{
@@ -3114,25 +3114,25 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 					if(is_First_M && head_soft_clipped>0)
 					{
 						tmp_int -= head_soft_clipped;
-						sprintf(cigar_tiny,"%dS",head_soft_clipped);
+						SUBreadSprintf(cigar_tiny, 11,"%dS",head_soft_clipped);
 						strcat(cigar_piece, cigar_tiny);
 					}
 					if(is_Last_M && tail_soft_clipped>0)
 					{
 						tmp_int -= tail_soft_clipped;
 					}
-					sprintf(cigar_tiny,"%dM",tmp_int);
+					SUBreadSprintf(cigar_tiny, 11,"%dM",tmp_int);
 					strcat(cigar_piece, cigar_tiny);
 					if(is_Last_M && tail_soft_clipped>0)
 					{
-						sprintf(cigar_tiny,"%dS",tail_soft_clipped);
+						SUBreadSprintf(cigar_tiny, 11,"%dS",tail_soft_clipped);
 						strcat(cigar_piece, cigar_tiny);
 					}
 					is_First_M = 0;
 				}
 				else
 				{
-					sprintf(cigar_piece, "%u%c", tmp_int, nch);
+					SUBreadSprintf(cigar_piece ,11, "%u%c", tmp_int, nch);
 				}
 
 				strcat(new_cigar_tmp, cigar_piece);
@@ -3252,7 +3252,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 				read_pos_end = current_section -> read_pos_end;
 				chromosome_event_t *event_after = current_section -> event_after_section;
 
-				sprintf(piece_cigar, "%dM", (read_pos_end - read_pos_start));
+				SUBreadSprintf(piece_cigar, 11, "%dM", (read_pos_end - read_pos_start));
 				total_perfect_matched_sections += (read_pos_end - read_pos_start);
 				flanking_size_left[xk1] = (read_pos_end - read_pos_start);
 
@@ -3265,7 +3265,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 				if(event_after)
 				{
 					if(event_after -> event_type == CHRO_EVENT_TYPE_INDEL)
-						sprintf(piece_cigar+strlen(piece_cigar), "%d%c", abs(event_after->indel_length), event_after->indel_length>0?'D':'I');
+						SUBreadSprintf(piece_cigar+strlen(piece_cigar), 11, "%d%c", abs(event_after->indel_length), event_after->indel_length>0?'D':'I');
 					else if(event_after -> event_type == CHRO_EVENT_TYPE_JUNCTION||event_after -> event_type == CHRO_EVENT_TYPE_FUSION) {
 						// the distance in CIGAR is the NEXT UNWANTED BASE of piece#1 to the FIRST WANTED BASE in piece#2
 						int delta_one ;
@@ -3306,9 +3306,9 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 						
 						if(event_after -> is_strand_jumped) jump_mode = tolower(jump_mode);
 						fusions_in_read += (event_after -> event_type == CHRO_EVENT_TYPE_FUSION);
-						sprintf(piece_cigar+strlen(piece_cigar), "%u%c", (int)movement, jump_mode);
+						SUBreadSprintf(piece_cigar+strlen(piece_cigar),11, "%u%c", (int)movement, jump_mode);
 						
-						if(event_after -> indel_at_junction) sprintf(piece_cigar+strlen(piece_cigar), "%dI", event_after -> indel_at_junction);
+						if(event_after -> indel_at_junction) SUBreadSprintf(piece_cigar+strlen(piece_cigar),11, "%dI", event_after -> indel_at_junction);
 						is_junction_read ++;
 						if(event_after -> is_donor_found_or_annotation & 64 ) known_junction_supp ++;
 					}
@@ -3325,7 +3325,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 
 			//#warning ">>>>>>>>>>>>>>>> COMMENT NEXT LINE <<<<<<<<<<<<<<<<<<<<<<<"
 			//SUBREADprintf("ReadDebug:%s\t%s\n", explain_context -> read_name , tmp_cigar);
-			if(is_cigar_overflow) sprintf(tmp_cigar, "%dM",  explain_context -> full_read_len);
+			if(is_cigar_overflow) SUBreadSprintf(tmp_cigar,11, "%dM",  explain_context -> full_read_len);
 
 			unsigned int final_position;
 
@@ -4144,7 +4144,7 @@ int write_fusion_final_results(global_context_t * global_context)
 	indel_context_t * indel_context = (indel_context_t *)global_context -> module_contexts[MODULE_INDEL_ID]; 
 	char fn2 [MAX_FILE_NAME_LENGTH+30];
 
-	sprintf(fn2,"%s.breakpoints.vcf", global_context->config.output_prefix);
+	SUBreadSprintf(fn2, MAX_FILE_NAME_LENGTH+30,"%s.breakpoints.vcf", global_context->config.output_prefix);
 	FILE * ofp = f_subr_open(fn2, "wb");
 	fprintf(ofp,"##fileformat=VCFv4.1\n");
 	fprintf(ofp,"##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">\n");
@@ -4187,9 +4187,9 @@ int write_fusion_final_results(global_context_t * global_context)
 		gene_value_index_t * current_index = find_current_value_index(global_context , event_body -> event_small_side , 1);
 		ref_base = gvindex_get( current_index, event_body -> event_small_side);
 		if(event_body -> small_side_increasing_coordinate)
-			sprintf(alt_base,"%c%s:%u%c%c", bkt, chro_name_right, chro_pos_right, bkt, ref_base);
+			SUBreadSprintf(alt_base, 500,"%c%s:%u%c%c", bkt, chro_name_right, chro_pos_right, bkt, ref_base);
 		else
-			sprintf(alt_base,"%c%c%s:%u%c", ref_base, bkt, chro_name_right, chro_pos_right, bkt);
+			SUBreadSprintf(alt_base, 500,"%c%c%s:%u%c", ref_base, bkt, chro_name_right, chro_pos_right, bkt);
 
 		wlen = fprintf(ofp,"%s\t%u\tbnd_%d\t%c\t%s\t.\tPASS\tSVTYPE=BND;MATEID=bnd_%d;SR=%d\n", chro_name_left, chro_pos_left, all_junctions *2 -1, ref_base, alt_base, all_junctions*2, event_body -> final_counted_reads);
 
@@ -4197,9 +4197,9 @@ int write_fusion_final_results(global_context_t * global_context)
 		ref_base = gvindex_get( current_index, event_body -> event_large_side );
 		bkt = event_body -> small_side_increasing_coordinate?'[':']';
 		if(event_body -> large_side_increasing_coordinate)
-			sprintf(alt_base,"%c%s:%u%c%c", bkt, chro_name_left, chro_pos_left, bkt, ref_base);
+			SUBreadSprintf(alt_base, 500,"%c%s:%u%c%c", bkt, chro_name_left, chro_pos_left, bkt, ref_base);
 		else
-			sprintf(alt_base,"%c%c%s:%u%c", ref_base, bkt, chro_name_left, chro_pos_left, bkt);
+			SUBreadSprintf(alt_base, 500,"%c%c%s:%u%c", ref_base, bkt, chro_name_left, chro_pos_left, bkt);
 
 		wlen += fprintf(ofp,"%s\t%u\tbnd_%d\t%c\t%s\t.\tPASS\tSVTYPE=BND;MATEID=bnd_%d;SR=%d\n", chro_name_right, chro_pos_right, all_junctions *2, ref_base, alt_base, all_junctions*2 -1, event_body -> final_counted_reads);
 		if(wlen <18) disk_is_full = 1;
@@ -4291,7 +4291,7 @@ int write_junction_final_results(global_context_t * global_context)
 	indel_context_t * indel_context = (indel_context_t *)global_context -> module_contexts[MODULE_INDEL_ID]; 
 	char fn2 [MAX_FILE_NAME_LENGTH+30];
 
-	sprintf(fn2,"%s.junction.bed", global_context->config.output_prefix);
+	SUBreadSprintf(fn2, MAX_FILE_NAME_LENGTH+30,"%s.junction.bed", global_context->config.output_prefix);
 	FILE * ofp = f_subr_open(fn2, "wb");
 
 	fprintf(ofp, "#Chr, StartLeftBlock, EndRightBlock, Junction_Name, nSupport, Strand, StartLeftBlock, EndRightBlock, Color, nBlocks, BlockSizes, BlockStarts\n");
@@ -4332,7 +4332,7 @@ int write_junction_final_results(global_context_t * global_context)
 
 		indel_sect[0]=0;
 		if(event_body->indel_at_junction)
-			sprintf(indel_sect,"INS%d", event_body->indel_at_junction);
+			SUBreadSprintf(indel_sect, 15,"INS%d", event_body->indel_at_junction);
 		if(event_body-> is_donor_found_or_annotation &64)strcat(indel_sect,"ANNO");
 		//else if(event_body->critical_supporting_reads < 1)
 		//	strcpy(indel_sect, "NOCRT");

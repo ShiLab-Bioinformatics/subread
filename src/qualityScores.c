@@ -119,9 +119,10 @@ int add_read_scores(qualscore_context * qs_context, char * qual_text, unsigned i
 					qs_context-> quality_offset_warning_shown=1;
 				}
 			}
-			out_cursor+=sprintf(qs_context->IO_line_buff+out_cursor,"%d,", nch);
+			out_cursor+=SUBreadSprintf(qs_context->IO_line_buff+out_cursor, 11,"%d,", nch);
 		} else {
-			out_cursor+=sprintf(qs_context->IO_line_buff+out_cursor,"NA,");
+			strcat(qs_context->IO_line_buff+out_cursor,"NA,");
+			out_cursor+=3;
 		}
 	}
 	if(out_cursor>0)

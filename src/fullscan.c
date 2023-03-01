@@ -111,7 +111,7 @@ void full_scan_read(char * index_name, char * read_str)
 	while (1){
 		char table_fn[1250];
 		struct stat filestat;
-		sprintf(table_fn, "%s.%02d.b.array", index_name, tabno);
+		SUBreadSprintf(table_fn, 1250, "%s.%02d.b.array", index_name, tabno);
 
 		int stat_ret = stat(table_fn, &filestat);
 		if (stat_ret !=0 )

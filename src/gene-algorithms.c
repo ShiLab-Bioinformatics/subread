@@ -261,7 +261,7 @@ void print_window_scrolling_bar(char * hint, float percentage, int width, int * 
 
 	(*internal_counter) ++;
 
-	sprintf (out_buf," %c %s [", fan, hint);
+	SUBreadSprintf (out_buf," %c %s [", fan, hint);
 	for(i = 0; i< dash_width; i++)
 		strcat(out_buf,"=");
 	strcat(out_buf,">");
@@ -312,7 +312,7 @@ void print_text_scrolling_bar(char * hint, float percentage, int width, int * in
 
 	
 	char lbuf[100];
-	sprintf (lbuf," %c %s [", fan, hint);
+	SUBreadSprintf (lbuf, 100," %c %s [", fan, hint);
 	for(i = 0; i< dash_width; i++)
 		strcat(lbuf, "=");
 	strcat(lbuf, ">");
@@ -652,196 +652,6 @@ int init_allvote(gene_allvote_t* allvote, int expected_len, int allowed_indels)
 	}
 }
 
-
-// rl_adjust >0: "D" in read; rl_adjust<0: "I" in read
-void compress_cigar(char *cigar, int total_length, char * read, int * pos_offset, int *rl_adjust)
-{
-	char tmp[200];
-	char cigar_piece [10];
-
-	int cigar_len = strlen(cigar);
-	cigar_len = min(cigar_len, EXON_MAX_CIGAR_LEN);
-	cigar[cigar_len]=0;
-
-	int i;
-	srInt_64 tmpv = 0;
-
-	char last_operation = 'X';
-	srInt_64 last_tmpv = 0;
-	int is_first_M = 1;
-	int delta_i = 0;
-	int delta_d = 0;
-	int delta_rl = 0;
-	tmp[0]=0;
-	int cigar_length=0;
-	
-	for(i=0; i < cigar_len; i++)
-	{
-		char cc = cigar[i];
-		if(isdigit(cc))
-		{
-			tmpv=tmpv*10+(cc-'0');
-		}
-		else if(cc=='-')
-		{
-			last_tmpv = 0;
-			cigar_length = 0;
-			break;
-		}
-		else
-		{
-			if(is_first_M && pos_offset && cc=='S')
-				*pos_offset = tmpv;
-			else if(cc=='M') is_first_M = 0;
-				
-			if((cc!=last_operation) && (last_operation!='X'))
-			{
-				if(last_operation == 'M' || last_operation == 'S' || last_operation == 'N' ||  last_operation == 'B' || last_operation == 'J' || last_operation == 'j' || last_operation == 'b')
-				{
-					if(delta_i)
-					{
-						sprintf(cigar_piece,"%dI", delta_i); 
-						strcat(tmp, cigar_piece);
-					}
-					delta_i = 0;
-
-					if(delta_d)
-					{
-						sprintf(cigar_piece,"%dD", delta_d); 
-						strcat(tmp, cigar_piece);
-					}
-					delta_d = 0;
-	
-					#ifdef __MINGW32__
-					sprintf(cigar_piece,"%" PRId64 "%c", last_tmpv, last_operation); 
-					#else
-					sprintf(cigar_piece,"%lld%c", last_tmpv, last_operation); 
-					#endif
-					strcat(tmp, cigar_piece);
-				}
-
-				if(last_operation == 'M' || last_operation == 'S' || last_operation == 'I')
-					cigar_length += last_tmpv;
-
-				last_tmpv = 0;
-			}
-			if(cc=='I' )
-			{
-				delta_i += tmpv;
-				delta_rl -= tmpv;
-			}
-			if(cc=='D' )
-			{
-				delta_d += tmpv;
-				delta_rl += tmpv;
-			}
-	
-
-			last_tmpv += tmpv;
-		
-			tmpv = 0;
-			last_operation = cc;
-		
-		}
-	
-	}
-
-	if(last_tmpv)
-	{
-		if(delta_i)
-		{
-			sprintf(cigar_piece,"%dI", delta_i); 
-			strcat(tmp, cigar_piece);
-		}
-		if(delta_d)
-		{
-			sprintf(cigar_piece,"%dD", delta_d); 
-			strcat(tmp, cigar_piece);
-		}
-
-
-
-		if(last_operation =='M' || last_operation =='S')
-		{
-			#ifdef __MINGW32__
-			sprintf(cigar_piece,"%" PRId64 "%c", tmpv+last_tmpv, last_operation); 
-			#else
-			sprintf(cigar_piece,"%lld%c", tmpv+last_tmpv, last_operation); 
-			#endif
-			strcat(tmp, cigar_piece);
-		}
-
-		if(last_operation == 'M' || last_operation == 'S' || last_operation == 'I')
-			cigar_length += tmpv+last_tmpv;
-	}
-	if(cigar_length == total_length)
-	{
-		if(rl_adjust)(*rl_adjust)=delta_rl;
-		strcpy(cigar, tmp);
-	}
-	else
-	{
-		sprintf(cigar, "%dM", total_length);
-	}
-}
-
-// adjust_len <0: "I" in read; adjust_len>0: "D" in read
-void show_cigar(char * info, int len, int is_reversed_map, char * buf, int indel_tolerance, int total_subreads, char *read, int * pos_offset, int * adjust_len)
-{
-	int i;
-	int last_offset = 0, cursor = 0;
-
-	if(info[0]==-1){
-		sprintf(buf, "%dM", len);
-		return;
-	}
-	else if(info[0]==-2){
-		if (strchr( info+1, '-'))
-			sprintf(buf, "%dM", len);
-		else
-		{
-			strncpy(buf, info+1, 98);
-			compress_cigar(buf, len, read, pos_offset, adjust_len);
-		}
-		return;
-	}
-	else if(info[0]==-3){
-		info ++;
-	}
-
-	for(i=0; i<indel_tolerance*3; i+=3)
-	{
-		if (!info[i])break;
-		int dist = info[i+2];
-		//int subread_start = info[i]-1;
-		int subread_end = info[i+1]-1;
-
-		int base_end = (i < indel_tolerance*3-3 && info[i+3])?find_subread_end(len, total_subreads, subread_end):len;
-
-//			SUBREADprintf("BE=%d ; II+3=%d ; len=%d\n", base_end, info[i+3], len);
-
-		int offset = last_offset-dist;
-		if (base_end - cursor - (offset>0?offset:0) <0) 
-		{
-			buf[0]=0;
-
-			cursor = 0;
-			break;
-		}
-		if (i >0)
-		{
-			sprintf(buf+strlen(buf), "%d%c%dM", abs(offset), offset>0?'I':'D', base_end - cursor - (offset>0?offset:0));
-			if(adjust_len)
-				(*adjust_len) -= offset;
-		}
-		else
-			sprintf(buf+strlen(buf), "%dM", base_end);
-		last_offset = dist;
-		cursor = base_end;
-	}
-	compress_cigar(buf, len, read, pos_offset, adjust_len);
-}
-
 void add_allvote_q(gene_allvote_t* allvote,int qid , int pos, gene_vote_number_t votes, gene_quality_score_t quality, int is_counterpart, short mask, char * max_indel_recorder, gene_value_index_t * array_index, char * read_txt, int read_len, int max_indel, int total_subreads, int space_type, int report_junction, int is_head_high_quality, char * qual_txt, int phred_version, char span_coverage, short **dynamic_programming_short ,  char ** dynamic_programming_char)
 {
 
@@ -989,9 +799,9 @@ void explain_indel_in_middle(gene_allvote_t* allvote, int qid , int pos, char * 
 	if(current_pos >0)
 	{
 		if (head_indel_movement != 0)
-			sprintf(tmp_cigar, "%dM%d%c", head_start_point  - max(head_indel_movement, 0), abs(head_indel_movement), head_indel_movement>0?'I':'D');
+			SUBreadSprintf(tmp_cigar, EXON_MAX_CIGAR_LEN+1, "%dM%d%c", head_start_point  - max(head_indel_movement, 0), abs(head_indel_movement), head_indel_movement>0?'I':'D');
 		else if (report_junction)
-			sprintf(tmp_cigar, "%dS", head_start_point);
+			SUBreadSprintf(tmp_cigar, EXON_MAX_CIGAR_LEN+1, "%dS", head_start_point);
 	}
 
 	//ddprintf ("R=%s; REC[8]=%d [9]=%d\n", read_txt, max_indel_recorder[8], max_indel_recorder[9]);
@@ -1052,7 +862,7 @@ void explain_indel_in_middle(gene_allvote_t* allvote, int qid , int pos, char * 
 				{
 					int vpos = strlen(tmp_cigar);
 					if (vpos>EXON_MAX_CIGAR_LEN-6) break;
-					sprintf(tmp_cigar + vpos, "%d%c", last_operation==1?del_number:(current_pos - explain_cursor), last_operation==0?'M':(last_operation==1?'D':'I'));
+					SUBreadSprintf(tmp_cigar + vpos, EXON_MAX_CIGAR_LEN+1-vpos, "%d%c", last_operation==1?del_number:(current_pos - explain_cursor), last_operation==0?'M':(last_operation==1?'D':'I'));
 					explain_cursor = current_pos ;
 					del_number = 0;
 				}
@@ -1060,7 +870,7 @@ void explain_indel_in_middle(gene_allvote_t* allvote, int qid , int pos, char * 
 					if(current_operation != 0 && current_pos!=explain_cursor)
 					{
 						int vpos = strlen(tmp_cigar);
-						sprintf(tmp_cigar + vpos, "%d%c", current_operation==1?del_number:(current_pos - explain_cursor), current_operation==1?'D':'I');
+						SUBreadSprintf(tmp_cigar + vpos, EXON_MAX_CIGAR_LEN+1-vpos, "%d%c", current_operation==1?del_number:(current_pos - explain_cursor), current_operation==1?'D':'I');
 						explain_cursor = current_pos;
 						del_number=0;
 					}
@@ -1086,9 +896,9 @@ void explain_indel_in_middle(gene_allvote_t* allvote, int qid , int pos, char * 
 			current_pos -= (black_base_end - black_base_start)/2 -3;
 
 			if(movement)
-				sprintf(tmp_cigar + vpos, "%dM%d%c", current_pos - explain_cursor , abs(movement), movement<0?'D':'I' );
+				SUBreadSprintf(tmp_cigar + vpos, EXON_MAX_CIGAR_LEN+1-vpos, "%dM%d%c", current_pos - explain_cursor , abs(movement), movement<0?'D':'I' );
 			else if (current_pos - explain_cursor>0)
-				sprintf(tmp_cigar + vpos, "%dM", current_pos - explain_cursor );
+				SUBreadSprintf(tmp_cigar + vpos, EXON_MAX_CIGAR_LEN+1-vpos, "%dM", current_pos - explain_cursor );
 
 			explain_cursor = current_pos + (movement >0?movement:0);
 			current_pos = find_subread_end(read_len, total_subreads,max_indel_recorder[i+1]-1);
@@ -1113,7 +923,7 @@ void explain_indel_in_middle(gene_allvote_t* allvote, int qid , int pos, char * 
 		if (explain_cursor<read_len)	
 		{
 			if(tail_end_point > explain_cursor)
-				sprintf(tmp_cigar+vpos,"%dM", tail_end_point - explain_cursor);
+				SUBreadSprintf(tmp_cigar+vpos, 11,"%dM", tail_end_point - explain_cursor);
 			vpos = strlen(tmp_cigar);
 			if(tail_end_point< read_len)
 			{
@@ -1121,12 +931,12 @@ void explain_indel_in_middle(gene_allvote_t* allvote, int qid , int pos, char * 
 				{
 					int tail_len_m = read_len -(tail_end_point - min(tail_indel_movement, 0));
 					if(tail_len_m)
-						sprintf(tmp_cigar+vpos, "%d%c%dM", abs(tail_indel_movement), tail_indel_movement<0?'I':'D', tail_len_m);
+						SUBreadSprintf(tmp_cigar+vpos, 22, "%d%c%dM", abs(tail_indel_movement), tail_indel_movement<0?'I':'D', tail_len_m);
 					else
-						sprintf(tmp_cigar+vpos, "%d%c", abs(tail_indel_movement), tail_indel_movement<0?'I':'D');
+						SUBreadSprintf(tmp_cigar+vpos, 11, "%d%c", abs(tail_indel_movement), tail_indel_movement<0?'I':'D');
 				}
 				else if (report_junction)
-					sprintf(tmp_cigar+vpos, "%dS",read_len - tail_end_point );
+					SUBreadSprintf(tmp_cigar+vpos, 11, "%dS",read_len - tail_end_point );
 			}
 		}
 	//	if (head_start_point >0 || tail_end_point < read_len)
@@ -1146,9 +956,9 @@ int evaluate_piece(char * piece_str, int chron, int offset, int is_counterpart, 
 	int ret = 0;
 
 	if (chron == 0)
-		sprintf(fname, "/opt/Work2001/Gene-Search/src/GENE-LIB/%02da.fa", chron);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH, "/opt/Work2001/Gene-Search/src/GENE-LIB/%02da.fa", chron);
 	else
-		sprintf(fname, "/opt/Work2001/Gene-Search/src/GENE-LIB/%02d.fa", chron);
+		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH, "/opt/Work2001/Gene-Search/src/GENE-LIB/%02d.fa", chron);
 
 	inner_pos = offset + offset / 70;
 
@@ -1491,7 +1301,7 @@ int load_offsets(gene_offset_t* offsets , const char index_prefix [])
 	if(!is_V3_index) return 1;
 	
 	memset(offsets, 0, sizeof( gene_offset_t));
-	sprintf(fn, "%s.reads", index_prefix);
+	SUBreadSprintf(fn, MAX_FILE_NAME_LENGTH, "%s.reads", index_prefix);
 
 	fp = f_subr_open(fn, "r");
 
@@ -2428,7 +2238,7 @@ float final_mapping_quality(gene_value_index_t *array_index, unsigned int pos, c
 		if(first_confirmed_read_pos<99990 && last_confirmed_read_pos<99990)
 		{
 			if(first_confirmed_read_pos>0)
-				sprintf(refined_cigar,"%dS",first_confirmed_read_pos);
+				SUBreadSprintf(refined_cigar,11,"%dS",first_confirmed_read_pos);
 			while(cigar_cursor < cigar_length)
 			{
 				if(cigar_txt[cigar_cursor] =='X')
@@ -2459,7 +2269,7 @@ float final_mapping_quality(gene_value_index_t *array_index, unsigned int pos, c
 
 						if(out_len)
 						{
-							sprintf(refined_cigar+strlen(refined_cigar), "%d%c", out_len, cigar_txt[cigar_cursor]);
+							SUBreadSprintf(refined_cigar+strlen(refined_cigar),11, "%d%c", out_len, cigar_txt[cigar_cursor]);
 							begin_copy=1;
 						}
 						if(cigar_txt[cigar_cursor] == 'M' || cigar_txt[cigar_cursor] == 'S')
@@ -2472,9 +2282,9 @@ float final_mapping_quality(gene_value_index_t *array_index, unsigned int pos, c
 					{
 						if(begin_copy)
 							#ifdef __MINGW32__
-							sprintf(refined_cigar+strlen(refined_cigar), "%" PRId64 "%c", x, cigar_txt[cigar_cursor]);
+							SUBreadSprintf(refined_cigar+strlen(refined_cigar),11, "%" PRId64 "%c", x, cigar_txt[cigar_cursor]);
 							#else
-							sprintf(refined_cigar+strlen(refined_cigar), "%lld%c", x, cigar_txt[cigar_cursor]);
+							SUBreadSprintf(refined_cigar+strlen(refined_cigar),11, "%lld%c", x, cigar_txt[cigar_cursor]);
 							#endif
 
 						if(cigar_txt[cigar_cursor] == 'D' || cigar_txt[cigar_cursor] == 'N'|| cigar_txt[cigar_cursor] == 'j' || cigar_txt[cigar_cursor] == 'J')
@@ -2490,7 +2300,7 @@ float final_mapping_quality(gene_value_index_t *array_index, unsigned int pos, c
 				cigar_cursor++;
 			}
 			if(last_confirmed_read_pos<=rl-1)
-				sprintf(refined_cigar+strlen(refined_cigar),"%dS",rl-last_confirmed_read_pos);
+				SUBreadSprintf(refined_cigar+strlen(refined_cigar),11,"%dS",rl-last_confirmed_read_pos);
 		}
 		else if(new_pos)*new_pos=pos;
 	} 
@@ -2576,9 +2386,9 @@ void bad_reverse_cigar(char * cigar)
 		{
 			char ncg2[103];
 			#ifdef __MINGW32__
-			sprintf(ncg2, "%" PRId64 "%c", tmpv, cc);
+			SUBreadSprintf(ncg2, 11, "%" PRId64 "%c", tmpv, cc);
 			#else
-			sprintf(ncg2, "%lld%c", tmpv, cc);
+			SUBreadSprintf(ncg2, 11, "%lld%c", tmpv, cc);
 			#endif
 			strncat(ncg2, ncg, 99);
 			strncpy(ncg, ncg2, 99);
@@ -2587,7 +2397,7 @@ void bad_reverse_cigar(char * cigar)
 		else
 		{
 			char ncg2[103];
-			sprintf(ncg2, "%c%s",cc,ncg);
+			SUBreadSprintf(ncg2,103, "%c%s",cc,ncg);
 			strncpy(ncg, ncg2, 99);
 			tmpv=0;
 		}
@@ -2603,7 +2413,7 @@ int debug_main()
 #endif
 {
 	char cg[100];
-	sprintf(cg,"10M8H20M9I100N30M");
+	SUBreadSprintf(cg,100,"10M8H20M9I100N30M");
 	bad_reverse_cigar(cg);
 	SUBREADprintf("%s\n",cg);
 	return 0;

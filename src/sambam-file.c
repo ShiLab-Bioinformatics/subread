@@ -596,37 +596,37 @@ int convert_BAM_binary_to_SAM( SamBam_Reference_Info * chro_table, char * bam_bi
 	bin_len += 4;
 
 	int sam_ptr = 0, tmpint = 0;
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%s\t", bam_bin+36);
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%s\t", bam_bin+36);
 
 	memcpy(&tmpint, bam_bin + 16 ,4);
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%d\t", (tmpint >> 16) & 0xffff);
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d\t", (tmpint >> 16) & 0xffff);
 	int cigar_opts = tmpint & 0xffff;
 
 	memcpy(&tmpint, bam_bin + 4  ,4);
 	int r1chro = tmpint;
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%s\t", tmpint<0?"*":chro_table[tmpint].chro_name);
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%s\t", tmpint<0?"*":chro_table[tmpint].chro_name);
 	memcpy(&tmpint, bam_bin + 8  ,4);
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%d\t", tmpint+1);
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d\t", tmpint+1);
 	memcpy(&tmpint, bam_bin + 12 ,4);
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%d\t", (tmpint >> 8) & 0xff);
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d\t", (tmpint >> 8) & 0xff);
 	int name_len = tmpint & 0xff;
 	int cigar_i;
 	for(cigar_i = 0; cigar_i < cigar_opts; cigar_i ++){
 		unsigned int cigarint=0;
 		memcpy(&cigarint, bam_bin + name_len + 36 + cigar_i * 4,4);
-		sam_ptr += sprintf(sam_txt + sam_ptr, "%u%c", cigarint >> 4, "MIDNSHP=X"[cigarint&0xf]);
+		sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%u%c", cigarint >> 4, "MIDNSHP=X"[cigarint&0xf]);
 	}
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%s\t", cigar_i<1?"*":"");
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%s\t", cigar_i<1?"*":"");
 	
 	memcpy(&tmpint, bam_bin + 24, 4);
 	//SUBREADprintf("CHRO_IDX=%d\n", tmpint);
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%s\t", tmpint<0?"*":((tmpint == r1chro)?"=":chro_table[tmpint].chro_name));
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%s\t", tmpint<0?"*":((tmpint == r1chro)?"=":chro_table[tmpint].chro_name));
 	
 	memcpy(&tmpint, bam_bin + 28, 4);
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%d\t", tmpint+1);
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d\t", tmpint+1);
 
 	memcpy(&tmpint, bam_bin + 32, 4);
-	sam_ptr += sprintf(sam_txt + sam_ptr, "%d\t", tmpint);
+	sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d\t", tmpint);
 
 	int seq_len;
 	memcpy(&seq_len, bam_bin + 20,4);
@@ -682,18 +682,18 @@ int convert_BAM_binary_to_SAM( SamBam_Reference_Info * chro_table, char * bam_bi
 					int tagval = 0;
 					memcpy(&tagval,  bam_bin + flex_ptr, type_bytes);
 					long long printv = is_signed?tagval:( (unsigned int) tagval );
-					if(elemtype == 'i') sam_ptr += sprintf(sam_txt + sam_ptr, "%d,", (int)printv);
-					if(elemtype == 'I') sam_ptr += sprintf(sam_txt + sam_ptr, "%u,", (unsigned int)printv);
+					if(elemtype == 'i') sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d,", (int)printv);
+					if(elemtype == 'I') sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%u,", (unsigned int)printv);
 
-					if(elemtype == 's') sam_ptr += sprintf(sam_txt + sam_ptr, "%d,", (short)printv);
-					if(elemtype == 'S') sam_ptr += sprintf(sam_txt + sam_ptr, "%u,", (unsigned short)printv);
+					if(elemtype == 's') sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d,", (short)printv);
+					if(elemtype == 'S') sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%u,", (unsigned short)printv);
 
-					if(elemtype == 'c') sam_ptr += sprintf(sam_txt + sam_ptr, "%d,", (char)printv);
-					if(elemtype == 'C') sam_ptr += sprintf(sam_txt + sam_ptr, "%u,", (unsigned char)printv);
+					if(elemtype == 'c') sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%d,", (char)printv);
+					if(elemtype == 'C') sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%u,", (unsigned char)printv);
 				}else{
 					float tagval = 0;
 					memcpy(&tagval,  bam_bin + flex_ptr, type_bytes);
-					sam_ptr += sprintf(sam_txt + sam_ptr, "%f,", tagval);
+					sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%f,", tagval);
 				}
 				flex_ptr += type_bytes;
 			}
@@ -734,9 +734,9 @@ int convert_BAM_binary_to_SAM( SamBam_Reference_Info * chro_table, char * bam_bi
 					memcpy(&tagval,  bam_bin + flex_ptr, type_bytes);
 					long long printv = is_signed?tagval:( (unsigned int) tagval );
 					#ifdef __MINGW32__
-					sam_ptr += sprintf(sam_txt + sam_ptr, "%" PRId64 "\t", printv);
+					sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%" PRId64 "\t", printv);
 					#else
-					sam_ptr += sprintf(sam_txt + sam_ptr, "%lld\t", printv);
+					sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%lld\t", printv);
 					#endif
 				}else if(is_string_type){
 					// type_bytes includes \0
@@ -749,7 +749,7 @@ int convert_BAM_binary_to_SAM( SamBam_Reference_Info * chro_table, char * bam_bi
 				}else if(is_float_type){
 					float tagval = 0;
 					memcpy(&tagval,  bam_bin + flex_ptr, type_bytes);
-					sam_ptr += sprintf(sam_txt + sam_ptr, "%f\t", tagval);
+					sam_ptr += SUBreadSprintf(sam_txt + sam_ptr, 50000, "%f\t", tagval);
 				}else if(is_char_type){
 					sam_txt[ sam_ptr++ ] = bam_bin[flex_ptr];
 					sam_txt[ sam_ptr++ ] = '\t';
@@ -832,7 +832,7 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 		memcpy(&cigar_piece,  chunk+(*chunk_ptr),4);
 		(*chunk_ptr)+=4;
 
-		sprintf(cigar_piece_buf, "%u%c", cigar_piece>>4, cigar_op_char(cigar_piece&0xf));
+		SUBreadSprintf(cigar_piece_buf, 12, "%u%c", cigar_piece>>4, cigar_op_char(cigar_piece&0xf));
 		if(strlen(cigar_piece_buf)+strlen(aln->cigar)<BAM_MAX_CIGAR_LEN-1)
 			strcat(aln->cigar, cigar_piece_buf);
 		else
@@ -901,12 +901,12 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 				int tmpi = 0;
 				memcpy(&tmpi, chunk+(*chunk_ptr),delta);
 				if(tmpi >= 0 && extra_len < CORE_ADDITIONAL_INFO_LENGTH - 18){
-					int sret = sprintf(extra_tags + strlen(extra_tags), "\t%c%c:i:%d", extag[0], extag[1], tmpi);
+					int sret = SUBreadSprintf(extra_tags + strlen(extra_tags), 18, "\t%c%c:i:%d", extag[0], extag[1], tmpi);
 					extra_len += sret;
 				}
 			}else if(extype == 'Z'){
 				if(extra_len < CORE_ADDITIONAL_INFO_LENGTH - 7 - delta){
-					sprintf(extra_tags + strlen(extra_tags), "\t%c%c:Z:", extag[0], extag[1]);
+					SUBreadSprintf(extra_tags + strlen(extra_tags), 10, "\t%c%c:Z:", extag[0], extag[1]);
 					extra_len += 6;
 					*(extra_tags + strlen(extra_tags)+delta-1) = 0;
 					memcpy(extra_tags + strlen(extra_tags), chunk + (*chunk_ptr), delta - 1);
@@ -914,7 +914,7 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 				}
 			}else if(extype == 'A'){
 				if(extra_len < CORE_ADDITIONAL_INFO_LENGTH - 8){
-					int sret = sprintf(extra_tags + strlen(extra_tags), "\t%c%c:A:%c", extag[0], extag[1], *(chunk + *chunk_ptr) );
+					int sret = SUBreadSprintf(extra_tags + strlen(extra_tags), 10, "\t%c%c:A:%c", extag[0], extag[1], *(chunk + *chunk_ptr) );
 					extra_len += sret;
 				}
 			}
@@ -1103,7 +1103,7 @@ int SamBam_writer_create(SamBam_Writer * writer, char * BAM_fname, int threads, 
 		writer -> bam_fp = f_subr_open(BAM_fname, "wb");
 		if(sort_reads_by_coord){
 			char tname[MAX_FILE_NAME_LENGTH];
-			sprintf(tname, "%s.bai", BAM_fname);
+			SUBreadSprintf(tname, MAX_FILE_NAME_LENGTH, "%s.bai", BAM_fname);
 			writer -> BAI_fp = f_subr_open(tname, "wb");
 			worker_master_mutex_init(&writer->sorted_notifier, threads);
 		}
@@ -1877,7 +1877,7 @@ int SamBam_writer_sort_buff_one_write(SamBam_Writer * writer, char * bin, int bi
 
 	char tmpfname[MAX_FILE_NAME_LENGTH+40];
 	if(writer -> threads>1) subread_lock_occupy(&writer -> thread_bam_lock);
-	sprintf(tmpfname, "%s-%06d.sortedbin", writer -> tmpf_prefix, writer -> sorted_batch_id++);
+	SUBreadSprintf(tmpfname, MAX_FILE_NAME_LENGTH+40, "%s-%06d.sortedbin", writer -> tmpf_prefix, writer -> sorted_batch_id++);
 	if(writer -> threads>1) subread_lock_release(&writer -> thread_bam_lock);
 	FILE * tofp  = fopen(tmpfname, "wb");
 	if(tofp){
@@ -2089,7 +2089,7 @@ void SamBam_writer_one_thread_merge_sortedbins(SamBam_Writer * writer){
 			if(this_size < 2) break;
 
 			//SUBREADprintf("CREATE_MERGE %d\n", new_bins + writer -> sorted_batch_id);
-			sprintf(tfp , "%s-%06d.sortedbin", writer -> tmpf_prefix, writer -> sorted_batch_id + (new_bins++) );
+			SUBreadSprintf(tfp, MAX_FILE_NAME_LENGTH+50 , "%s-%06d.sortedbin", writer -> tmpf_prefix, writer -> sorted_batch_id + (new_bins++) );
 			FILE * outbinfp = fopen(tfp,"wb");
 
 			FILE ** sb_fps = malloc(sizeof(FILE *) * this_size);
@@ -2101,7 +2101,7 @@ void SamBam_writer_one_thread_merge_sortedbins(SamBam_Writer * writer){
 				char tfpx[MAX_FILE_NAME_LENGTH+50];
 				current_min_fps[bii] = SUBREAD_MAX_ULONGLONG;
 
-				sprintf(tfpx , "%s-%06d.sortedbin", writer -> tmpf_prefix, bii + merge_i);
+				SUBreadSprintf(tfpx , MAX_FILE_NAME_LENGTH+50, "%s-%06d.sortedbin", writer -> tmpf_prefix, bii + merge_i);
 				sb_fps[bii] = fopen(tfpx,"rb");
 				current_min_fps[bii] = SamBam_writer_sort_bins_to_BAM_FP_pos(sb_fps[bii]);
 				if(current_min_fps[bii] < SUBREAD_MAX_ULONGLONG && current_min_fps[bii] < current_min){
@@ -2138,7 +2138,7 @@ void SamBam_writer_one_thread_merge_sortedbins(SamBam_Writer * writer){
 
 			for(bii = 0; bii < this_size; bii++){
 				fclose(sb_fps[bii]);
-				sprintf(tfp , "%s-%06d.sortedbin", writer -> tmpf_prefix, merge_i + bii);
+				SUBreadSprintf(tfp, MAX_FILE_NAME_LENGTH+50 , "%s-%06d.sortedbin", writer -> tmpf_prefix, merge_i + bii);
 				//SUBREADprintf("    DEL_MERGE %d\n", bii);
 				unlink(tfp);
 			}
@@ -2359,7 +2359,7 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 		char tfp[MAX_FILE_NAME_LENGTH+40];
 		current_min_fps[bii] = SUBREAD_MAX_ULONGLONG;
 
-		sprintf(tfp , "%s-%06d.sortedbin", writer -> tmpf_prefix, bii);
+		SUBreadSprintf(tfp, MAX_FILE_NAME_LENGTH+40, "%s-%06d.sortedbin", writer -> tmpf_prefix, bii);
 		sb_fps[bii] = fopen(tfp,"rb");
 		if(sb_fps[bii]!=NULL){
 			current_min_fps[bii] = SamBam_writer_sort_bins_to_BAM_FP_pos(sb_fps[bii]);
@@ -2441,7 +2441,7 @@ void SamBam_writer_sort_bins_to_BAM(SamBam_Writer * writer){
 		if(!sb_fps[bii]) continue;
 
 		char tfp[MAX_FILE_NAME_LENGTH+40];
-		sprintf(tfp , "%s-%06d.sortedbin", writer -> tmpf_prefix, bii);
+		SUBreadSprintf(tfp, MAX_FILE_NAME_LENGTH+40, "%s-%06d.sortedbin", writer -> tmpf_prefix, bii);
 		fclose(sb_fps[bii]);
 		unlink(tfp);
 	}

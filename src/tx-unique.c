@@ -286,14 +286,15 @@ void txunique_process_gene_chro(txunique_context_t * context, char * chro, int s
 				assert(unique_start == 0);
 				assert(is_on == 0);
 
-				char * hash_key = malloc(strlen(try_tx->transcript_id) + strlen(gene -> gene_name)+20);
-				sprintf(hash_key, "%s\t%s\nALL", gene -> gene_name, try_tx->transcript_id);
+				size_t hash_key_size = strlen(try_tx->transcript_id) + strlen(gene -> gene_name)+20;
+				char * hash_key = malloc(hash_key_size);
+				SUBreadSprintf(hash_key, hash_key_size, "%s\t%s\nALL", gene -> gene_name, try_tx->transcript_id);
 				int old_all_bases = HashTableGet(context -> result_table, hash_key) - NULL;
 				if(old_all_bases < 1)old_all_bases = 1;
 				HashTablePut(context -> result_table, hash_key, NULL + old_all_bases + total_bases);
 
-				hash_key = malloc(strlen(try_tx->transcript_id) + strlen(gene -> gene_name)+20);
-				sprintf(hash_key, "%s\t%s\nUNIQUE", gene -> gene_name, try_tx->transcript_id);
+				hash_key = malloc(hash_key_size);
+				SUBreadSprintf(hash_key, hash_key_size, "%s\t%s\nUNIQUE", gene -> gene_name, try_tx->transcript_id);
 				old_all_bases = HashTableGet(context -> result_table, hash_key) - NULL;
 				if(old_all_bases < 1)old_all_bases = 1;
 				HashTablePut(context -> result_table, hash_key, NULL + old_all_bases + unique_bases);
@@ -315,9 +316,9 @@ void txunique_process_write_gene(void * key, void * hashed_obj, HashTable * tab)
 	for(tx_i = 0; tx_i < gene -> transcript_list -> numOfElements; tx_i ++){
 		txunique_transcript_t * try_tx = ArrayListGet(gene -> transcript_list , tx_i);
 		char hash_key [ FEATURE_NAME_LENGTH * 2 + 20];
-		sprintf(hash_key, "%s\t%s\nALL", gene->gene_name, try_tx -> transcript_id);
+		SUBreadSprintf(hash_key, FEATURE_NAME_LENGTH * 2 + 20, "%s\t%s\nALL", gene->gene_name, try_tx -> transcript_id);
 		int all_bases = HashTableGet(context -> result_table, hash_key)-NULL-1;
-		sprintf(hash_key, "%s\t%s\nUNIQUE", gene->gene_name, try_tx -> transcript_id);
+		SUBreadSprintf(hash_key, FEATURE_NAME_LENGTH * 2 + 20, "%s\t%s\nUNIQUE", gene->gene_name, try_tx -> transcript_id);
 		int unique_bases = HashTableGet(context -> result_table, hash_key)-NULL-1;
 		fprintf(out_fp, "%s\t%s\t%d\t%d\n",  gene->gene_name, try_tx -> transcript_id, unique_bases, all_bases);
 	}

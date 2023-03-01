@@ -206,7 +206,7 @@ void do_find_common(char ** file_names, int files)
 				char key_type = is_indel?'I':'S';
 
 				char * ky = malloc(strlen(chro)+strlen(alt_one)+strlen(ref)+40);
-				sprintf(ky, "%c\t%s\t%s\t.\t%s\t%s\t.", key_type, chro, pos_str, ref, alt_one);
+				SUBreadSprintf(ky, strlen(chro)+strlen(alt_one)+strlen(ref)+40, "%c\t%s\t%s\t.\t%s\t%s\t.", key_type, chro, pos_str, ref, alt_one);
 				int qual = atoi(qual_str);
 
 				if(file_no - badfiles == 0)
@@ -215,7 +215,7 @@ void do_find_common(char ** file_names, int files)
 					char * info_buf = malloc(strlen(info)+1);
 					assert(info_buf);
 					strcpy(info_buf, info);
-					sprintf(IQF_buf,"%s\t%s\t%s", id_str,qual_str,filter_str);
+					SUBreadSprintf(IQF_buf, strlen(qual_str)+strlen(filter_str)+strlen(id_str)+4,"%s\t%s\t%s", id_str,qual_str,filter_str);
 					int repeat_times = HashTableGet(extra_count_table, ky) - NULL;
 					if(0 == repeat_times)
 					{
@@ -244,7 +244,7 @@ void do_find_common(char ** file_names, int files)
 							char * IQF_buf = malloc(strlen(qual_str)+strlen(filter_str)+strlen(id_str)+4);
 							assert(info_buf);
 							strcpy(info_buf, info);
-							sprintf(IQF_buf,"%s\t%s\t%s", id_str,qual_str,filter_str);
+							SUBreadSprintf(IQF_buf, strlen(qual_str)+strlen(filter_str)+strlen(id_str)+4,"%s\t%s\t%s", id_str,qual_str,filter_str);
 
 							HashTablePutReplace(extra_info_table, ky, info_buf, 0);
 							HashTablePutReplace(extra_id_qual_filter_table, ky, IQF_buf, 0);
