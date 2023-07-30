@@ -121,6 +121,11 @@ HashTable * StringTableCreate(srInt_64 numOfBuckets);
 HashTable * StringTableReverse(HashTable * ori);
 HashTable *HashTableCreate(srInt_64 numOfBuckets);
 
+// increase the value of key by 1.
+// the value must be a NULL+n number.
+// it returns the new value for the key.
+srInt_64 HashTableInc(HashTable *tab, void *key);
+
 /*--------------------------------------------------------------------------*\
  *  NAME:
  *      HashTableDestroy() - destroys an existing HashTable

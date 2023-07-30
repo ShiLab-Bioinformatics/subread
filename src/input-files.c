@@ -2895,8 +2895,12 @@ int SAM_pairer_fetch_BAM_block(SAM_pairer_context_t * pairer , SAM_pairer_thread
 			int test_read_bin = SAM_pairer_find_start(pairer, thread_context);
 			if(test_read_bin<1 && thread_context -> input_buff_BIN_used >= 32  ){
 				pairer -> is_bad_format = 1;
+				pairer -> is_single_end_mode = 1;
+				pairer -> tiny_mode = 1;
+				pairer -> long_cigar_mode = 1;
+
 				//SUBREADprintf("ERROR: cannot find the start of the next BAM block.\n");
-				print_in_box(80,0,0,"   Switch to the safe mode.");
+				//print_in_box(80,0,0,"   Switch to the safe mode.");
 			}
 		}
 		//SUBREADprintf("FETCHED BLOCK DECOMP=%d FROM COMP=%d\n", have, used_BAM);
@@ -3056,11 +3060,9 @@ int SAM_pairer_get_next_read_BIN( SAM_pairer_context_t * pairer , SAM_pairer_thr
 				thread_context -> input_buff_BIN_ptr += 4;
 				memcpy(&seq_len, thread_context -> input_buff_BIN + thread_context -> input_buff_BIN_ptr + 16, 4);
 				
-				//SUBREADprintf("REDUCE_2: record %u, %u\n", record_len, seq_len);
-	//			#warning "=========== CHECK IF '0 && ' IS CORRECT ==========="
-				if(record_len < 32 || (0 && record_len > min(MAX_BIN_RECORD_LENGTH,60000))|| seq_len >= pairer -> long_read_minimum_length){
+				if(record_len < 32 || seq_len >= pairer -> long_read_minimum_length){
 					if(seq_len >= pairer -> long_read_minimum_length) pairer -> is_single_end_mode = 1;
-					SUBREADprintf("ERROR: sequence length in the BAM record is out of the expected region: %d, %d\n", record_len , seq_len );
+					else SUBREADprintf("ERROR: sequence length in the BAM record is out of the expected region: %d, %d, %d\n", record_len , seq_len, pairer -> long_read_minimum_length);
 					pairer -> is_bad_format = 1;
 					return 0;
 				}
@@ -4131,26 +4133,6 @@ int merge_level_fps(SAM_pairer_context_t * pairer, char * fname, FILE ** fps, in
 				SAM_pairer_osr_next_bin( fps[ min2_name_fileno ] , bin_tmp2);
 				pairer -> output_function(pairer, 0, (char*) bin_tmp1, (char*)bin_tmp2);
 
-				if(0 && 0 == pairer -> is_unsorted_notified){
-					int name_tmp_len = strlen(names+(min_name_fileno * max_name_len))+5;
-					char * name_tmp_1 = malloc(name_tmp_len), *name_tmp_2 = malloc(name_tmp_len);
-					char * min1_chunk_info, * min2_chunk_info;
-					SUBreadSprintf(name_tmp_1, name_tmp_len, "C:%s:%d", names+(min_name_fileno * max_name_len), 0);
-					SUBreadSprintf(name_tmp_2, name_tmp_len, "C:%s:%d", names+(min2_name_fileno * max_name_len), 1);
-					min1_chunk_info = HashTableGet( pairer -> unsorted_notification_table , name_tmp_1);
-					min2_chunk_info = HashTableGet( pairer -> unsorted_notification_table , name_tmp_2);
-					if(min1_chunk_info == NULL || min2_chunk_info == NULL || !SAM_pairer_is_matched_chunks(min1_chunk_info, min2_chunk_info)){
-						SUBreadSprintf(name_tmp_1, name_tmp_len, "B:%s:%d", names+(min_name_fileno * max_name_len), 0);
-						if( pairer -> unsorted_notification ){
-							//SUBREADprintf("FINAL STEP\n");
-							//SUBREADprintf("UNSORT2\n");
-							pairer -> unsorted_notification(pairer ,  HashTableGet( pairer -> unsorted_notification_table , name_tmp_1), NULL);
-						}
-						pairer -> is_unsorted_notified = 1;
-					}
-					free(name_tmp_1);
-				}
-
 				int read_has = SAM_pairer_osr_next_name( fps[min2_name_fileno],  names + max_name_len*min2_name_fileno, -1, -1);
 				if(!read_has) *(names + max_name_len*min2_name_fileno)=0;
 			}else{
@@ -5169,7 +5151,7 @@ int SAM_pairer_fix_format(SAM_pairer_context_t * pairer){
 		unlink(tmpfname);
 		pairer -> long_cigar_mode = 1;
 		pairer -> tiny_mode = 1;
-		if(0 && ! pairer -> is_single_end_mode){
+		if(1 && ! pairer -> is_single_end_mode){
 			print_in_box(80,0,0,"   Switch to long-read mode; reads, not read-pairs, will be counted.");
 			print_in_box(80,0,0,"   Read name: %s", readname);
 			print_in_box(80,0,0,"   It had %d cigar opts and %d bases, more than %d.", cigar_opts, seq_len, pairer -> long_read_minimum_length);
@@ -5562,6 +5544,7 @@ void SAM_nosort_run_once(SAM_pairer_context_t * pairer){
 
 // only one thread; very large buffer size.
 int SAM_pairer_long_cigar_run(SAM_pairer_context_t * pairer){
+	//fprintf(stderr, "DEBUGLR: long run\n");
 	char *bin_buffer, *bam_buffer;
 	FILE * old_fp = pairer -> input_fp;
 	int bin_buff_capacity = 1000000, block_size = 0;
@@ -5708,6 +5691,7 @@ int SAM_pairer_run( SAM_pairer_context_t * pairer){
 			if(pairer -> reset_output_function)pairer -> reset_output_function(pairer);
 			pairer_increase_SAMBAM_buffer(pairer);
 
+			//fprintf(stderr, "DEBUGLR: long mode=%d\n", pairer -> long_cigar_mode);
 			if(pairer -> long_cigar_mode) return SAM_pairer_long_cigar_run(pairer);
 		}else break;
 	}

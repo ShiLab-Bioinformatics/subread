@@ -103,7 +103,7 @@ typedef struct{
 
 	srInt_64 mapped_reads_per_sample[MAX_SCRNA_SAMPLE_NUMBER];
 	srInt_64 assigned_reads_per_sample[MAX_SCRNA_SAMPLE_NUMBER];
-	srInt_64 reads_per_sample[MAX_SCRNA_SAMPLE_NUMBER];
+	srInt_64 reads_per_sample[MAX_SCRNA_SAMPLE_NUMBER+1];
 	srInt_64 bcl_input_local_start_no;
 	int bcl_input_local_filled, bcl_input_local_cached;
 	char bcl_input_local_readbin[BCL_READBIN_ITEMS_LOCAL][BCL_READBIN_SIZE];
@@ -638,6 +638,10 @@ int determine_total_index_blocks(cellcounts_global_t * cct_context){
 		if(!does_file_exist(tmp_fname))break;
 		cct_context->total_index_blocks ++;
 	}
+	if(cct_context->total_index_blocks> 1){
+		SUBREADprintf("ERROR: cellCounts can only run with one-block index. Please build the index with indexSplit=FALSE.\n");
+		return 1;
+	}
 	return 0;
 }
 
@@ -646,23 +650,23 @@ void sheet_convert_ss_to_arr( void * key, void * hashed_obj, HashTable * tab ){
 	cellcounts_global_t * cct_context = tab->appendix1;
 	ArrayListPush(cct_context -> sample_id_to_name, key);
 	hashed_arr -> appendix1 = NULL+ cct_context -> sample_id_to_name -> numOfElements; // One-based
-
-	srInt_64 xx1;
+					
+	srInt_64 xx1;		   
 	for(xx1 =0; xx1< hashed_arr -> numOfElements; xx1++){
-		char ** push_arr = malloc(sizeof(char*)*4);
+		char ** push_arr = malloc(sizeof(char*)*4); 
 		char ** sbc_lane_sample = ArrayListGet(hashed_arr, xx1);
 		srInt_64 lane_sample_int = sbc_lane_sample[0]-(char*)NULL;
-
+			
 		ArrayListPush(cct_context -> sample_barcode_list, push_arr);
-		push_arr[0] = NULL + lane_sample_int; 
+		push_arr[0] = NULL + lane_sample_int;
 		push_arr[1] = NULL + cct_context -> sample_id_to_name -> numOfElements;
 		push_arr[2] = sbc_lane_sample[1]; // Sample Barcode
 		push_arr[3] = NULL + (sbc_lane_sample[1]!=NULL && strlen(sbc_lane_sample[1])>12);
-
 		int line_no_in_sheet = sbc_lane_sample[2] - (char*)NULL;
 		HashTablePut(cct_context -> lineno1B_to_sampleno1B_tab , NULL+line_no_in_sheet, NULL + cct_context -> sample_id_to_name -> numOfElements);
 	}
-}
+}       
+
 
 void cellCounts_close_sample_SamBam_writers(void *v){
 	void ** vv = v;
@@ -1361,9 +1365,10 @@ int cellCounts_load_context(cellcounts_global_t * cct_context){
 	int rv = 0;
 	cellCounts_init_lock(&cct_context -> input_dataset_lock, 1 || (cct_context -> input_mode == GENE_INPUT_BCL));
 
-	if(cct_context -> input_mode == GENE_INPUT_BCL)
+	if(cct_context -> input_mode == GENE_INPUT_BCL){
 		rv = rv || geinput_open_bcl(cct_context -> input_dataset_name , & cct_context -> input_dataset , cct_context -> reads_per_chunk, cct_context -> total_threads);
-	else if(cct_context -> input_mode == GENE_INPUT_SCRNA_FASTQ)
+		if(!rv)cct_context -> is_dual_index = cct_context -> input_dataset.bcl_input.is_dual_index;
+	} else if(cct_context -> input_mode == GENE_INPUT_SCRNA_FASTQ)
 		rv = rv || geinput_open_scRNA_fqs(cct_context -> input_dataset_name , & cct_context -> input_dataset , cct_context -> reads_per_chunk, cct_context -> total_threads);
 	else if(cct_context -> input_mode == GENE_INPUT_SCRNA_BAM)
 		rv = rv || geinput_open_scRNA_BAM(cct_context -> input_dataset_name , & cct_context -> input_dataset , cct_context -> reads_per_chunk, cct_context -> total_threads);
@@ -1856,13 +1861,10 @@ void cellCounts_write_one_read_bin(cellcounts_global_t * cct_context, int thread
 
 int cellCounts_get_sample_id(cellcounts_global_t * cct_context, char * sbc, int read_laneno){
 	int x1;
-
-	//SUBREADprintf("TOTAL_SBC=%ld\n", global_context -> scRNA_sample_barcode_list -> numOfElements);
 	for(x1=0; x1 < cct_context -> sample_barcode_list -> numOfElements ; x1++ ){
 		char ** lane_and_barcode = ArrayListGet(cct_context -> sample_barcode_list, x1);
-		int lane_no = lane_and_barcode[0]-(char*)NULL;
-	//	SUBREADprintf("KNOWN_LANE=%d, IN_LANE=%d, to\n", lane_no, read_laneno);
-		if(read_laneno == lane_no){
+		int sheet_lane_no = lane_and_barcode[0]-(char*)NULL;
+		if(sheet_lane_no == LANE_FOR_ALL_LANES || read_laneno == sheet_lane_no){
 			int sample_no = lane_and_barcode[1]-(char*)NULL;
 			char * knownbar = lane_and_barcode[2];
 			if(lane_and_barcode[3]){
@@ -1876,8 +1878,6 @@ int cellCounts_get_sample_id(cellcounts_global_t * cct_context, char * sbc, int 
 	}
 	return -1;
 }
-
-
 
 int cellCounts_parallel_gzip_writer_add_read_fqs_scRNA(parallel_gzip_writer_t**outfps, char * bambin, int thread_no, char * read_text_raw, char * qual_text_raw){ // the text-raw variables are the reads in their input form (not potentially reversed form)
 	int reclen=0;
@@ -1961,7 +1961,7 @@ void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread
 
 	int sample_no = -1;
 	if(cct_context -> input_mode == GENE_INPUT_SCRNA_BAM){
-		sample_no = 1;  // Only one sample in the BAM mode. A sample may have multiple BAM file but they have the same sample_no.
+		sample_no = 1;  // Only one sample in the BAM mode. A sample may have multiple BAM files but they have the same sample_no.
 				// Multiple input samples are mapped/counted in multiple C_cellCounts calls. Each call only does one sample.
 	}else if(lane_str){
 		int laneno = 0;
@@ -1989,19 +1989,19 @@ void cellCounts_vote_and_add_count(cellcounts_global_t * cct_context, int thread
 	cellCounts_build_read_bin(cct_context, thread_no, readbin, read_name, strlen(read_name), rname_trimmed_len, rlen, read_text, qual_text, chro_name, chro_pos, reporting_index, multi_mapping_number, this_multi_mapping_i, editing_dist);
 
 	//if(batch_no < CELLBC_BATCH_NUMBER) SUBREADprintf("WRITE_FP_BTCH %d \n", batch_no);
+	cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
 	if(sample_no>0){
 		cellCounts_lock_occupy(cct_context -> batch_file_locks + batch_no);
 		FILE * binfp = cct_context -> batch_files [ batch_no ];
 		cellCounts_write_one_read_bin(cct_context, thread_no, binfp, sample_no, cell_barcode_no, UMI_seq, readbin, nhits, batch_no == CELLBC_BATCH_NUMBER+1);
 		cellCounts_lock_release(cct_context -> batch_file_locks + batch_no);
-		cellcounts_align_thread_t * thread_context = cct_context -> all_thread_contexts + thread_no;
 
 		if(reporting_index >=0 && this_multi_mapping_i==1){
 			thread_context -> mapped_reads_per_sample[ sample_no -1 ]++;
 			thread_context -> reads_per_sample[ sample_no -1 ]++;
 			if(nhits >0) thread_context -> assigned_reads_per_sample[ sample_no -1 ]++;
 		}else thread_context -> reads_per_sample[ sample_no -1 ]++;
-	}
+	}else thread_context -> reads_per_sample[ cct_context-> sample_sheet_table -> numOfElements ]++; // unassigned reads in NO+1:
 
 	void * pps[6];
 	void ** sample_bam_2fps = (void**)pps;
@@ -2152,6 +2152,7 @@ int cellCounts_run_maybe_threads(cellcounts_global_t * cct_context, int task){
 			cct_context -> assigned_reads_per_sample[smpno] += thread_contexts[current_thread_no].assigned_reads_per_sample[smpno];
 			cct_context -> reads_per_sample[smpno] += thread_contexts[current_thread_no].reads_per_sample[smpno];
 		}
+		cct_context -> reads_per_sample[smpno] += thread_contexts[current_thread_no].reads_per_sample[smpno]; //  for non-assigned
 		if(ret_value)break;
 	}
 	//SUBREADprintf("HICONF MAPPING (SIMPLE) = %lld, LOWCONF MAPPING (ALL SUBREADS, NOT SIMPLE) = %lld\n", cct_context -> hiconf_map , cct_context -> loconf_map );
@@ -2217,6 +2218,10 @@ int cellCounts_copy_bin_to_textread(cellcounts_global_t * cct_context, int readl
 			int nch1 = nch & 0x3;
 			nbase = (1413956417) >> (nch1*8); // 1413956417 = 'TGCA'
 			nqual=33+(nch >>2);
+			if(nqual <='!'){
+				nbase='N';
+				nqual='#';
+			}
 		}else{
 			nqual='#';
 			nbase='N';
@@ -4557,6 +4562,33 @@ int cellCounts_do_cellbc_batches(cellcounts_global_t * cct_context){
 	}
 	//SUBREADprintf("After processing batches, %lld UMIs were removed in step2 of UMI merging.\n", removed_umis);
 	print_in_box(80,0,0,"");
+	if(cct_context -> input_mode== GENE_INPUT_BCL){
+		srInt_64 all_extracted_reads = 0;
+		for(xk1 = 0; xk1 < cct_context-> sample_sheet_table -> numOfElements+1; xk1++) 
+			all_extracted_reads += cct_context-> reads_per_sample[xk1];
+
+		for(xk1 = 0; xk1 < cct_context-> sample_sheet_table -> numOfElements; xk1++) {
+			srInt_64 extracted_reads = cct_context-> reads_per_sample[xk1];
+			char * sample_name = ArrayListGet(cct_context-> sample_id_to_name, xk1);
+#ifdef __MINGW32__
+			print_in_box(81,0,0,"  % 13" PRId64 " (%4.1f%%%%) reads were assigned to %s.\n", extracted_reads, extracted_reads*100./all_extracted_reads, sample_name);
+#else
+			print_in_box(81,0,0,"  %'13lld (%4.1f%%%%) reads were assigned to %s.\n", extracted_reads, extracted_reads*100./all_extracted_reads, sample_name);
+#endif
+		}
+		print_in_box(80,0,0,"");
+
+#ifdef __MINGW32__
+		if(cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements] < 0.005*all_extracted_reads) print_in_box(81,0,0,"  % 13" PRId64 "(%4.0f%%%%) reads were assigned to samples in total.", all_extracted_reads - cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements], 100.-cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements]*100./all_extracted_reads);
+		else print_in_box(81,0,0,"  % 13" PRId64 " (%4.1f%%%%) reads were assigned to samples in total.", all_extracted_reads - cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements], 100.-cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements]*100./all_extracted_reads);
+#else
+		if(cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements] < 0.005*all_extracted_reads) print_in_box(81,0,0,"  %'13lld (%4.0f%%%%) reads were assigned to samples in total.", all_extracted_reads - cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements], 100.-cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements]*100./all_extracted_reads);
+		else print_in_box(81,0,0,"  %'13lld (%4.1f%%%%) reads were assigned to samples in total.", all_extracted_reads - cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements], 100.-cct_context-> reads_per_sample[cct_context-> sample_sheet_table -> numOfElements]*100./all_extracted_reads);
+#endif
+
+
+	print_in_box(80,0,0,"");
+	}
 	print_in_box(80,0,0,"Generate UMI count tables...");
 	ArrayListDestroy(file_size_list);
 

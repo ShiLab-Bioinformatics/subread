@@ -596,6 +596,20 @@ typedef struct {
 	subread_lock_t read_lock;
 } input_scBAM_t;
 
+typedef struct{
+	int cbcl_only_has_good_reads; //  the "non PF" reads are excluded?
+	int bits_per_bitscore;
+	int last_char_from_gzip;
+	int tile_read_bytes;
+	HashTable * digit4_to_total_read_no_P1; 
+	HashTable * digit4_to_compressed_start_of_next;
+	ArrayList * list_mapped_qscore;
+	int current_tile_read_ptr;
+	int current_tile_uncompressed_size;
+	int cbcl_bin_fd; // it is the binary integer fd (not fp).
+	gzFile gzblock_fp; // it is a gzFile object opened from cbcl_bin_fd that has been seeked to the location of the start of a GZIPPED block in the CBCL file.
+} cbcl_fp;
+
 typedef struct {
 	int read_no_in_chunk;
 	int reads_available_in_chunk; // -1 : EOF of all input reads : no next chunk available.
@@ -613,7 +627,18 @@ typedef struct {
 	char bcl_format_string[MAX_FILE_NAME_LENGTH];
 	char filter_format_string[MAX_FILE_NAME_LENGTH];
 	int bcl_no_is_used[MAX_READ_LENGTH];
-	autozip_fp * bcl_gzip_fps; 
+	int is_dual_index;
+
+	int is_cbcl_mode;
+	int cbcl_total_tiles;
+	int *cbcl_tile_numbers; // lane * 1000000 + 4_digit; this corresponds to the tile list in RunInfo.xml. For example, "1_1305" => 1001305 
+				// 4 digits: surface, swath and tile nos.
+	int * cbcl_indexes; 	// 0, 1, 2... pointing to the tile numbers 1001101, 1001102, 1001103, ..., which are in cbcl_tile_numbers
+	union{
+		autozip_fp * bcl_gzip_fps; 
+		cbcl_fp * cbcl_binary_fps; // a new cbcl_fp object is only created when the surface is switched. No new cbcl_fp object is created when the swath/tiles in the same cbcl file is switched.
+	};
+	int cbcl_filter_tile_idx; // the tile idx for the current filter fp (cache_input -> filter_fp).
 	autozip_fp   filter_fp; 
 	subread_lock_t read_lock;
 	char ** bcl_bin_cache;

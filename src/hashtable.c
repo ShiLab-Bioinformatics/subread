@@ -295,6 +295,12 @@ ArrayList * HashTableKeys(HashTable * tab){
 	return ret;
 }
 
+srInt_64 HashTableInc(HashTable *tab, void *key){
+	void * oldv = HashTableGet(tab, key);
+	HashTablePut(tab, key, oldv+1);
+	return oldv - NULL+1;
+}
+
 HashTable *HashTableCreate(srInt_64 numOfBuckets) {
 	HashTable *hashTable;
 	int i;

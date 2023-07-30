@@ -8,6 +8,8 @@
 #include "seek-zlib.h"
 #include "hashtable.h"
 
+#define LANE_FOR_ALL_LANES 99999
+
 int input_BLC_init( input_BLC_t * blc_input , char * data_dir );
 int input_BLC_next_read( input_BLC_t * blc_input, char * readname , char * read, char * qual );
 int input_BLC_tell ( input_BLC_t * blc_input , input_BLC_pos_t * pos );
@@ -51,5 +53,5 @@ int hamming_dist_ATGC_max2(char* s1, char* s2 );
 int hamming_dist_ATGC_max3(char* s1, char* s2 );
 
 // returns -1 if error, or 0 if no error.
-int cacheBCL_quality_test(int is_FASTQ_input, char * datadir, HashTable * sample_sheet_table, ArrayList * cell_barcode_list, int testing_reads, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode);
+int cacheBCL_quality_test(int is_FASTQ_input, char * datadir, HashTable * sample_sheet_table, ArrayList * cell_barcode_list, int testing_reads, int * tested_reads, int * valid_sample_index, int * valid_cell_barcode, char * result_prefix);
 #endif

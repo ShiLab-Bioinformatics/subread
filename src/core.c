@@ -211,7 +211,7 @@ void print_in_box(int line_width, int is_boundary, int options, char * pattern,.
 			}else{
 				txt_len++;
 				
-				if(txt_len == 80 - 6)
+				if(txt_len == line_width - 6)
 				{
 					is_cut = 1;
 				} 
