@@ -1331,8 +1331,8 @@ void gehash_insert_sorted(gehash_t * the_table, gehash_key_t key, gehash_data_t 
 
 unsigned int load_int32(FILE * fp)
 {
-	int ret;
-	int read_length;
+	unsigned int ret;
+	signed int read_length;
 	read_length = fread(&ret, sizeof(int), 1, fp);
 	if(read_length<=0)assert(0);
 	return ret;
@@ -1341,7 +1341,7 @@ unsigned int load_int32(FILE * fp)
 srInt_64 load_int64(FILE * fp)
 {
 	srInt_64 ret;
-	int read_length;
+	signed int read_length;
 	read_length = fread(&ret, sizeof(srInt_64), 1, fp);
 	if(read_length<=0)assert(0);
 	return ret;
@@ -1389,7 +1389,7 @@ int gehash_load_option(const char fname [], int option_no, int * result){
 
 int gehash_load(gehash_t * the_table, const char fname [])
 {
-	int i, read_length, rrtv;
+	signed int i, read_length, rrtv;
 	char magic_chars[8];
 	magic_chars[7]=0;
 

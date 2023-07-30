@@ -1030,7 +1030,7 @@ int run_chromosome_search(FILE *in_fp, FILE * out_fp, char * chro_name , char * 
 		//SUBREADprintf("Processing chromosome %s in FASTA file; expected length is %u.\n", chro_name, chro_len);
 		while( 1 || all_offset <= chro_len - 1)
 		{
-			char nc = fgetc(in_fp);
+			signed char nc = fgetc(in_fp);
 
 			if(nc == ' ' || nc == '\r' || nc == '\n') continue;
 			if(nc == '>')
@@ -1054,7 +1054,7 @@ int run_chromosome_search(FILE *in_fp, FILE * out_fp, char * chro_name , char * 
 					int xk2;
 					for(xk2=0; xk2<10000; xk2++)
 					{
-						char ncx = fgetc(in_fp);
+						signed char ncx = fgetc(in_fp);
 						if(ncx == EOF || ncx == '>') break;
 						if(ncx == '\r' || ncx=='\n') continue;
 						referenced_base[offset+xk2] = (ncx=='A' || ncx == 'G' || ncx == 'C')?ncx:'T';

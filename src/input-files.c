@@ -269,7 +269,7 @@ int read_line(int max_read_len, FILE * fp, char * buff, int must_upper)
 	{
 		while(1)
 		{
-			char ch = fgetc(fp);
+			signed char ch = fgetc(fp);
 			#ifdef __MINGW32__
 			if(ch == '\r') continue;
 			#endif
@@ -282,7 +282,7 @@ int read_line(int max_read_len, FILE * fp, char * buff, int must_upper)
 	{
 		while(1)
 		{
-			char ch = fgetc(fp);
+			signed char ch = fgetc(fp);
 			#ifdef __MINGW32__
 			if(ch == '\r') continue;
 			#endif
@@ -549,7 +549,7 @@ int geinput_next_char(gene_input_t * input)
 		while (1)
 		{
 			char nch = fgetc((FILE *)input->input_fp);
-			if ((nch <0) && feof((FILE *)input->input_fp))
+			if ((nch & 0x80) && feof((FILE *)input->input_fp))
 				return -2;
 			else if (nch < 0 || nch > 126)SUBREADprintf("\nUnrecognised char = #%d\n", nch);
 
@@ -754,7 +754,7 @@ srInt_64 tell_current_line_no(gene_input_t * input){
 	srInt_64 ret = 0, fscanpos = 0;
 	while(1)
 	{
-		char nch = fgetc(input->input_fp);
+		signed char nch = fgetc(input->input_fp);
 		if(nch == EOF) return -1;
 		if(nch == '\n') ret ++;
 		fscanpos ++;
@@ -963,7 +963,7 @@ int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_s
 		ret = 0;
 		while(1) // fetch read text
 		{
-			char nch = 0;
+			signed char nch = 0;
 			ret += read_line(MAX_READ_LENGTH-ret, input->input_fp, read_string+ret, 1);
 
 			nch = fgetc(input->input_fp);
@@ -980,7 +980,7 @@ int geinput_next_read_trim(gene_input_t * input, char * read_name, char * read_s
 		return ret;
 		
 	} else if(input->file_type == GENE_INPUT_FASTQ || input->file_type == GENE_INPUT_GZIP_FASTQ) {
-		char nch = 0;
+		signed char nch = 0;
 		int ret;
 
 		//if(input->file_type == GENE_INPUT_GZIP_FASTQ)seekgz_preload_buffer(input, NULL);
@@ -1394,7 +1394,7 @@ void fix_cigar_SAM14(char * cig){
 		return;
 	}
 	while(1){
-		int nch = cig[ci];
+		signed int nch = cig[ci];
 		if(isdigit(nch)) tmpi = tmpi * 10 + nch - '0';
 		else{
 			if(nch == '=' || nch == 'X' || nch == 'M'){
@@ -1776,7 +1776,7 @@ void destroy_cigar_event_table(HashTable * event_table)
 void break_VCF_file(char * vcf_file, HashTable * fp_table, char * temp_file_prefix, chromosome_t* known_chromosomes)
 {
 	autozip_fp vzfp;
-	int vret = autozip_open(vcf_file, &vzfp);
+	signed int vret = autozip_open(vcf_file, &vzfp);
 	char temp_file_suffix[MAX_CHROMOSOME_NAME_LEN+20];
 	int close_now = 0;
 
@@ -2770,7 +2770,7 @@ int SAM_pairer_read_SAM_MB( FILE * fp, int max_read_len, char * inbuff ){
 		}
 	}
 	if(!feof(fp)){
-		int nch;
+		signed int nch;
 		while(1){
 			nch = fgetc(fp);
 			if(nch < 0 || nch == '\n'){
@@ -2835,13 +2835,13 @@ void SAM_pairer_fill_BIN_buff(SAM_pairer_context_t * pairer ,  SAM_pairer_thread
 
 int SAM_pairer_find_start(SAM_pairer_context_t * pairer , SAM_pairer_thread_t * thread_context );
 #define BAM_next_nch { \
-	int retXX = 0; while(thread_context -> input_buff_BIN_ptr >= thread_context -> input_buff_BIN_used){retXX = SAM_pairer_fetch_BAM_block(pairer, thread_context);  if(retXX) break;}\
+	signed int retXX = 0; while(thread_context -> input_buff_BIN_ptr >= thread_context -> input_buff_BIN_used){retXX = SAM_pairer_fetch_BAM_block(pairer, thread_context);  if(retXX) break;}\
 	if(retXX) nch=-1; else nch = thread_context -> input_buff_BIN[thread_context -> input_buff_BIN_ptr++];}
 
 #define SAM_next_line {\
 	if( thread_context -> input_buff_SBAM_used <= thread_context -> input_buff_SBAM_ptr ){ line_ptr = NULL;}else{\
 	line_ptr = thread_context -> input_buff_SBAM + thread_context -> input_buff_SBAM_ptr;line_len = 0;\
-	while(line_len + thread_context -> input_buff_SBAM_ptr < thread_context -> input_buff_SBAM_used){ int ccch = thread_context -> input_buff_SBAM[ thread_context -> input_buff_SBAM_ptr + line_len ]; if(ccch == '\n')break; line_len ++;}\
+	while(line_len + thread_context -> input_buff_SBAM_ptr < thread_context -> input_buff_SBAM_used){ signed int ccch = thread_context -> input_buff_SBAM[ thread_context -> input_buff_SBAM_ptr + line_len ]; if(ccch == '\n')break; line_len ++;}\
 	thread_context -> input_buff_SBAM_ptr += line_len+1;}}
 
 int SAM_pairer_fetch_BAM_block(SAM_pairer_context_t * pairer , SAM_pairer_thread_t * thread_context){
@@ -3184,7 +3184,7 @@ int online_register_contig(SAM_pairer_context_t * pairer , SAM_pairer_thread_t *
 	memset(header_sec + 4+reflen, 0, 4);
 	subread_lock_occupy(&pairer -> SAM_BAM_table_lock);
 	
-	int refId = HashTableGet(pairer->sam_contig_number_table, ref) - NULL - 1;
+	signed int refId = HashTableGet(pairer->sam_contig_number_table, ref) - NULL - 1;
 	if(refId < 0){
 		refId = pairer->sam_contig_number_table->numOfElements;
 		pairer -> output_header(pairer, thread_context -> thread_id, 0, 1 , header_sec , 8+reflen);
@@ -3244,7 +3244,7 @@ int reduce_SAM_to_BAM(SAM_pairer_context_t * pairer , SAM_pairer_thread_t * thre
 
 	char * bin_tmp = (char *)thread_context -> input_buff_BIN + thread_context -> input_buff_BIN_ptr;
 
-	int refID = HashTableGet(pairer->sam_contig_number_table, ref) - NULL - 1;
+	signed int refID = HashTableGet(pairer->sam_contig_number_table, ref) - NULL - 1;
 	if(refID < 0 && ref[0]!='*')
 		refID = online_register_contig(pairer, thread_context, ref);
 	set_memory_int(bin_tmp + 4, refID);
@@ -3275,7 +3275,7 @@ int reduce_SAM_to_BAM(SAM_pairer_context_t * pairer , SAM_pairer_thread_t * thre
 		set_memory_int(bin_tmp + 20, l_seq); // SEQ_LEN
 	}else	set_memory_int(bin_tmp + 20, 1);
 
-	int mate_refID = refID;
+	signed int mate_refID = refID;
 	if(mate_ref[0]!='=' || mate_ref[1]!=0)
 		mate_refID = HashTableGet(pairer->sam_contig_number_table, mate_ref) - NULL - 1;
 
@@ -4022,7 +4022,7 @@ unsigned int SAM_pairer_osr_hash(char * st){
 	return (ret^ret2) % 39846617;
 }
 
-int SAM_pairer_osr_next_name(FILE * fp , char * name, int thread_no, int all_threads){
+int SAM_pairer_osr_next_name(FILE * fp , char * name, int thread_no, signed int all_threads){
 	while(1){
 		if(feof(fp)) return 0;
 		int rlen =0;

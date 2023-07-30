@@ -152,7 +152,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 		while(1)
 		{
 			//Subread Cycle
-			char next_char;
+			signed char next_char;
 			if (status == NEXT_FILE)
 			{
 				if(file_number == chro_file_number)
@@ -359,7 +359,7 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 			for (i=0; i<GENE_SLIDING_STEP; i++)
 			{
 				next_char = geinput_next_char(ginp);
-				if(next_char < 0) {
+				if(next_char & 0x80) {
 					if( 0 == for_measure_buckets ) gvindex_set(&value_array_index, offset - (IS_COLOR_SPACE?0:0), array_int_key, padding_around_contigs);
 
 					if (next_char == -1) status = NEXT_READ;
@@ -534,7 +534,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 		while(1)
 		{
 			//Subread Cycle
-			char next_char;
+			signed char next_char;
 			//if(status > 0)SUBREADprintf("BDSSTATUS = %d\n", status);
 
 			if (status == NEXT_FILE)
@@ -563,7 +563,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 
 				for (i=0; i<16; i++)
 				{
-					char nch = geinput_next_char(ginp);
+					signed char nch = geinput_next_char(ginp);
 					if (nch == 'N') skips = 16;
 					else if (skips>0) skips--;
 					window[i] = nch;
@@ -599,7 +599,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 			for (i=0; i<GENE_SLIDING_STEP; i++)
 			{
 				next_char = geinput_next_char(ginp);
-				if(next_char < 0)
+				if(next_char &0x80)
 				{
 					if (next_char == -1) status = NEXT_READ;
 					if (next_char == -2) status = NEXT_FILE;
@@ -1243,7 +1243,7 @@ int main_buildindex(int argc,char ** argv)
 	SUBreadSprintf(tmp_fa_file+strlen(tmp_fa_file), 50, "/subread-index-sam-%06u-%06d", getpid(),(int)(time(NULL) % 1000000));
 	#else
 	SUBreadSprintf(tmp_fa_file+strlen(tmp_fa_file),50, "/subread-index-sam-%06u-XXXXXX", getpid());
-	int tmpfdd = mkstemp(tmp_fa_file);
+	signed int tmpfdd = mkstemp(tmp_fa_file);
 	if(tmpfdd == -1){
 		SUBREADprintf("ERROR: cannot create temp file\n");
 		return -1;
