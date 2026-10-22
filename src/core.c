@@ -4309,6 +4309,12 @@ int destroy_global_context(global_context_t * context)
 		context->non_informative_subreads = NULL;
 	}
 
+	if(context->deeplearning_output_fp)
+	{
+		fclose(context->deeplearning_output_fp);
+		context->deeplearning_output_fp = NULL;
+	}
+
 	if((context -> will_remove_input_file & 1) && strstr(context ->config.first_read_file, "/core-temp")) unlink(context ->config.first_read_file);
 	if((context -> will_remove_input_file & 2) && strstr(context ->config.second_read_file, "/core-temp")) unlink(context ->config.second_read_file);
 	free(context -> rebuilt_command_line);

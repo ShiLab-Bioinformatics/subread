@@ -720,8 +720,13 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 
 	if(global_context->config.write_deeplearning_output)
 	{
+		char dl_fname[MAX_FILE_NAME_LENGTH+10];
 		global_context->non_informative_subreads = HashTableCreate(1003);
 		load_non_informative_subreads(global_context);
+		SUBreadSprintf(dl_fname, MAX_FILE_NAME_LENGTH+9, "%s.DL", global_context->config.output_prefix);
+		global_context->deeplearning_output_fp = fopen(dl_fname, "wb");
+		if(!global_context->deeplearning_output_fp)
+			SUBREADprintf("WARNING: unable to create deep-learning output file '%s'.\n", dl_fname);
 	}
 
 	return 0;

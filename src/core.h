@@ -517,6 +517,7 @@ typedef struct{
 	SamBam_Writer * output_bam_writer;
 	FILE * output_sam_fp;
 	FILE * long_insertion_FASTA_fp;
+	FILE * deeplearning_output_fp;
 	char * output_sam_inner_buffer;
 	int output_sam_is_full;
 
