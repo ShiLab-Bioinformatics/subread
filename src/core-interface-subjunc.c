@@ -694,7 +694,8 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 		//global_context->config.multi_best_reads = 1;
 	}
 
-
+	if(global_context->config.write_deeplearning_output)
+		global_context->non_informative_subreads = HashTableCreate(1003);
 
 	return 0;
 }

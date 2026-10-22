@@ -594,6 +594,7 @@ typedef struct{
 	char * exonic_region_bitmap;
 	HashTable * sam_chro_to_anno_chr_alias;
 	HashTable * annotation_chro_table;
+	HashTable * non_informative_subreads;
 } global_context_t;
 
 
