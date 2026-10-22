@@ -44,6 +44,48 @@ HashTable * ArrayListToLookupTable_Int(ArrayList * arr){
 	return ret;
 }
 
+int ArrayListStringJoin(ArrayList * list, char *outbuf, int out_max_len){
+	int outpt=0;
+	srInt_64 x1;
+	for(x1 = 0; x1 < list->numOfElements; x1++){
+		outpt += snprintf(outbuf + outpt, out_max_len - outpt -1,"%s%s", (char*)list->elementList [ x1 ], x1<list->numOfElements-1?",":"");
+	}
+	outbuf[out_max_len-1] = 0;
+	return outpt;
+}
+
+ArrayList* ArrayList_Int_Hash_Intersect(ArrayList * list, HashTable * h2_key_plus1){
+	ArrayList * ret = ArrayListCreate( min(list -> numOfElements, h2_key_plus1 -> numOfElements ) );
+	srInt_64 x1;
+	for(x1 = 0; x1 < list->numOfElements; x1++){
+		void * v1 = ArrayListGet(list, x1);
+		if(HashTableGet(h2_key_plus1, v1+1))ArrayListPush(ret, v1);
+	}
+	return ret;
+
+}
+ArrayList* ArrayList_Int_Intersect(ArrayList * list, ArrayList * l2){
+	ArrayList * ret = ArrayListCreate( min(list -> numOfElements, l2 -> numOfElements ) );
+	HashTable * l2_look = ArrayListToLookupTable_Int(l2);
+	srInt_64 x1;
+	for(x1 = 0; x1 < list->numOfElements; x1++){
+		void * v1 = ArrayListGet(list, x1);
+		if(HashTableGet(l2_look, v1+1))ArrayListPush(ret, v1);
+	}
+	HashTableDestroy(l2_look);
+	return ret;
+}
+void ArrayListExtend(ArrayList * list, ArrayList * additional){
+	srInt_64 x1;
+	for(x1 = 0; x1 < additional->numOfElements; x1++)
+		ArrayListPush(list, ArrayListGet(additional, x1));
+}
+
+int ArrayListContainsString(ArrayList * list, char * who){
+	srInt_64 x1;
+	for(x1 = 0; x1 < list->numOfElements; x1++) if(strcmp(list->elementList [ x1 ],who)==0) return 1;
+	return 0;
+}
 int ArrayListContainsPtr(ArrayList * list, void * who){
 	srInt_64 x1;
 	for(x1 = 0; x1 < list->numOfElements; x1++) if(list->elementList [ x1 ]==who) return 1;
@@ -198,11 +240,11 @@ void ArrayListSort(ArrayList * list, int compare_L_minus_R(void * L_elem, void *
 		basic_sort(sortdata, list -> numOfElements, ArrayListSort_compare, ArrayListSort_exchange);
 }
 
-int ArrayListStringComparison(void * L_elem, void * R_elem){
+int ArrayListStringComparison(void * L_elem, void * R_elem, ArrayList * me){
 	return strcmp((char*)L_elem, (char*)R_elem);
 }
 
-int ArrayListLLUComparison(void * L_elem, void * R_elem){
+int ArrayListLLUComparison(void * L_elem, void * R_elem, ArrayList * me){
 	srUInt_64 lint = L_elem-NULL;
 	srUInt_64 rint = R_elem-NULL;
 	if(lint<rint)return -1;
@@ -1068,4 +1110,38 @@ ArrayList * HashTableSortedIndexes(HashTable * k2int_tab, int larger_value_first
 	appx[1]=NULL+larger_value_first;
 	ArrayListSort(ret, HashTableSortedIndexes_cmp_idx);
 	return ret;
+}
+
+void ArrayListUnique(ArrayList * list, int same_item(void * L_elem, void * R_elem, ArrayList * me)){
+	long xk1, xk2;
+	char * remove_list = malloc(list -> numOfElements);
+	memset(remove_list, 0, list -> numOfElements);
+	for(xk1=0; xk1< list -> numOfElements; xk1++){
+		if(remove_list[xk1])continue;
+		for(xk2=xk1+1; xk2 < list -> numOfElements; xk2++){
+			if( same_item( list -> elementList[xk1], list -> elementList[xk2], list ) ){
+				remove_list[xk2]=1;
+			}
+		}
+	}
+	xk2=0;
+	for(xk1=0; xk1< list -> numOfElements; xk1++){
+		if(!remove_list[xk1]){
+			if(xk1!=xk2) list -> elementList[xk2] = list -> elementList[xk1];
+			xk2++;
+		}
+	}
+	list -> numOfElements = xk2;
+	free(remove_list);
+}
+
+int ArrayListFilter(ArrayList * list, int (*keep_me)(void *elem, ArrayList * me)){
+	srInt_64 x1, deleted=0;
+	for(x1 = 0; x1 < list->numOfElements; x1++){
+		if(keep_me( list->elementList[x1], list )){
+			if(deleted) list->elementList[x1-deleted] = list->elementList[x1];
+		} else deleted++;
+	}
+	list -> numOfElements -= deleted;
+	return deleted;
 }

@@ -376,6 +376,11 @@ void cacheBCL_close(cache_BCL_t * cache_input){
 	free(cache_input -> cbcl_tile_numbers);
 }
 
+
+int cacheBCL_get_readno_in_dataset(cache_BCL_t * cache_input){
+	return cache_input -> chunk_no * cache_input -> reads_per_chunk +(cache_input -> read_no_in_chunk);
+}
+
 int cacheBCL_init( cache_BCL_t * cache_input, char * data_dir, int reads_in_chunk, int all_threads ){
 	memset(cache_input, 0, sizeof( cache_BCL_t));
 	subread_init_lock(&cache_input -> read_lock);
@@ -388,9 +393,11 @@ int cacheBCL_init( cache_BCL_t * cache_input, char * data_dir, int reads_in_chun
 	int x1;
 	for(x1 = 0; x1 < cache_input -> total_bases_in_each_cluster; x1++)
 		cache_input -> bcl_bin_cache[x1] = malloc(reads_in_chunk);
-	cache_input -> flt_bin_cache = malloc(reads_in_chunk*2);
-	cache_input -> flt_bin_cache_size = reads_in_chunk*2;
-	cache_input -> lane_no_in_chunk = malloc(reads_in_chunk);
+	srInt_64 memsize_for_cache = reads_in_chunk;
+	reads_in_chunk = min(2*reads_in_chunk, 0x7fff0000ll);
+	cache_input -> flt_bin_cache = malloc(memsize_for_cache);
+	cache_input -> flt_bin_cache_size = memsize_for_cache; 
+	cache_input -> lane_no_in_chunk = malloc(memsize_for_cache);
 	cache_input -> chunk_end_lane = 1;	// no "0th lane"
 	cache_input -> all_threads = all_threads;
 	return iCache_open_batch(cache_input)?1:0;
@@ -456,7 +463,10 @@ int iCache_continuous_read_lanes( cache_BCL_t * cache_input, int bcl_no){
 						}else break;
 
 						if(wptr == cache_input ->  flt_bin_cache_size){
-							cache_input ->  flt_bin_cache_size *= 1.6;
+							srInt_64 next_size = cache_input ->  flt_bin_cache_size ;
+							next_size = next_size* 1.6;
+							if(next_size> 0x7fff0000ll) next_size = 0x7fff0000ll;
+							cache_input -> flt_bin_cache_size = (int)next_size;
 							wpt = cache_input-> flt_bin_cache = realloc( wpt, cache_input ->  flt_bin_cache_size );
 						}
 						wpt[wptr++] = nch&0xff;
@@ -606,8 +616,11 @@ int iCache_continuous_read_lanes( cache_BCL_t * cache_input, int bcl_no){
 					if( bcl_no < 0 || cache_input -> flt_bin_cache [readno_may_badqual] ){
 						if(bcl_no <0){
 							if(nch>0) cache_input -> lane_no_in_chunk[total_valid_reads ++] = my_lane;
-							if(wptr == cache_input ->  flt_bin_cache_size){
-								cache_input ->  flt_bin_cache_size *= 1.6;
+							if(wptr == cache_input -> flt_bin_cache_size){
+								srInt_64 next_size = cache_input ->  flt_bin_cache_size ;
+								next_size = next_size* 1.6;
+								if(next_size> 0x7fff0000ll) next_size = 0x7fff0000ll;
+								cache_input -> flt_bin_cache_size = (int)next_size;
 								wpt = cache_input-> flt_bin_cache = realloc( wpt, cache_input ->  flt_bin_cache_size );
 							}
 						}else total_valid_reads++;
@@ -1028,6 +1041,7 @@ HashTable * input_BLC_parse_SampleSheet(char * fname){
 ArrayList * input_BLC_parse_CellBarcodes(char * fname){
 	autozip_fp fp;
 	int resop = autozip_open(fname, &fp);
+	//SUBREADprintf("TRY open barcode fp: '%s'  having %p\n", fname, resop);
 	if(resop<0) return NULL;
 
 	ArrayList * ret = ArrayListCreate(10000000);
@@ -1037,9 +1051,10 @@ ArrayList * input_BLC_parse_CellBarcodes(char * fname){
 		char tmp_fl[MAX_BARCODE_LEN+1];
 		int skr = autozip_gets(&fp, tmp_fl, MAX_BARCODE_LEN);
 		if(skr<1) break;
-		//if(ret -> numOfElements <40) SUBREADprintf("LOAD_CELL_BAR : %s , %d\n", tmp_fl, skr);
 		int x1;
 		if(tmp_fl[skr-1]=='\n') tmp_fl[skr-1]=0;
+
+		//if(ret -> numOfElements <40) SUBREADprintf("LOAD_CELL_BAR : %s , %d\n", tmp_fl, skr);
 		for(x1=0; tmp_fl[x1]; x1++) if(!isalpha(tmp_fl[x1])){
 			tmp_fl[x1]=0;
 			break;
@@ -1759,7 +1774,7 @@ int input_mFQ_init_by_one_string(input_mFQ_t * fqs_input, char * three_paired_fq
 
 }
 
-int input_mFQ_init( input_mFQ_t * fqs_input, char ** files1, char ** files2, char** files3, int total_files ){
+int input_mFQ_init(input_mFQ_t * fqs_input, char ** files1, char ** files2, char** files3, int total_files ){
 	int x1;
 	memset(fqs_input, 0, sizeof(input_mFQ_t));
 	fqs_input->files1 = malloc(sizeof(char*)*total_files);
@@ -1900,3 +1915,4 @@ int input_mFQ_tell(input_mFQ_t * fqs_input, input_mFQ_pos_t * pos ){
 	}
 	return 0;
 }
+

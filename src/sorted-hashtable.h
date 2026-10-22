@@ -27,6 +27,7 @@
 #include "gene-value-index.h"
 
 #define GEHASH_DEFAULT_SIZE	2000000000
+#define GEHASH_TABFILE_BUFFER	(16*1024*1024LL)
 
 #if __WORDSIZE == 64 || _WIN64
 #define GEHASH_BUCKET_LENGTH (100 - 69)

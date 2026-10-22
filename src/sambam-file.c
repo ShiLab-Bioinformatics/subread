@@ -66,8 +66,6 @@ int SamBam_fetch_next_chunk(SamBam_FILE *fp)
 				return -2;
 			}
 
-			//printf("RET=%d; CHK=%d\n", ret, nchunk);
-
 			if(nchunk>0)
 				have += nchunk; 
 			if(have > 3000) break;
@@ -192,7 +190,7 @@ SamBam_FILE * SamBam_fopen(char * fname , int file_type)
 		}
 
 
-		int l_text = 0;
+		unsigned int l_text = 0;
 		memcpy(&l_text, SB_READ(ret), 4);
 		SB_RINC(ret, 4);
 
@@ -378,8 +376,8 @@ char * SamBam_fgets(SamBam_FILE * fp, char * buff , int buff_len, int seq_needed
 		{
 			SamBam_Alignment *aln = &fp->aln_buff;
 			int chunk_ptr = 0;
-			SB_FETCH(fp);
 			if(SB_EOF(fp)) return NULL;
+			SB_FETCH_ONEREAD(fp);
 
 			fp -> is_paired_end = 10 + ((*(fp -> input_binary_stream_buffer + fp -> input_binary_stream_read_ptr - fp -> input_binary_stream_buffer_start_ptr + 18)) & 1);
 			//SUBREADprintf("FLAG=%d\n",  *(fp -> input_binary_stream_buffer + fp -> input_binary_stream_read_ptr - fp -> input_binary_stream_buffer_start_ptr + 18) );
@@ -851,7 +849,8 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 		memcpy( aln-> buff_for_seq, chunk+(*chunk_ptr), seq_qual_bytes);
 	(*chunk_ptr) += seq_qual_bytes;
 
-	char extra_tags [CORE_ADDITIONAL_INFO_LENGTH];
+	int extra_space_left = buff_len - read_name_len - 256*2 - 12*10 - strlen(aln->cigar) - read_len*2;
+	char *extra_tags =malloc(extra_space_left);
 	extra_tags[0]=0;
 	int extra_len = 0;
 	while( (*chunk_ptr) < next_start)
@@ -900,12 +899,12 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 			if(extype == 'c' || extype=='C' || extype == 'i' || extype=='I' || extype == 's' || extype=='S'){
 				int tmpi = 0;
 				memcpy(&tmpi, chunk+(*chunk_ptr),delta);
-				if(tmpi >= 0 && extra_len < CORE_ADDITIONAL_INFO_LENGTH - 18){
+				if(tmpi >= 0 && extra_len < extra_space_left - 18){
 					int sret = SUBreadSprintf(extra_tags + strlen(extra_tags), 18, "\t%c%c:i:%d", extag[0], extag[1], tmpi);
 					extra_len += sret;
 				}
 			}else if(extype == 'Z'){
-				if(extra_len < CORE_ADDITIONAL_INFO_LENGTH - 7 - delta){
+				if(extra_len < extra_space_left - 7 - delta){
 					SUBreadSprintf(extra_tags + strlen(extra_tags), 10, "\t%c%c:Z:", extag[0], extag[1]);
 					extra_len += 6;
 					*(extra_tags + strlen(extra_tags)+delta-1) = 0;
@@ -913,19 +912,25 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 					extra_len += delta - 1;
 				}
 			}else if(extype == 'A'){
-				if(extra_len < CORE_ADDITIONAL_INFO_LENGTH - 8){
+				if(extra_len < extra_space_left - 8){
 					int sret = SUBreadSprintf(extra_tags + strlen(extra_tags), 10, "\t%c%c:A:%c", extag[0], extag[1], *(chunk + *chunk_ptr) );
 					extra_len += sret;
 				}
 			}
 		}
 
-		if((*chunk_ptr) + delta > chunk_limit) return -1;
+		if((*chunk_ptr) + delta > chunk_limit){
+			free(extra_tags);
+			return -1;
+		}
 		(*chunk_ptr)+=delta;
 		
 	}
 
-	if(next_start > chunk_limit) return -1;
+	if(next_start > chunk_limit){
+		free(extra_tags);
+		return -1;
+	}
 	(*chunk_ptr) = next_start;
 
 	if(seq_needed)
@@ -994,6 +999,7 @@ int PBam_chunk_gets(char * chunk, int *chunk_ptr, int chunk_limit, SamBam_Refere
 	#endif
 	//fprintf(stderr,"%s", buff);
 
+	free(extra_tags);
 	return plen;
 }
 

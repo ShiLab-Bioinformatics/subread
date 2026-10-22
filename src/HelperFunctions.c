@@ -755,41 +755,41 @@ main() {
 #endif
 
 char *str_replace(char *orig, char *rep, char *with) {
-    char *result; // the return string
-    char *ins;    // the next insert point
-    char *tmp;    // varies
-    int len_rep;  // length of rep
-    int len_with; // length of with
-    int len_front; // distance between rep and end of last rep
-    int count;    // number of replacements
+	char *result; // the return string
+	char *ins;    // the next insert point
+	char *tmp;    // varies
+	int len_rep;  // length of rep
+	int len_with; // length of with
+	int len_front; // distance between rep and end of last rep
+	int count;    // number of replacements
 
-    if (!orig)
-        return NULL;
-    if (!rep)
-        rep = "";
-    len_rep = strlen(rep);
-    if (!with)
-        with = "";
-    len_with = strlen(with);
+	if (!orig)
+		return NULL;
+	if (!rep)
+		rep = "";
+	len_rep = strlen(rep);
+	if (!with)
+		with = "";
+	len_with = strlen(with);
 
-    ins = orig;
-    for (count = 0; NULL != (tmp = strstr(ins, rep)); ++count) {
-        ins = tmp + len_rep;
-    }
-    tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
+	ins = orig;
+	for (count = 0; NULL != (tmp = strstr(ins, rep)); ++count) {
+		ins = tmp + len_rep;
+	}
+	tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
 
-    if (!result)
-        return NULL;
+	if (!result)
+		return NULL;
 
-    while (count--) {
-        ins = strstr(orig, rep);
-        len_front = ins - orig;
-        tmp = strncpy(tmp, orig, len_front) + len_front;
-        tmp = strcpy(tmp, with) + len_with;
-        orig += len_front + len_rep; // move to next "end of rep"
-    }
-    strcpy(tmp, orig);
-    return result;
+	while (count--) {
+		ins = strstr(orig, rep);
+		len_front = ins - orig;
+		tmp = strncpy(tmp, orig, len_front) + len_front;
+		tmp = strcpy(tmp, with) + len_with;
+		orig += len_front + len_rep; // move to next "end of rep"
+	}
+	strcpy(tmp, orig);
+	return result;
 }
 
 
@@ -864,16 +864,16 @@ int mac_str(char * str_buff)
 	return 1;
 #else
 #ifdef MACOS
-    int         mib[6], x1, ret = 1;
+	int         mib[6], x1, ret = 1;
 	size_t		len;
-    char            *buf;
-    unsigned char       *ptr;
-    struct if_msghdr    *ifm;
-    struct sockaddr_dl  *sdl;
+	char            *buf;
+	unsigned char       *ptr;
+	struct if_msghdr    *ifm;
+	struct sockaddr_dl  *sdl;
 
 
 	for(x1 = 0 ; x1 < 40; x1++)
-    {
+	{
 		mib[0] = CTL_NET;
 		mib[1] = AF_ROUTE;
 		mib[2] = 0;
@@ -909,46 +909,46 @@ int mac_str(char * str_buff)
 			free(buf);
 		}
 	}
-    return ret;
+	return ret;
 #else
 #if defined(IFHWADDRLEN)
-    struct ifreq ifr;
-    struct ifconf ifc;
-    char buf[1024];
-    int success = 0;
+	struct ifreq ifr;
+	struct ifconf ifc;
+	char buf[1024];
+	int success = 0;
 
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-    if (sock == -1) { /* handle error*/ };
+	int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+	if (sock == -1) { /* handle error*/ };
 
-    ifc.ifc_len = sizeof(buf);
-    ifc.ifc_buf = buf;
-    if (ioctl(sock, SIOCGIFCONF, &ifc) == -1) { /* handle error */ }
+	ifc.ifc_len = sizeof(buf);
+	ifc.ifc_buf = buf;
+	if (ioctl(sock, SIOCGIFCONF, &ifc) == -1) { /* handle error */ }
 
-    struct ifreq* it = ifc.ifc_req;
-    const struct ifreq* const end = it + (ifc.ifc_len / sizeof(struct ifreq));
+	struct ifreq* it = ifc.ifc_req;
+	const struct ifreq* const end = it + (ifc.ifc_len / sizeof(struct ifreq));
 
-    for (; it != end; ++it) {
-        strcpy(ifr.ifr_name, it->ifr_name);
-        if (ioctl(sock, SIOCGIFFLAGS, &ifr) == 0) {
-            if (! (ifr.ifr_flags & IFF_LOOPBACK)) { // don't count loopback
-                if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
-                      success = 1;
-                      break;
-                }
-            }
-        }
-    }
+	for (; it != end; ++it) {
+		strcpy(ifr.ifr_name, it->ifr_name);
+		if (ioctl(sock, SIOCGIFFLAGS, &ifr) == 0) {
+			if (! (ifr.ifr_flags & IFF_LOOPBACK)) { // don't count loopback
+				if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
+					  success = 1;
+					  break;
+				}
+			}
+		}
+	}
 
-    close(sock);
+	close(sock);
 
-    unsigned char mac_address[6];
+	unsigned char mac_address[6];
 
-    if (success){
+	if (success){
 	memcpy(mac_address, ifr.ifr_hwaddr.sa_data, 6);
-	    int x1;
-	    for(x1 = 0; x1 < 6; x1++){
+		int x1;
+		for(x1 = 0; x1 < 6; x1++){
 		 SUBreadSprintf(str_buff+2*x1, 3, "%02X",mac_address[x1]);
-	    }
+		}
 		return 0;
 	}
 #endif
@@ -1694,17 +1694,17 @@ static void Helper_Sha256_Transform(unsigned int *state, const unsigned int *dat
   #else
   unsigned int T[8];
   for (j = 0; j < 8; j++)
-    T[j] = state[j];
+	T[j] = state[j];
   #endif
 
   for (j = 0; j < 64; j += 16)
   {
-    #if defined(_SHA256_UNROLL) || defined(_SHA256_UNROLL2)
-    RX_8(0); RX_8(8);
-    #else
-    unsigned i;
-    for (i = 0; i < 16; i++) { R(i); }
-    #endif
+	#if defined(_SHA256_UNROLL) || defined(_SHA256_UNROLL2)
+	RX_8(0); RX_8(8);
+	#else
+	unsigned i;
+	for (i = 0; i < 16; i++) { R(i); }
+	#endif
   }
 
   #ifdef _SHA256_UNROLL2
@@ -1718,7 +1718,7 @@ static void Helper_Sha256_Transform(unsigned int *state, const unsigned int *dat
   state[7] += h;
   #else
   for (j = 0; j < 8; j++)
-    state[j] += T[j];
+	state[j] += T[j];
   #endif
   
   /* Wipe variables */
@@ -1736,11 +1736,11 @@ static void Helper_Sha256_WritecharBlock(CHelper_Sha256 *p)
   unsigned int data32[16];
   unsigned i;
   for (i = 0; i < 16; i++)
-    data32[i] =
-      ((unsigned int)(p->buffer[i * 4    ]) << 24) +
-      ((unsigned int)(p->buffer[i * 4 + 1]) << 16) +
-      ((unsigned int)(p->buffer[i * 4 + 2]) <<  8) +
-      ((unsigned int)(p->buffer[i * 4 + 3]));
+	data32[i] =
+	  ((unsigned int)(p->buffer[i * 4    ]) << 24) +
+	  ((unsigned int)(p->buffer[i * 4 + 1]) << 16) +
+	  ((unsigned int)(p->buffer[i * 4 + 2]) <<  8) +
+	  ((unsigned int)(p->buffer[i * 4 + 3]));
   Helper_Sha256_Transform(p->state, data32);
 }
 
@@ -1749,16 +1749,16 @@ void Helper_Sha256_Update(CHelper_Sha256 *p, const char *data, size_t size)
   unsigned int curBufferPos = (unsigned int)p->count & 0x3F;
   while (size > 0)
   {
-    p->buffer[curBufferPos++] = (char)*data;
-    p->count++;
+	p->buffer[curBufferPos++] = (char)*data;
+	p->count++;
 
 	data++;
-    size--;
-    if (curBufferPos == 64)
-    {
-      curBufferPos = 0;
-      Helper_Sha256_WritecharBlock(p);
-    }
+	size--;
+	if (curBufferPos == 64)
+	{
+	  curBufferPos = 0;
+	  Helper_Sha256_WritecharBlock(p);
+	}
   }
 }
 
@@ -1770,24 +1770,24 @@ void Helper_Sha256_Final( unsigned char *digest , CHelper_Sha256 *p)
   p->buffer[curBufferPos++] = 0x80;
   while (curBufferPos != (64 - 8))
   {
-    curBufferPos &= 0x3F;
-    if (curBufferPos == 0)
-      Helper_Sha256_WritecharBlock(p);
-    p->buffer[curBufferPos++] = 0;
+	curBufferPos &= 0x3F;
+	if (curBufferPos == 0)
+	  Helper_Sha256_WritecharBlock(p);
+	p->buffer[curBufferPos++] = 0;
   }
   for (i = 0; i < 8; i++)
   {
-    p->buffer[curBufferPos++] = (char)(lenInBits >> 56);
-    lenInBits <<= 8;
+	p->buffer[curBufferPos++] = (char)(lenInBits >> 56);
+	lenInBits <<= 8;
   }
   Helper_Sha256_WritecharBlock(p);
 
   for (i = 0; i < 8; i++)
   {
-    *digest++ = (unsigned char)(p->state[i] >> 24);
-    *digest++ = (unsigned char)(p->state[i] >> 16);
-    *digest++ = (unsigned char)(p->state[i] >> 8);
-    *digest++ = (unsigned char)(p->state[i]);
+	*digest++ = (unsigned char)(p->state[i] >> 24);
+	*digest++ = (unsigned char)(p->state[i] >> 16);
+	*digest++ = (unsigned char)(p->state[i] >> 8);
+	*digest++ = (unsigned char)(p->state[i]);
   }
 }
 
@@ -1875,33 +1875,33 @@ int TEST256Helpermain(){
 
 #define CENTRAL_RANGE 0.7
 double Helper_erfinv( double y) {
-        double x=0,z,num,dem; /*working variables */
-        /* coefficients in rational expansion */
-        double a[4]={ 0.886226899, -1.645349621,  0.914624893, -0.140543331};
-        double b[4]={-2.118377725,  1.442710462, -0.329097515,  0.012229801};
-        double c[4]={-1.970840454, -1.624906493,  3.429567803,  1.641345311};
-        double d[2]={ 3.543889200,  1.637067800};
-        if(fabs(y) > 1.0) return (atof("NaN"));  /* This needs IEEE constant*/
-        if(fabs(y) == 1.0) return((copysign(1.0,y))*MAXDOUBLE); 
-        if( fabs(y) <= CENTRAL_RANGE ) 
-        {
-                z = y*y;
-                num = (((a[3]*z + a[2])*z + a[1])*z + a[0]);
-                dem = ((((b[3]*z + b[2])*z + b[1])*z +b[0])*z + 1.0);
-                x = y*num/dem;
-        }
-        else if( (fabs(y) > CENTRAL_RANGE) && (fabs(y) < 1.0) )
-        {
-                z = sqrt(-log((1.0-fabs(y))/2.0));
-                num = ((c[3]*z + c[2])*z + c[1])*z + c[0];
-                dem = (d[1]*z + d[0])*z + 1.0;
-                x = (copysign(1.0,y))*num/dem;
-        }
-        /* Two steps of Newton-Raphson correction */
-        x = x - (erf(x) - y)/( (2.0/sqrt(M_PI))*exp(-x*x));
-        x = x - (erf(x) - y)/( (2.0/sqrt(M_PI))*exp(-x*x));
+		double x=0,z,num,dem; /*working variables */
+		/* coefficients in rational expansion */
+		double a[4]={ 0.886226899, -1.645349621,  0.914624893, -0.140543331};
+		double b[4]={-2.118377725,  1.442710462, -0.329097515,  0.012229801};
+		double c[4]={-1.970840454, -1.624906493,  3.429567803,  1.641345311};
+		double d[2]={ 3.543889200,  1.637067800};
+		if(fabs(y) > 1.0) return (atof("NaN"));  /* This needs IEEE constant*/
+		if(fabs(y) == 1.0) return((copysign(1.0,y))*MAXDOUBLE); 
+		if( fabs(y) <= CENTRAL_RANGE ) 
+		{
+				z = y*y;
+				num = (((a[3]*z + a[2])*z + a[1])*z + a[0]);
+				dem = ((((b[3]*z + b[2])*z + b[1])*z +b[0])*z + 1.0);
+				x = y*num/dem;
+		}
+		else if( (fabs(y) > CENTRAL_RANGE) && (fabs(y) < 1.0) )
+		{
+				z = sqrt(-log((1.0-fabs(y))/2.0));
+				num = ((c[3]*z + c[2])*z + c[1])*z + c[0];
+				dem = (d[1]*z + d[0])*z + 1.0;
+				x = (copysign(1.0,y))*num/dem;
+		}
+		/* Two steps of Newton-Raphson correction */
+		x = x - (erf(x) - y)/( (2.0/sqrt(M_PI))*exp(-x*x));
+		x = x - (erf(x) - y)/( (2.0/sqrt(M_PI))*exp(-x*x));
 
-        return(x);
+		return(x);
 }
 
 
@@ -1990,7 +1990,7 @@ void msgqu_printf(const char * fmt, ...){
 	va_end(args);
 	obuf[MSGQU_LINE_SIZE]=0;
 	#ifdef MAKE_STANDALONE
-		fputs(obuf, stderr);
+		SUBREADprintf("%s", obuf);
 		free(obuf);
 	#else
 		if(!mt_message_queue.is_thread_mode){
@@ -2042,7 +2042,7 @@ void TNbignum_init(struct bn* n)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    n->array[i] = 0;
+	n->array[i] = 0;
   }
 }
 
@@ -2113,12 +2113,12 @@ void TNbignum_from_string(struct bn* n, char* str, int nbytes)
   /* MSB ~= most significant byte / block ? :) */
   while (i >= 0)
   {
-    tmp = 0;
-    sscanf(&str[i], SSCANF_FORMAT_STR, &tmp);
-    //printf("SCAN_IN %d : v=%u\n", i, tmp);
-    n->array[j] = tmp;
-    i -= (2 * WORD_SIZE); /* step WORD_SIZE hex-byte(s) back in the string. */
-    j += 1;               /* step one element forward in the array. */
+	tmp = 0;
+	sscanf(&str[i], SSCANF_FORMAT_STR, &tmp);
+	//printf("SCAN_IN %d : v=%u\n", i, tmp);
+	n->array[j] = tmp;
+	i -= (2 * WORD_SIZE); /* step WORD_SIZE hex-byte(s) back in the string. */
+	j += 1;               /* step one element forward in the array. */
   }
 }
 
@@ -2136,23 +2136,23 @@ void TNbignum_to_string(struct bn* n, char* str, int nbytes)
   /* reading last array-element "MSB" first -> big endian */
   while ((j >= 0) && (nbytes > (i + 1)))
   {
-    SUBreadSprintf(&str[i],10000, SPRINTF_FORMAT_STR, n->array[j]);
-    //printf("WRITE:%d %s\n" , i, str+i);
-    i += (2 * WORD_SIZE); /* step WORD_SIZE hex-byte(s) forward in the string. */
-    j -= 1;               /* step one element back in the array. */
+	SUBreadSprintf(&str[i],10000, SPRINTF_FORMAT_STR, n->array[j]);
+	//printf("WRITE:%d %s\n" , i, str+i);
+	i += (2 * WORD_SIZE); /* step WORD_SIZE hex-byte(s) forward in the string. */
+	j -= 1;               /* step one element back in the array. */
   }
 
   /* Count leading zeros: */
   j = 0;
   while (str[j] == '0')
   {
-    j += 1;
+	j += 1;
   }
  
   /* Move string j places ahead, effectively skipping leading zeros */ 
   for (i = 0; i < (nbytes - j); ++i)
   {
-    str[i] = str[i + j];
+	str[i] = str[i + j];
   }
 
   /* Zero-terminate string */
@@ -2170,14 +2170,14 @@ void TNbignum_dec(struct bn* n)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    tmp = n->array[i];
-    res = tmp - 1;
-    n->array[i] = res;
+	tmp = n->array[i];
+	res = tmp - 1;
+	n->array[i] = res;
 
-    if (!(res > tmp))
-    {
-      break;
-    }
+	if (!(res > tmp))
+	{
+	  break;
+	}
   }
 }
 
@@ -2192,14 +2192,14 @@ void TNbignum_inc(struct bn* n)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    tmp = n->array[i];
-    res = tmp + 1;
-    n->array[i] = res;
+	tmp = n->array[i];
+	res = tmp + 1;
+	n->array[i] = res;
 
-    if (res > tmp)
-    {
-      break;
-    }
+	if (res > tmp)
+	{
+	  break;
+	}
   }
 }
 
@@ -2215,9 +2215,9 @@ void TNbignum_add(struct bn* a, struct bn* b, struct bn* c)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    tmp = (DTYPE_TMP)a->array[i] + b->array[i] + carry;
-    carry = (tmp > MAX_VAL);
-    c->array[i] = (tmp & MAX_VAL);
+	tmp = (DTYPE_TMP)a->array[i] + b->array[i] + carry;
+	carry = (tmp > MAX_VAL);
+	c->array[i] = (tmp & MAX_VAL);
   }
 }
 
@@ -2235,11 +2235,11 @@ void TNbignum_sub(struct bn* a, struct bn* b, struct bn* c)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    tmp1 = (DTYPE_TMP)a->array[i] + (MAX_VAL + 1); /* + number_base */
-    tmp2 = (DTYPE_TMP)b->array[i] + borrow;;
-    res = (tmp1 - tmp2);
-    c->array[i] = (DTYPE)(res & MAX_VAL); /* "modulo number_base" == "% (number_base - 1)" if number_base is 2^N */
-    borrow = (res <= MAX_VAL);
+	tmp1 = (DTYPE_TMP)a->array[i] + (MAX_VAL + 1); /* + number_base */
+	tmp2 = (DTYPE_TMP)b->array[i] + borrow;;
+	res = (tmp1 - tmp2);
+	c->array[i] = (DTYPE)(res & MAX_VAL); /* "modulo number_base" == "% (number_base - 1)" if number_base is 2^N */
+	borrow = (res <= MAX_VAL);
   }
 }
 
@@ -2258,20 +2258,20 @@ void TNbignum_mul(struct bn* a, struct bn* b, struct bn* c)
 
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    TNbignum_init(&row);
+	TNbignum_init(&row);
 
-    for (j = 0; j < BN_ARRAY_SIZE; ++j)
-    {
-      if (i + j < BN_ARRAY_SIZE)
-      {
-        TNbignum_init(&tmp);
-        DTYPE_TMP intermediate = ((DTYPE_TMP)a->array[i] * (DTYPE_TMP)b->array[j]);
-        TNbignum_from_int(&tmp, intermediate);
-        _lshift_word(&tmp, i + j);
-        TNbignum_add(&tmp, &row, &row);
-      }
-    }
-    TNbignum_add(c, &row, c);
+	for (j = 0; j < BN_ARRAY_SIZE; ++j)
+	{
+	  if (i + j < BN_ARRAY_SIZE)
+	  {
+		TNbignum_init(&tmp);
+		DTYPE_TMP intermediate = ((DTYPE_TMP)a->array[i] * (DTYPE_TMP)b->array[j]);
+		TNbignum_from_int(&tmp, intermediate);
+		_lshift_word(&tmp, i + j);
+		TNbignum_add(&tmp, &row, &row);
+	  }
+	}
+	TNbignum_add(c, &row, c);
   }
 }
 
@@ -2294,30 +2294,30 @@ void TNbignum_div(struct bn* a, struct bn* b, struct bn* c)
   int overflow = 0;
   while (TNbignum_cmp(&denom, a) != LARGER)     // while (denom <= a) {
   {
-    if (denom.array[BN_ARRAY_SIZE - 1] >= half_max)
-    {
-      overflow = 1;
-      break;
-    }
-    _lshift_one_bit(&current);                //   current <<= 1;
-    _lshift_one_bit(&denom);                  //   denom <<= 1;
+	if (denom.array[BN_ARRAY_SIZE - 1] >= half_max)
+	{
+	  overflow = 1;
+	  break;
+	}
+	_lshift_one_bit(&current);                //   current <<= 1;
+	_lshift_one_bit(&denom);                  //   denom <<= 1;
   }
   if (!overflow)
   {
-    _rshift_one_bit(&denom);                  // denom >>= 1;
-    _rshift_one_bit(&current);                // current >>= 1;
+	_rshift_one_bit(&denom);                  // denom >>= 1;
+	_rshift_one_bit(&current);                // current >>= 1;
   }
   TNbignum_init(c);                             // int answer = 0;
 
   while (!TNbignum_is_zero(&current))           // while (current != 0)
   {
-    if (TNbignum_cmp(&tmp, &denom) != SMALLER)  //   if (dividend >= denom)
-    {
-      TNbignum_sub(&tmp, &denom, &tmp);         //     dividend -= denom;
-      TNbignum_or(c, &current, c);              //     answer |= current;
-    }
-    _rshift_one_bit(&current);                //   current >>= 1;
-    _rshift_one_bit(&denom);                  //   denom >>= 1;
+	if (TNbignum_cmp(&tmp, &denom) != SMALLER)  //   if (dividend >= denom)
+	{
+	  TNbignum_sub(&tmp, &denom, &tmp);         //     dividend -= denom;
+	  TNbignum_or(c, &current, c);              //     answer |= current;
+	}
+	_rshift_one_bit(&current);                //   current >>= 1;
+	_rshift_one_bit(&denom);                  //   denom >>= 1;
   }                                           // return answer;
 }
 
@@ -2334,18 +2334,18 @@ void TNbignum_lshift(struct bn* a, struct bn* b, int nbits)
   int nwords = nbits / nbits_pr_word;
   if (nwords != 0)
   {
-    _lshift_word(b, nwords);
-    nbits -= (nwords * nbits_pr_word);
+	_lshift_word(b, nwords);
+	nbits -= (nwords * nbits_pr_word);
   }
 
   if (nbits != 0)
   {
-    int i;
-    for (i = (BN_ARRAY_SIZE - 1); i > 0; --i)
-    {
-      b->array[i] = (b->array[i] << nbits) | (b->array[i - 1] >> ((8 * WORD_SIZE) - nbits));
-    }
-    b->array[i] <<= nbits;
+	int i;
+	for (i = (BN_ARRAY_SIZE - 1); i > 0; --i)
+	{
+	  b->array[i] = (b->array[i] << nbits) | (b->array[i - 1] >> ((8 * WORD_SIZE) - nbits));
+	}
+	b->array[i] <<= nbits;
   }
 }
 
@@ -2362,18 +2362,18 @@ void TNbignum_rshift(struct bn* a, struct bn* b, int nbits)
   int nwords = nbits / nbits_pr_word;
   if (nwords != 0)
   {
-    _rshift_word(b, nwords);
-    nbits -= (nwords * nbits_pr_word);
+	_rshift_word(b, nwords);
+	nbits -= (nwords * nbits_pr_word);
   }
 
   if (nbits != 0)
   {
-    int i;
-    for (i = 0; i < (BN_ARRAY_SIZE - 1); ++i)
-    {
-      b->array[i] = (b->array[i] >> nbits) | (b->array[i + 1] << ((8 * WORD_SIZE) - nbits));
-    }
-    b->array[i] >>= nbits;
+	int i;
+	for (i = 0; i < (BN_ARRAY_SIZE - 1); ++i)
+	{
+	  b->array[i] = (b->array[i] >> nbits) | (b->array[i + 1] << ((8 * WORD_SIZE) - nbits));
+	}
+	b->array[i] >>= nbits;
   }
   
 }
@@ -2430,7 +2430,7 @@ void TNbignum_and(struct bn* a, struct bn* b, struct bn* c)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    c->array[i] = (a->array[i] & b->array[i]);
+	c->array[i] = (a->array[i] & b->array[i]);
   }
 }
 
@@ -2444,7 +2444,7 @@ void TNbignum_or(struct bn* a, struct bn* b, struct bn* c)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    c->array[i] = (a->array[i] | b->array[i]);
+	c->array[i] = (a->array[i] | b->array[i]);
   }
 }
 
@@ -2458,7 +2458,7 @@ void TNbignum_xor(struct bn* a, struct bn* b, struct bn* c)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    c->array[i] = (a->array[i] ^ b->array[i]);
+	c->array[i] = (a->array[i] ^ b->array[i]);
   }
 }
 
@@ -2471,15 +2471,15 @@ int TNbignum_cmp(struct bn* a, struct bn* b)
   int i = BN_ARRAY_SIZE;
   do
   {
-    i -= 1; /* Decrement first, to start with last array element */
-    if (a->array[i] > b->array[i])
-    {
-      return LARGER;
-    }
-    else if (a->array[i] < b->array[i])
-    {
-      return SMALLER;
-    }
+	i -= 1; /* Decrement first, to start with last array element */
+	if (a->array[i] > b->array[i])
+	{
+	  return LARGER;
+	}
+	else if (a->array[i] < b->array[i])
+	{
+	  return SMALLER;
+	}
   }
   while (i != 0);
 
@@ -2494,10 +2494,10 @@ int TNbignum_is_zero(struct bn* n)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    if (n->array[i])
-    {
-      return 0;
-    }
+	if (n->array[i])
+	{
+	  return 0;
+	}
   }
 
   return 1;
@@ -2516,30 +2516,30 @@ void TNbignum_pow(struct bn* a, struct bn* b, struct bn* c)
 
   if (TNbignum_cmp(b, c) == EQUAL)
   {
-    /* Return 1 when exponent is 0 -- n^0 = 1 */
-    TNbignum_inc(c);
+	/* Return 1 when exponent is 0 -- n^0 = 1 */
+	TNbignum_inc(c);
   }
   else
   {
-    /* Copy a -> tmp */
-    TNbignum_assign(&tmp, a);
+	/* Copy a -> tmp */
+	TNbignum_assign(&tmp, a);
 
-    TNbignum_dec(b);
+	TNbignum_dec(b);
  
-    /* Begin summing products: */
-    while (!TNbignum_is_zero(b))
-    {
+	/* Begin summing products: */
+	while (!TNbignum_is_zero(b))
+	{
 
-      /* c = tmp * tmp */
-      TNbignum_mul(&tmp, a, c);
-      /* Decrement b by one */
-      TNbignum_dec(b);
+	  /* c = tmp * tmp */
+	  TNbignum_mul(&tmp, a, c);
+	  /* Decrement b by one */
+	  TNbignum_dec(b);
 
-      TNbignum_assign(&tmp, c);
-    }
+	  TNbignum_assign(&tmp, c);
+	}
 
-    /* c = tmp */
-    TNbignum_assign(c, &tmp);
+	/* c = tmp */
+	TNbignum_assign(c, &tmp);
   }
 }
 
@@ -2557,20 +2557,20 @@ void TNbignum_isqrt(struct bn *a, struct bn* b)
 
   while (TNbignum_cmp(&high, &low) > 0) 
   {
-    TNbignum_mul(&mid, &mid, &tmp);
-    if (TNbignum_cmp(&tmp, a) > 0) 
-    {
-      TNbignum_assign(&high, &mid);
-      TNbignum_dec(&high);
-    }
-    else 
-    {
-      TNbignum_assign(&low, &mid);
-    }
-    TNbignum_sub(&high,&low,&mid);
-    _rshift_one_bit(&mid);
-    TNbignum_add(&low,&mid,&mid);
-    TNbignum_inc(&mid);
+	TNbignum_mul(&mid, &mid, &tmp);
+	if (TNbignum_cmp(&tmp, a) > 0) 
+	{
+	  TNbignum_assign(&high, &mid);
+	  TNbignum_dec(&high);
+	}
+	else 
+	{
+	  TNbignum_assign(&low, &mid);
+	}
+	TNbignum_sub(&high,&low,&mid);
+	_rshift_one_bit(&mid);
+	TNbignum_add(&low,&mid,&mid);
+	TNbignum_inc(&mid);
   }
   TNbignum_assign(b,&low);
 }
@@ -2584,7 +2584,7 @@ void TNbignum_assign(struct bn* dst, struct bn* src)
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
   {
-    dst->array[i] = src->array[i];
+	dst->array[i] = src->array[i];
   }
 }
 
@@ -2599,20 +2599,20 @@ static void _rshift_word(struct bn* a, int nwords)
   int i;
   if (nwords >= BN_ARRAY_SIZE)
   {
-    for (i = 0; i < BN_ARRAY_SIZE; ++i)
-    {
-      a->array[i] = 0;
-    }
-    return;
+	for (i = 0; i < BN_ARRAY_SIZE; ++i)
+	{
+	  a->array[i] = 0;
+	}
+	return;
   }
 
   for (i = 0; i < BN_ARRAY_SIZE - nwords; ++i)
   {
-    a->array[i] = a->array[i + nwords];
+	a->array[i] = a->array[i + nwords];
   }
   for (; i < BN_ARRAY_SIZE; ++i)
   {
-    a->array[i] = 0;
+	a->array[i] = 0;
   }
 }
 
@@ -2626,12 +2626,12 @@ static void _lshift_word(struct bn* a, int nwords)
   /* Shift whole words */
   for (i = (BN_ARRAY_SIZE - 1); i >= nwords; --i)
   {
-    a->array[i] = a->array[i - nwords];
+	a->array[i] = a->array[i - nwords];
   }
   /* Zero pad shifted words. */
   for (; i >= 0; --i)
   {
-    a->array[i] = 0;
+	a->array[i] = 0;
   }  
 }
 
@@ -2643,7 +2643,7 @@ static void _lshift_one_bit(struct bn* a)
   int i;
   for (i = (BN_ARRAY_SIZE - 1); i > 0; --i)
   {
-    a->array[i] = (a->array[i] << 1) | (a->array[i - 1] >> ((8 * WORD_SIZE) - 1));
+	a->array[i] = (a->array[i] << 1) | (a->array[i - 1] >> ((8 * WORD_SIZE) - 1));
   }
   a->array[0] <<= 1;
 }
@@ -2656,7 +2656,7 @@ static void _rshift_one_bit(struct bn* a)
   int i;
   for (i = 0; i < (BN_ARRAY_SIZE - 1); ++i)
   {
-    a->array[i] = (a->array[i] >> 1) | (a->array[i + 1] << ((8 * WORD_SIZE) - 1));
+	a->array[i] = (a->array[i] >> 1) | (a->array[i + 1] << ((8 * WORD_SIZE) - 1));
   }
   a->array[BN_ARRAY_SIZE - 1] >>= 1;
 }
@@ -2667,11 +2667,11 @@ void TNbignum_pow_then_mod( struct bn * m, int e, struct bn * modulus, struct bn
   struct bn res, remove_times, remove_value, tmpv;
   TNbignum_from_string(&res, "01", 2);
   for(xx = 0; xx < 31; xx++){
-    TNbignum_mul( m, m, tmpv ); 
-    TNbignum_div( tmpv, modulus, remove_times);
-    TNbignum_mul( remove_times, modulus, remove_value);
-    TNbignum_sub( tmpv , remove_value, m);
-    e = e >> 1;
+	TNbignum_mul( m, m, tmpv ); 
+	TNbignum_div( tmpv, modulus, remove_times);
+	TNbignum_mul( remove_times, modulus, remove_value);
+	TNbignum_sub( tmpv , remove_value, m);
+	e = e >> 1;
   }
 
 }
@@ -2720,7 +2720,7 @@ void main(){
 int get_free_total_mem(size_t * total, size_t * free_mem){
 
 #ifdef FREEBSD
-    return -1;
+	return -1;
 #endif
 
 #ifdef __MINGW32__
@@ -2732,24 +2732,24 @@ int get_free_total_mem(size_t * total, size_t * free_mem){
 	return 0;
 #else
 #ifdef MACOS
-    mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
-    vm_statistics_data_t vmstat;
-    int page_size = getpagesize();
-    if(KERN_SUCCESS != host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count))
-        return -1;
-    //printf("PSIZE=%d\nACT=%u; INACT=%u; FREE=%u\n", page_size, vmstat.active_count, vmstat.inactive_count, vmstat.free_count);
+	mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+	vm_statistics_data_t vmstat;
+	int page_size = getpagesize();
+	if(KERN_SUCCESS != host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count))
+		return -1;
+	//printf("PSIZE=%d\nACT=%u; INACT=%u; FREE=%u\n", page_size, vmstat.active_count, vmstat.inactive_count, vmstat.free_count);
 	size_t btlen = sizeof(*total);
-    if(sysctl( (int[]) { CTL_HW, HW_MEMSIZE }, 2, total, &btlen, NULL, 0)) return -1;
-    *free_mem = (vmstat.free_count + vmstat.inactive_count) * 1llu * page_size;
-    return 0;
+	if(sysctl( (int[]) { CTL_HW, HW_MEMSIZE }, 2, total, &btlen, NULL, 0)) return -1;
+	*free_mem = (vmstat.free_count + vmstat.inactive_count) * 1llu * page_size;
+	return 0;
 #else
-    struct sysinfo sinf;
-    sysinfo(&sinf);
-    size_t cached_mem = get_sys_mem_info("Cached:");
-    if(cached_mem<0)cached_mem=0;
-    *free_mem = cached_mem + sinf.bufferram+sinf.freeram;
-    *total = sinf.totalram;
-    return 0;
+	struct sysinfo sinf;
+	sysinfo(&sinf);
+	size_t cached_mem = get_sys_mem_info("Cached:");
+	if(cached_mem<0)cached_mem=0;
+	*free_mem = cached_mem + sinf.bufferram+sinf.freeram;
+	*total = sinf.totalram;
+	return 0;
 #endif
 #endif
 }
@@ -2838,51 +2838,1121 @@ void terminate_workers(worker_master_mutex_t * wmt){
 void *windows_memmem(const void *haystack_start, size_t haystack_len, const void *needle_start, size_t needle_len)
 {
 
-    const unsigned char *haystack = (const unsigned char *) haystack_start;
-    const unsigned char *needle = (const unsigned char *) needle_start;
-    const unsigned char *h = NULL;
-    const unsigned char *n = NULL;
-    size_t x = needle_len;
+	const unsigned char *haystack = (const unsigned char *) haystack_start;
+	const unsigned char *needle = (const unsigned char *) needle_start;
+	const unsigned char *h = NULL;
+	const unsigned char *n = NULL;
+	size_t x = needle_len;
 
-    /* The first occurrence of the empty string is deemed to occur at
+	/* The first occurrence of the empty string is deemed to occur at
  *     the beginning of the string.  */
-    if (needle_len == 0)
-        return (void *) haystack_start;
+	if (needle_len == 0)
+		return (void *) haystack_start;
 
-    /* Sanity check, otherwise the loop might search through the whole
+	/* Sanity check, otherwise the loop might search through the whole
  *         memory.  */
-     if (haystack_len < needle_len)
-       return NULL;
+	 if (haystack_len < needle_len)
+	   return NULL;
 
-    for (; *haystack && haystack_len--; haystack++) {
+	for (; *haystack && haystack_len--; haystack++) {
 
-        x = needle_len;
-        n = needle;
-        h = haystack;
+		x = needle_len;
+		n = needle;
+		h = haystack;
 
-        if (haystack_len < needle_len)
-            break;
+		if (haystack_len < needle_len)
+			break;
 
-        if ((*haystack != *needle) || ( *haystack + needle_len != *needle + needle_len))
-            continue;
+		if ((*haystack != *needle) || ( *haystack + needle_len != *needle + needle_len))
+			continue;
 
-        for (; x ; h++ , n++) {
-            x--;
+		for (; x ; h++ , n++) {
+			x--;
 
-            if (*h != *n) 
-                break;
+			if (*h != *n) 
+				break;
 
-           if (x == 0)
-            return (void *)haystack;
-        }
-    }
+		   if (x == 0)
+			return (void *)haystack;
+		}
+	}
 
-    return NULL;
+	return NULL;
 }
 
 size_t SUBreadSprintf(char * content, size_t bufflen, char * pattern,...){
-        va_list args;
-        va_start(args , pattern);
+		va_list args;
+		va_start(args , pattern);
 		size_t content_len = vsnprintf(content, bufflen, pattern, args);
 		return content_len;
 }
+
+
+
+#define INDEL_MASK_BY_INSERTION 1
+#define INDEL_MASK_BY_DELETION 2
+#define INDEL_MASK_BY_MATCH 0
+#define INDEL_MASK_BY_MISMATCH 3
+
+void init_typical_dynamic_align(void *** buffers, int * penalties, int max_read_length){
+	buffers[0] = malloc(sizeof(void*) * max_read_length);
+	buffers[1] = malloc(sizeof(void*) * max_read_length);
+	buffers[2] = malloc(sizeof(void*) * max_read_length);
+	buffers[3] = malloc(sizeof(void*) * max_read_length);
+	int rowi;
+	for(rowi = 0; rowi < max_read_length; rowi++){
+		buffers[0][rowi] = malloc(sizeof(short)*max_read_length);
+		buffers[1][rowi] = malloc(sizeof(short)*max_read_length);
+		buffers[2][rowi] = malloc(sizeof(short)*max_read_length);
+		buffers[3][rowi] = malloc(sizeof(char)*max_read_length);
+	}
+
+	penalties[0]=-1;penalties[1]=0;penalties[2]=2;penalties[3]=0;
+}
+
+void destroy_typical_dynamic_align(void *** buffers,int max_read_length){
+	int rowi;
+	for(rowi = 0; rowi < max_read_length; rowi++){
+		free(buffers[0][rowi]);
+		free(buffers[1][rowi]);
+		free(buffers[2][rowi]);
+		free(buffers[3][rowi]);
+	}
+	free(buffers[0]);
+	free(buffers[1]);
+	free(buffers[2]);
+	free(buffers[3]);
+}
+
+
+int general_dynamic_align_moves_to_cigar(char * movement_buffer, int nmoves, char * cigar){
+	int tmpi = 0;
+	int last_op = -1;
+	int x1, ret=0;
+	for(x1=0; x1<=nmoves; x1++){
+		int nmove =-1;
+		if(x1 < nmoves) nmove = movement_buffer[x1];
+		if(nmove==3)nmove=0; // Misma => Match
+		if(x1 == nmoves || last_op != nmove){
+			if(tmpi>0) ret += SUBreadSprintf( cigar+ret, 11 , "%d%c", tmpi, last_op?(last_op==1?'D':'I'):'M');
+			tmpi = 1;
+			last_op = nmove;
+		}else tmpi++;
+	}
+	return ret;
+}
+
+
+// the GlobalAlignmentCIGAR is written by AI.
+#define NEG_INF (-32767)
+
+#define STATE_M 0
+#define STATE_I 1
+#define STATE_D 2
+
+#define TRACE_D_EXT (1 << 2)
+#define TRACE_I_EXT (1 << 3)
+
+
+// buffers : shrot ** then char ** for scores then masks.
+
+#define Oldgeneral_dynamic_align general_dynamic_align
+int GEMINIgeneral_dynamic_align(char * read, int read_len, unsigned int begin_position, char * movement_buffer, int expected_offset, int max_indel_length, 
+  void *** buffers, int * penalties, char (* get_index_base_value) (unsigned int pos, void * context), void * general_context) {
+	int i, j;
+	// Handle empty alignment case
+	if (read_len == 0 && expected_offset == 0) {
+		movement_buffer[0] = 0;
+		return 0;
+	}
+
+	// Map penalties: 0:Open, 1:Extend, 2:Match, 3:Mismatch
+	int G_OPEN = penalties[0];
+	int G_EXT = penalties[1];
+	int MATCH = penalties[2];
+	int MISMATCH = penalties[3];
+	
+	int ref_len = read_len + expected_offset;
+	// Apply the 9999*16 cap requested in previous snippets
+	int max_indel = (9999 * 16 < max_indel_length) ? 9999 * 16 : max_indel_length;
+
+	// Use 4 buffers: 3 for score matrices (short), 1 for backtracking mask (char)
+	short ** M = (short**)(buffers[0]); 
+	short ** I = (short**)(buffers[1]); 
+	short ** D = (short**)(buffers[2]); 
+	char  ** mask = (char**)(buffers[3]); 
+
+	// 1. Initialization for Global Alignment
+	// Every base of read and reference must be accounted for.
+	for (i = 0; i <= ref_len; i++) {
+		for (j = 0; j <= read_len; j++) {
+			M[i][j] = I[i][j] = D[i][j] = NEG_INF;
+			mask[i][j] = 0;
+		}
+	}
+
+	M[0][0] = 0;
+	// Initialize first row (Insertions) and first column (Deletions)
+	// This ensures CIGAR can start with 'I' or 'D' if optimal.
+	for (j = 1; j <= read_len; j++) { 
+		I[0][j] = G_OPEN + (j * G_EXT); 
+		mask[0][j] = (STATE_I << 4); 
+		if (j > 1) mask[0][j] |= TRACE_I_EXT;
+	}
+	for (i = 1; i <= ref_len; i++) { 
+		D[i][0] = G_OPEN + (i * G_EXT); 
+		mask[i][0] = (STATE_D << 4); 
+		if (i > 1) mask[i][0] |= TRACE_D_EXT;
+	}
+
+	// 2. Fill DP Table
+	for (i = 1; i <= ref_len; i++) {
+		char ref_base = get_index_base_value(begin_position + i - 1, general_context);
+		for (j = 1; j <= read_len; j++) {
+			// Banded DP check: skip cells outside the allowed indel range
+			if (abs(i - j) > max_indel) continue;
+
+			// --- Deletion State (Gap in Read) ---
+			short d_from_m = M[i-1][j] + G_OPEN + G_EXT;
+			short d_from_d = D[i-1][j] + G_EXT;
+			if (d_from_m >= d_from_d) { 
+				D[i][j] = d_from_m; 
+			} else { 
+				D[i][j] = d_from_d; 
+				mask[i][j] |= TRACE_D_EXT; // D state came from D (Extension)
+			}
+
+			// --- Insertion State (Gap in Reference) ---
+			short i_from_m = M[i][j-1] + G_OPEN + G_EXT;
+			short i_from_i = I[i][j-1] + G_EXT;
+			if (i_from_m >= i_from_i) { 
+				I[i][j] = i_from_m; 
+			} else { 
+				I[i][j] = i_from_i; 
+				mask[i][j] |= TRACE_I_EXT; // I state came from I (Extension)
+			}
+
+			// --- Match/Mismatch State ---
+			short score = (ref_base == read[j-1]) ? MATCH : MISMATCH;
+			short m_m = M[i-1][j-1], m_i = I[i-1][j-1], m_d = D[i-1][j-1];
+			
+			if (m_m >= m_i && m_m >= m_d) { 
+				M[i][j] = m_m + score; mask[i][j] |= STATE_M; 
+			} else if (m_i >= m_d) { 
+				M[i][j] = m_i + score; mask[i][j] |= STATE_I; 
+			} else { 
+				M[i][j] = m_d + score; mask[i][j] |= STATE_D; 
+			}
+
+			// --- Store best overall state for backtracking (High 4 bits) ---
+			if (M[i][j] >= I[i][j] && M[i][j] >= D[i][j])      mask[i][j] |= (STATE_M << 4);
+			else if (I[i][j] >= D[i][j])                       mask[i][j] |= (STATE_I << 4);
+			else                                               mask[i][j] |= (STATE_D << 4);
+		}
+	}
+
+	// 3. Backtracking
+	int curr_i = ref_len, curr_j = read_len;
+	// Start from the absolute best state at the sink (ref_len, read_len)
+	int state = (mask[curr_i][curr_j] >> 4) & 0x3;
+	int out_pos = 0;
+
+	// Safety fallback: if no path reached the sink within the band
+	if (M[curr_i][curr_j] <= NEG_INF && I[curr_i][curr_j] <= NEG_INF && D[curr_i][curr_j] <= NEG_INF) {
+		int mmlen = read_len + (expected_offset < 0 ? expected_offset : 0);
+		int h1len = mmlen/2;
+		return snprintf(movement_buffer,36, "%dM%d%c%dM", h1len, abs(expected_offset), expected_offset > 0 ? 'D' : 'I', mmlen - h1len);
+	}
+
+	while (curr_i > 0 || curr_j > 0) {
+		if (curr_i == 0) state = STATE_I;
+		else if (curr_j == 0) state = STATE_D;
+
+		if (state == STATE_M) {
+			movement_buffer[out_pos++] = 'M';
+			state = mask[curr_i][curr_j] & 0x3; // Back to the state that led to this Match
+			curr_i--; curr_j--;
+		} else if (state == STATE_D) {
+			movement_buffer[out_pos++] = 'D';
+			state = (mask[curr_i][curr_j] & TRACE_D_EXT) ? STATE_D : STATE_M;
+			curr_i--;
+		} else { // STATE_I
+			movement_buffer[out_pos++] = 'I';
+			state = (mask[curr_i][curr_j] & TRACE_I_EXT) ? STATE_I : STATE_M;
+			curr_j--;
+		}
+	}
+
+	// 4. Reverse the buffer to get correct CIGAR order
+	for (i = 0; i < out_pos / 2; i++) {
+		char tmp = movement_buffer[i];
+		movement_buffer[i] = movement_buffer[out_pos - 1 - i];
+		movement_buffer[out_pos - 1 - i] = tmp;
+	}
+
+	return out_pos;
+
+
+}
+
+
+int OldMEMgeneral_dynamic_align(char * read, int read_len, unsigned int begin_position, char * movement_buffer, int expected_offset, int max_indel_length, 
+  void *** buffers, int * penalties, char (* get_index_base_value) (unsigned int pos, void * context), void * general_context)
+// read must be converted to the positive strand.
+// movement buffer: 0:match, 1: read-insert, 2: gene-insert, 3:mismatch
+// the size of the movement buffer must be equal to the length of the read plus max_indel * 3.
+{
+	int max_indel = min(16 , max_indel_length); 
+	int i,j;
+	int LRM_DP_ALIGN_CREATEGAP_PENALTY, LRM_DP_ALIGN_EXTENDGAP_PENALTY, LRM_DP_ALIGN_MATCH_SCORE, LRM_DP_ALIGN_MISMATCH_PENALTY;
+	LRM_DP_ALIGN_CREATEGAP_PENALTY = penalties[0];  
+	LRM_DP_ALIGN_EXTENDGAP_PENALTY = penalties[1]; 
+	LRM_DP_ALIGN_MATCH_SCORE = penalties[2]; 
+	LRM_DP_ALIGN_MISMATCH_PENALTY = penalties[3]; 
+
+	if(read_len < 3 || abs(expected_offset) > max_indel)
+		return 0;
+	if(expected_offset < 0 && read_len < (3-expected_offset))
+		return 0;
+
+	//unsigned long long table_ptr = (unsigned long long) indel_context -> dynamic_align_table;
+
+	short ** table = (short**)(buffers[0]); 
+	char ** table_mask = (char**)(buffers[3]);
+	// vertical move: deletion (1)
+	// horizontal move: insertion (2)
+	// cross move: match (0) or mismatch (3)
+	// i: vertical move; j: horizontal move
+
+	//SUBREADprintf("DM[%d]: %p %d,%d\n", thread_context -> thread_id, table_mask, read_len +  expected_offset,  read_len);
+	for (i=0; i<read_len +  expected_offset; i++)
+	{
+		for(j=0; j<read_len; j++)
+		{
+			table_mask[i][j]=0;
+
+			if (j < i - max_indel || j > max_indel + i)
+			{
+				table[i][j]=-9999;
+				continue;
+			}
+
+			short from_upper;
+
+			if (i>0) from_upper = table[i-1][j] + (table_mask[i-1][j] == INDEL_MASK_BY_DELETION?LRM_DP_ALIGN_EXTENDGAP_PENALTY:LRM_DP_ALIGN_CREATEGAP_PENALTY);
+			else     from_upper = -9999;
+
+			short from_left;
+
+			if (j>0) from_left = table[i][j-1] + (table_mask[i][j-1] == INDEL_MASK_BY_INSERTION?LRM_DP_ALIGN_EXTENDGAP_PENALTY:LRM_DP_ALIGN_CREATEGAP_PENALTY);
+			else     from_left = -9999;
+
+			char chromo_ch = get_index_base_value(begin_position + i, general_context);
+			char is_matched_ij = (chromo_ch == read[j])?LRM_DP_ALIGN_MATCH_SCORE:LRM_DP_ALIGN_MISMATCH_PENALTY;
+			
+			short from_upperleft;
+
+			if (i>0 && j>0) from_upperleft = table[i-1][j-1] + is_matched_ij;
+			else if(i==0 && j==0) from_upperleft = is_matched_ij;
+			else	    from_upperleft = -9999; 
+
+			if (from_upperleft == from_upper && from_upperleft > from_left)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_DELETION;
+				table[i][j] = from_upper;
+			}
+			else if(from_upperleft == from_left && from_upperleft > from_upper)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_INSERTION;
+				table[i][j] = from_left;
+			}
+			else if(from_upperleft > from_left && from_upperleft > from_upper)
+			{
+				table_mask[i][j]= (chromo_ch == read[j])?INDEL_MASK_BY_MATCH:INDEL_MASK_BY_MISMATCH;
+				table[i][j] = from_upperleft;
+			}
+			else if(from_upperleft == from_left && from_upperleft == from_upper)
+			{
+				table_mask[i][j]= (chromo_ch == read[j])?INDEL_MASK_BY_MATCH:INDEL_MASK_BY_MISMATCH;
+				table[i][j] = from_upperleft;
+			}
+			else if(from_left > from_upper)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_INSERTION;
+				table[i][j] = from_left;
+			}
+			else if(from_left <= from_upper)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_DELETION;
+				table[i][j] = from_upper;
+			}
+		}
+	}
+
+	short path_i = read_len + expected_offset - 1;
+	int out_pos = 0, delta=0;
+	j = read_len - 1;
+
+int debugout1 = 0;
+if(0) debugout1 =1;
+if(debugout1)SUBREADprintf("\n");
+	while(1)
+	{
+		if(table_mask[path_i][j] == INDEL_MASK_BY_INSERTION)
+		{
+			j--;
+			delta --;
+			movement_buffer[out_pos++] = 2;
+if(debugout1)SUBREADprintf("I");
+		}
+		else if(table_mask[path_i][j] == INDEL_MASK_BY_DELETION)
+		{
+			path_i--;
+			delta ++;
+			movement_buffer[out_pos++] = 1;
+if(debugout1)SUBREADprintf("D");
+		}
+		else if(table_mask[path_i][j] == INDEL_MASK_BY_MATCH || table_mask[path_i][j] == INDEL_MASK_BY_MISMATCH)
+		{
+			movement_buffer[out_pos++] = table_mask[path_i][j] == INDEL_MASK_BY_MATCH?0:3;
+			path_i--;
+			j--;
+if(debugout1)SUBREADprintf("M");
+		}
+
+		if(path_i == -1 && j == -1) break;
+		if(j<0 || path_i<0) return 0;
+	}
+if(debugout1)SUBREADprintf("\n");
+
+	if(expected_offset!=delta)return 0;
+	for(i=0; i<out_pos/2; i++)
+	{
+		char tmp;
+		tmp = movement_buffer[out_pos-1-i];
+		movement_buffer[out_pos-1-i] = movement_buffer[i];
+		movement_buffer[i] = tmp;
+	}
+	return out_pos;
+}
+
+
+
+
+
+int Oldgeneral_dynamic_align(char * read, int read_len, unsigned int begin_position, char * movement_buffer, int expected_offset, int max_indel_length,
+  void *** buffers, int * penalties, int (* get_index_base_value) (unsigned int pos, void * context, char * base_space, int num_bases), void * general_context){
+
+//int Oldgeneral_dynamic_align(char * read, int read_len, unsigned int begin_position, char * movement_buffer, int expected_offset, int max_indel_length, 
+//   void *** buffers, int * penalties, char (* get_index_base_value) (unsigned int pos, void * context), void * general_context)
+
+// read must be converted to the positive strand.
+// movement buffer: 0:match, 1: read-insert, 2: gene-insert, 3:mismatch
+// the size of the movement buffer must be equal to the length of the read plus max_indel * 3.
+
+	int max_indel = min(16 , max_indel_length); 
+	int i,j;
+	int ref_len;
+	int LRM_DP_ALIGN_CREATEGAP_PENALTY, LRM_DP_ALIGN_EXTENDGAP_PENALTY, LRM_DP_ALIGN_MATCH_SCORE, LRM_DP_ALIGN_MISMATCH_PENALTY;
+	LRM_DP_ALIGN_CREATEGAP_PENALTY = penalties[0];  
+	LRM_DP_ALIGN_EXTENDGAP_PENALTY = penalties[1]; 
+	LRM_DP_ALIGN_MATCH_SCORE = penalties[2]; 
+	LRM_DP_ALIGN_MISMATCH_PENALTY = penalties[3]; 
+
+	if(read_len < 3 || abs(expected_offset) > max_indel)
+		return 0;
+	if(expected_offset < 0 && read_len < (3-expected_offset))
+		return 0;
+	ref_len = read_len + expected_offset;
+	if(ref_len < 1)
+		return 0;
+
+	char ref_bases [ref_len+1];
+	get_index_base_value(begin_position, general_context, ref_bases, ref_len);
+
+	//unsigned long long table_ptr = (unsigned long long) indel_context -> dynamic_align_table;
+
+	short ** table = (short**)(buffers[0]); 
+	char ** table_mask = (char**)(buffers[3]);
+	// vertical move: deletion (1)
+	// horizontal move: insertion (2)
+	// cross move: match (0) or mismatch (3)
+	// i: vertical move; j: horizontal move
+
+	//SUBREADprintf("DM[%d]: %p %d,%d\n", thread_context -> thread_id, table_mask, read_len +  expected_offset,  read_len);
+	for (i=0; i<ref_len; i++)
+	{
+		for(j=0; j<read_len; j++)
+		{
+			table_mask[i][j]=0;
+
+			if (j < i - max_indel || j > max_indel + i)
+			{
+				table[i][j]=-9999;
+				continue;
+			}
+
+			short from_upper;
+
+			if (i>0) from_upper = table[i-1][j] + (table_mask[i-1][j] == INDEL_MASK_BY_DELETION?LRM_DP_ALIGN_EXTENDGAP_PENALTY:LRM_DP_ALIGN_CREATEGAP_PENALTY);
+			else     from_upper = -9999;
+
+			short from_left;
+
+			if (j>0) from_left = table[i][j-1] + (table_mask[i][j-1] == INDEL_MASK_BY_INSERTION?LRM_DP_ALIGN_EXTENDGAP_PENALTY:LRM_DP_ALIGN_CREATEGAP_PENALTY);
+			else     from_left = -9999;
+
+			char chromo_ch = ref_bases[i];
+			char is_matched_ij = (chromo_ch == read[j])?LRM_DP_ALIGN_MATCH_SCORE:LRM_DP_ALIGN_MISMATCH_PENALTY;
+			
+			short from_upperleft;
+
+			if (i>0 && j>0) from_upperleft = table[i-1][j-1] + is_matched_ij;
+			else if(i==0 && j==0) from_upperleft = is_matched_ij;
+			else	    from_upperleft = -9999; 
+
+			if (from_upperleft == from_upper && from_upperleft > from_left)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_DELETION;
+				table[i][j] = from_upper;
+			}
+			else if(from_upperleft == from_left && from_upperleft > from_upper)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_INSERTION;
+				table[i][j] = from_left;
+			}
+			else if(from_upperleft > from_left && from_upperleft > from_upper)
+			{
+				table_mask[i][j]= (chromo_ch == read[j])?INDEL_MASK_BY_MATCH:INDEL_MASK_BY_MISMATCH;
+				table[i][j] = from_upperleft;
+			}
+			else if(from_upperleft == from_left && from_upperleft == from_upper)
+			{
+				table_mask[i][j]= (chromo_ch == read[j])?INDEL_MASK_BY_MATCH:INDEL_MASK_BY_MISMATCH;
+				table[i][j] = from_upperleft;
+			}
+			else if(from_left > from_upper)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_INSERTION;
+				table[i][j] = from_left;
+			}
+			else if(from_left <= from_upper)
+			{
+				table_mask[i][j]= INDEL_MASK_BY_DELETION;
+				table[i][j] = from_upper;
+			}
+		}
+	}
+
+	short path_i = read_len + expected_offset - 1;
+	int out_pos = 0, delta=0;
+	j = read_len - 1;
+
+int debugout1 = 0;
+if(0) debugout1 =1;
+if(debugout1)SUBREADprintf("\n");
+	while(1)
+	{
+		if(table_mask[path_i][j] == INDEL_MASK_BY_INSERTION)
+		{
+			j--;
+			delta --;
+			movement_buffer[out_pos++] = 2;
+if(debugout1)SUBREADprintf("I");
+		}
+		else if(table_mask[path_i][j] == INDEL_MASK_BY_DELETION)
+		{
+			path_i--;
+			delta ++;
+			movement_buffer[out_pos++] = 1;
+if(debugout1)SUBREADprintf("D");
+		}
+		else if(table_mask[path_i][j] == INDEL_MASK_BY_MATCH || table_mask[path_i][j] == INDEL_MASK_BY_MISMATCH)
+		{
+			movement_buffer[out_pos++] = table_mask[path_i][j] == INDEL_MASK_BY_MATCH?0:3;
+			path_i--;
+			j--;
+if(debugout1)SUBREADprintf("M");
+		}
+
+		if(path_i == -1 && j == -1) break;
+		if(j<0 || path_i<0){
+			return 0;
+		}
+	}
+if(debugout1)SUBREADprintf("\n");
+
+	if(expected_offset!=delta){
+		return 0;
+	}
+	for(i=0; i<out_pos/2; i++)
+	{
+		char tmp;
+		tmp = movement_buffer[out_pos-1-i];
+		movement_buffer[out_pos-1-i] = movement_buffer[i];
+		movement_buffer[i] = tmp;
+	}
+	return out_pos;
+}
+
+
+
+const int integer_log2_looktab[64] = {
+	63,  0, 58,  1, 59, 47, 53,  2,
+	60, 39, 48, 27, 54, 33, 42,  3,
+	61, 51, 37, 40, 49, 18, 28, 20,
+	55, 30, 34, 11, 43, 14, 22,  4,
+	62, 57, 46, 52, 38, 26, 32, 41,
+	50, 36, 17, 19, 29, 10, 13, 21,
+	56, 45, 25, 31, 35, 16,  9, 12,
+	44, 24, 15,  8, 23,  7,  6,  5};
+
+int integer_log2_64 (srInt_64 value)
+{
+	value |= value >> 1;
+	value |= value >> 2;
+	value |= value >> 4;
+	value |= value >> 8;
+	value |= value >> 16;
+	value |= value >> 32;
+	return integer_log2_looktab[((uint64_t)((value - (value >> 1))*0x07EDD5E59A4E28C2)) >> 58];
+}
+
+int reduce_repeating_cigar(char * src, char * dst){
+	int tmpi = -1;
+	int ci, nch, repeat_i = 0, old_opt = 0, wcur=0;
+ 	for(ci = 0; ; ci++){
+		nch = src[ci];
+		if(!nch) break;
+		if(nch == '/') continue;
+		if(nch == '.') continue;
+		if(nch == 'X') nch='M';
+
+		if(isdigit(nch)){
+			if(tmpi<0) tmpi = 0;
+			tmpi = tmpi*10 + (nch-'0');
+		}else{
+			if(tmpi<0) tmpi = 1;
+			if(old_opt != nch && repeat_i>0){
+				wcur += SUBreadSprintf( dst + wcur, 11, "%d%c", repeat_i, old_opt );
+				repeat_i = 0;
+			}
+			repeat_i += tmpi; 
+			tmpi = -1;
+			old_opt = nch;
+		}
+	}
+	if(repeat_i>0) wcur += SUBreadSprintf( dst + wcur, 11, "%d%c", repeat_i, old_opt );
+	return wcur;
+}
+
+void convert_2bit_int_to_umi(char * umi, unsigned int umiint, int umilen){
+	int i=0;
+	for(i=0;i<umilen;i++) {
+		char nch = int2base( (umiint >> (i*2)) & 3);
+		umi[umilen -1 -i]=nch;
+	}
+	umi[umilen]=0;
+}
+
+unsigned int convert_umi_to_2bit_int(char * umi, int umilen){
+	int i=0;
+	unsigned int ret=0;
+	for(i=0;i<umilen;i++) ret =(ret <<2)| base2int(umi[i]);
+	return ret;
+}
+
+
+
+
+int GEMINI_pro_general_dynamic_align(char * read, int read_len, unsigned int begin_position, char * movement_buffer, int expected_offset, int max_indel_length, 
+  void *** buffers, int * penalties, char (* get_index_base_value) (unsigned int pos, void * context), void * general_context) {
+	int i, j;
+	// Handle empty alignment case
+	if (read_len == 0 && expected_offset == 0) {
+		movement_buffer[0] = 0;
+		return 0;
+	}
+
+	// Map penalties: 0:Open, 1:Extend, 2:Match, 3:Mismatch
+	int G_OPEN = penalties[0];
+	int G_EXT = penalties[1];
+	int MATCH = penalties[2];
+	int MISMATCH = penalties[3];
+	int G_GAP_OPEN = G_OPEN + G_EXT;
+	
+	int ref_len = read_len + expected_offset;
+	// Apply the 9999*16 cap requested in previous snippets
+	int max_indel = (9999 * 16 < max_indel_length) ? 9999 * 16 : max_indel_length;
+
+	// Use 4 buffers: 3 for score matrices (short), 1 for backtracking mask (char)
+	short ** M = (short**)(buffers[0]); 
+	short ** I = (short**)(buffers[1]); 
+	short ** D = (short**)(buffers[2]); 
+	char  ** mask = (char**)(buffers[3]); 
+
+	// 1. Initialization for Global Alignment
+	M[0][0] = 0;
+	I[0][0] = D[0][0] = NEG_INF;
+	mask[0][0] = 0;
+
+	// Targeted initialization for banded edges
+	int init_j = (max_indel < read_len) ? max_indel : read_len;
+	for (j = 1; j <= init_j; j++) { 
+		I[0][j] = G_OPEN + (j * G_EXT); 
+		M[0][j] = D[0][j] = NEG_INF;
+		mask[0][j] = (STATE_I << 4); 
+		if (j > 1) mask[0][j] |= TRACE_I_EXT;
+	}
+	if (init_j < read_len) M[0][init_j+1] = I[0][init_j+1] = D[0][init_j+1] = NEG_INF;
+
+	int init_i = (max_indel < ref_len) ? max_indel : ref_len;
+	for (i = 1; i <= init_i; i++) { 
+		D[i][0] = G_OPEN + (i * G_EXT); 
+		M[i][0] = I[i][0] = NEG_INF;
+		mask[i][0] = (STATE_D << 4); 
+		if (i > 1) mask[i][0] |= TRACE_D_EXT;
+	}
+	if (init_i < ref_len) M[init_i+1][0] = I[init_i+1][0] = D[init_i+1][0] = NEG_INF;
+
+	// 2. Fill DP Table
+	for (i = 1; i <= ref_len; i++) {
+		char ref_base = get_index_base_value(begin_position + i - 1, general_context);
+		
+		int j_start = i - max_indel;
+		if (j_start < 1) j_start = 1;
+		int j_end = i + max_indel;
+		if (j_end > read_len) j_end = read_len;
+
+		short *Mi = M[i], *Ii = I[i], *Di = D[i];
+		char  *maski = mask[i];
+		short *Mi_1 = M[i-1], *Ii_1 = I[i-1], *Di_1 = D[i-1];
+
+		// Maintain a safety buffer of NEG_INF around the band for subsequent rows
+		if (j_start > 1) { Mi[j_start-1] = Ii[j_start-1] = Di[j_start-1] = NEG_INF; }
+		if (j_end < read_len) { Mi[j_end+1] = Ii[j_end+1] = Di[j_end+1] = NEG_INF; }
+
+		for (j = j_start; j <= j_end; j++) {
+			char current_mask = 0;
+
+			// --- Deletion State (Gap in Read) ---
+			short d_from_m = Mi_1[j] + G_GAP_OPEN;
+			short d_from_d = Di_1[j] + G_EXT;
+			if (d_from_m >= d_from_d) { 
+				Di[j] = d_from_m; 
+			} else { 
+				Di[j] = d_from_d; 
+				current_mask |= TRACE_D_EXT; 
+			}
+
+			// --- Insertion State (Gap in Reference) ---
+			short i_from_m = Mi[j-1] + G_GAP_OPEN;
+			short i_from_i = Ii[j-1] + G_EXT;
+			if (i_from_m >= i_from_i) { 
+				Ii[j] = i_from_m; 
+			} else { 
+				Ii[j] = i_from_i; 
+				current_mask |= TRACE_I_EXT;
+			}
+
+			// --- Match/Mismatch State ---
+			short score = (ref_base == read[j-1]) ? MATCH : MISMATCH;
+			short m_m = Mi_1[j-1], m_i = Ii_1[j-1], m_d = Di_1[j-1];
+			
+			if (m_m >= m_i && m_m >= m_d) { Mi[j] = m_m + score; current_mask |= STATE_M; } 
+			else if (m_i >= m_d)          { Mi[j] = m_i + score; current_mask |= STATE_I; } 
+			else                          { Mi[j] = m_d + score; current_mask |= STATE_D; }
+
+			maski[j] = current_mask;
+		}
+	}
+
+	// 2.5 Final Sink State Calculation (Only for the target cell)
+	if (abs(expected_offset) <= max_indel) {
+		if (M[ref_len][read_len] >= I[ref_len][read_len] && M[ref_len][read_len] >= D[ref_len][read_len])
+			mask[ref_len][read_len] |= (STATE_M << 4);
+		else if (I[ref_len][read_len] >= D[ref_len][read_len])
+			mask[ref_len][read_len] |= (STATE_I << 4);
+		else
+			mask[ref_len][read_len] |= (STATE_D << 4);
+	}
+
+	// 3. Backtracking
+	int curr_i = ref_len, curr_j = read_len;
+	// Start from the absolute best state at the sink (ref_len, read_len)
+	int state = (mask[curr_i][curr_j] >> 4) & 0x3;
+	int out_pos = 0;
+
+	// Safety fallback: if no path reached the sink within the band
+	if (M[curr_i][curr_j] <= NEG_INF && I[curr_i][curr_j] <= NEG_INF && D[curr_i][curr_j] <= NEG_INF) {
+		int mmlen = read_len + (expected_offset < 0 ? expected_offset : 0);
+		int h1len = mmlen/2;
+		return snprintf(movement_buffer,36, "%dM%d%c%dM", h1len, abs(expected_offset), expected_offset > 0 ? 'D' : 'I', mmlen - h1len);
+	}
+
+	while (curr_i > 0 || curr_j > 0) {
+		if (curr_i == 0) state = STATE_I;
+		else if (curr_j == 0) state = STATE_D;
+
+		if (state == STATE_M) {
+			movement_buffer[out_pos++] = 'M';
+			state = mask[curr_i][curr_j] & 0x3; // Back to the state that led to this Match
+			curr_i--; curr_j--;
+		} else if (state == STATE_D) {
+			movement_buffer[out_pos++] = 'D';
+			state = (mask[curr_i][curr_j] & TRACE_D_EXT) ? STATE_D : STATE_M;
+			curr_i--;
+		} else { // STATE_I
+			movement_buffer[out_pos++] = 'I';
+			state = (mask[curr_i][curr_j] & TRACE_I_EXT) ? STATE_I : STATE_M;
+			curr_j--;
+		}
+	}
+
+	// 4. Reverse the buffer to get correct CIGAR order
+	for (i = 0; i < out_pos / 2; i++) {
+		char tmp = movement_buffer[i];
+		movement_buffer[i] = movement_buffer[out_pos - 1 - i];
+		movement_buffer[out_pos - 1 - i] = tmp;
+	}
+
+	return out_pos;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static inline int IVT_max_int(int a, int b) {
+	return a > b ? a : b;
+}
+
+static inline srInt_64 IVT_abs64(srInt_64 x) {
+	return x < 0 ? -x : x;
+}
+
+// Get the height of the tree
+int IVT_height(IVT_IntervalTreeNode *node) {
+	return node ? (int)node->height : 0;
+}
+
+// Calculate the balance factor of a node
+int IVT_getBalance(IVT_IntervalTreeNode *node) {
+	return node ? IVT_height(node->left) - IVT_height(node->right) : 0;
+}
+
+static inline void IVT_refreshNode(IVT_IntervalTreeNode *node) {
+	int left_h = IVT_height(node->left);
+	int right_h = IVT_height(node->right);
+	node->height = (uint8_t)(1 + IVT_max_int(left_h, right_h));
+
+	node->posmax = node->interval.end;
+	node->posmin = node->interval.start;
+
+	if (node->left) {
+		if (node->left->posmax > node->posmax) node->posmax = node->left->posmax;
+		if (node->left->posmin < node->posmin) node->posmin = node->left->posmin;
+	}
+	if (node->right) {
+		if (node->right->posmax > node->posmax) node->posmax = node->right->posmax;
+		if (node->right->posmin < node->posmin) node->posmin = node->right->posmin;
+	}
+}
+
+// Update the height of a node
+void IVT_updateHeight(IVT_IntervalTreeNode *node) {
+	if (!node) return;
+	node->height = (uint8_t)(1 + IVT_max_int(IVT_height(node->left), IVT_height(node->right)));
+}
+
+// Update the max value of a node
+void IVT_updateMax(IVT_IntervalTreeNode *node) {
+	if (!node) return;
+	node->posmax = node->interval.end;
+	node->posmin = node->interval.start;
+
+	if (node->left) {
+		if (node->left->posmax > node->posmax) node->posmax = node->left->posmax;
+		if (node->left->posmin < node->posmin) node->posmin = node->left->posmin;
+	}
+	if (node->right) {
+		if (node->right->posmax > node->posmax) node->posmax = node->right->posmax;
+		if (node->right->posmin < node->posmin) node->posmin = node->right->posmin;
+	}
+}
+
+// Right rotate the subtree rooted with y
+IVT_IntervalTreeNode* IVT_rightRotate(IVT_IntervalTreeNode *y) {
+	IVT_IntervalTreeNode *x = y->left;
+	IVT_IntervalTreeNode *T2 = x->right;
+
+	x->right = y;
+	y->left = T2;
+
+	IVT_refreshNode(y);
+	IVT_refreshNode(x);
+	return x;
+}
+
+// Left rotate the subtree rooted with x
+IVT_IntervalTreeNode* IVT_leftRotate(IVT_IntervalTreeNode *x) {
+	IVT_IntervalTreeNode *y = x->right;
+	IVT_IntervalTreeNode *T2 = y->left;
+
+	y->left = x;
+	x->right = T2;
+
+	IVT_refreshNode(x);
+	IVT_refreshNode(y);
+	return y;
+}
+
+// Create a new interval tree node
+IVT_IntervalTreeNode* IVT_createNode(srInt_64 start, srInt_64 end, void * attr) {
+	IVT_IntervalTreeNode* node = (IVT_IntervalTreeNode*)malloc(sizeof(IVT_IntervalTreeNode));
+	if (!node) return NULL;
+
+	node->interval.start = start;
+	node->interval.end = end;
+	node->interval.attr = attr;
+	node->posmax = end;
+	node->posmin = start;
+	node->left = NULL;
+	node->right = NULL;
+	node->height = 1;
+	return node;
+}
+
+// Insert a new interval into the interval tree
+static IVT_IntervalTreeNode* IVT_insert_recursive_fallback(IVT_IntervalTreeNode* node, srInt_64 start, srInt_64 end, void * attr) {
+	int balance;
+
+	if (!node) return IVT_createNode(start, end, attr);
+
+	if (start < node->interval.start) node->left = IVT_insert_recursive_fallback(node->left, start, end, attr);
+	else node->right = IVT_insert_recursive_fallback(node->right, start, end, attr);
+
+	IVT_refreshNode(node);
+	balance = IVT_getBalance(node);
+
+	// Keep original rotation criteria to preserve tree shape/query ordering behavior.
+	if (balance > 1 && start < node->left->interval.start && node->left) {
+		return IVT_rightRotate(node);
+	}
+
+	if (balance < -1 && start > node->right->interval.start && node->right) {
+		return IVT_leftRotate(node);
+	}
+
+	if (balance > 1 && start > node->left->interval.start && node->left && node->right && node->left->right) {
+		node->left = IVT_leftRotate(node->left);
+		return IVT_rightRotate(node);
+	}
+
+	if (balance < -1 && start < node->right->interval.start && node->left && node->right && node->right->left) {
+		node->right = IVT_rightRotate(node->right);
+		return IVT_leftRotate(node);
+	}
+
+	return node;
+}
+
+IVT_IntervalTreeNode* IVT_insert(IVT_IntervalTreeNode* node, srInt_64 start, srInt_64 end, void * attr) {
+	IVT_IntervalTreeNode **path[IVT_DFS_STACK_CAPA];
+	int depth = 0;
+	IVT_IntervalTreeNode **cursor = &node;
+
+	while (*cursor) {
+		if (depth >= IVT_DFS_STACK_CAPA) {
+			return IVT_insert_recursive_fallback(node, start, end, attr);
+		}
+		path[depth++] = cursor;
+		if (start < (*cursor)->interval.start) cursor = &(*cursor)->left;
+		else cursor = &(*cursor)->right;
+	}
+
+	*cursor = IVT_createNode(start, end, attr);
+	if (!*cursor) return node;
+
+	while (depth > 0) {
+		IVT_IntervalTreeNode **plink = path[--depth];
+		IVT_IntervalTreeNode *cur = *plink;
+		IVT_refreshNode(cur);
+
+		{
+			int balance = IVT_getBalance(cur);
+
+			// Keep original rotation criteria to preserve tree shape/query ordering behavior.
+			if (balance > 1 && start < cur->left->interval.start && cur->left) {
+				cur = IVT_rightRotate(cur);
+			} else if (balance < -1 && start > cur->right->interval.start && cur->right) {
+				cur = IVT_leftRotate(cur);
+			} else if (balance > 1 && start > cur->left->interval.start && cur->left && cur->right && cur->left->right) {
+				cur->left = IVT_leftRotate(cur->left);
+				cur = IVT_rightRotate(cur);
+			} else if (balance < -1 && start < cur->right->interval.start && cur->left && cur->right && cur->right->left) {
+				cur->right = IVT_rightRotate(cur->right);
+				cur = IVT_leftRotate(cur);
+			}
+		}
+
+		*plink = cur;
+	}
+
+	return node;
+}
+
+void IVT_query_lr_int(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval **outbuf, int outbuf_capa, int * items, int to_left) {
+	IVT_IntervalTreeNode *stack[IVT_DFS_STACK_CAPA];
+	int sp = 0;
+	int have_best = 0;
+	srInt_64 best_edge = 0;
+	srInt_64 best_dist = 0;
+
+	if (!root) return;
+
+	if (*items > 0) {
+		best_edge = to_left ? outbuf[0]->end : outbuf[0]->start;
+		best_dist = IVT_abs64(best_edge - point);
+		have_best = 1;
+	}
+
+	stack[sp++] = root;
+	while (sp > 0) {
+		IVT_IntervalTreeNode *node = stack[--sp];
+		srInt_64 testing_edge;
+
+		if (to_left) {
+			if (node->posmin > point) continue;
+			if (have_best && node->posmax < best_edge) continue;
+			testing_edge = node->interval.end;
+		} else {
+			if (node->posmax < point) continue;
+			if (have_best && node->posmin > best_edge) continue;
+			testing_edge = node->interval.start;
+		}
+
+		if ((!to_left && point <= testing_edge) || (to_left && point >= testing_edge)) {
+			srInt_64 testing_dist = IVT_abs64(testing_edge - point);
+			if (!have_best || testing_dist < best_dist) {
+				if (outbuf_capa > 0) {
+					outbuf[0] = &node->interval;
+					*items = 1;
+					best_edge = testing_edge;
+					best_dist = testing_dist;
+					have_best = 1;
+				}
+			} else if (have_best && testing_dist == best_dist) {
+				if (outbuf_capa > *items) outbuf[(*items)++] = &node->interval;
+			}
+		}
+
+		if (node->right) stack[sp++] = node->right;
+		if (node->left) stack[sp++] = node->left;
+	}
+}
+
+void IVT_query_int(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval **outbuf, int * outptr, int capa) {
+	IVT_IntervalTreeNode *stack[IVT_DFS_STACK_CAPA];
+	int sp = 0;
+
+	if (!root || *outptr >= capa) return;
+
+	stack[sp++] = root;
+	while (sp > 0 && *outptr < capa) {
+		IVT_IntervalTreeNode *node = stack[--sp];
+
+		if (node->posmin > point || node->posmax < point) continue;
+
+		if (node->interval.start <= point && point <= node->interval.end) {
+			if (*outptr < capa) outbuf[(*outptr)++] = &node->interval;
+			if (*outptr >= capa) break;
+		}
+
+		if (node->right && !(node->right->posmin > point || node->right->posmax < point)) stack[sp++] = node->right;
+		if (node->left && !(node->left->posmin > point || node->left->posmax < point)) stack[sp++] = node->left;
+	}
+}
+
+// Query the interval tree to find all intervals containing a given point
+// If no overlapping interval is found then find the left or right nearest intervals.
+int DONT_USE_IVT_query_lr(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval** outbuf, int outbuf_capa, int * is_overlapping_match, int to_left) {
+	int items = 0;
+
+	*is_overlapping_match = 1;
+	IVT_query_int(root, point, outbuf, &items, outbuf_capa);
+	if (items > 0) return items;
+
+	*is_overlapping_match = 0;
+	IVT_query_lr_int(root, point, outbuf, outbuf_capa, &items, to_left);
+	return items;
+}
+
+// Only query edges: to_left == 1 then find "end" edges; to_left == 0 then find "start" edges.
+int IVT_edges_lr(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval** outbuf, int outbuf_capa, int to_left) {
+	int items = 0;
+	IVT_query_lr_int(root, point, outbuf, outbuf_capa, &items, to_left);
+	return items;
+}
+
+// Query the interval tree to find all intervals containing a given point
+int IVT_query(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval** outbuf, int outbuf_capa) {
+	int outptr = 0;
+	IVT_query_int(root, point, outbuf, &outptr, outbuf_capa);
+	return outptr;
+}
+
+// Free the interval tree
+void IVT_freeTree(IVT_IntervalTreeNode* root) {
+	if (!root) return;
+	IVT_freeTree(root->left);
+	IVT_freeTree(root->right);
+	free(root);
+}
+
+void IVT_query_range(IVT_IntervalTreeNode* root, srInt_64 edge_L_inced, srInt_64 edge_R_inced, IVT_Interval **outbuf, int outbuf_capa, int * items) {
+	IVT_IntervalTreeNode *stack[IVT_DFS_STACK_CAPA];
+	int sp = 0;
+
+	if (!root || (*items) == outbuf_capa) return;
+
+	stack[sp++] = root;
+	while (sp > 0 && (*items) < outbuf_capa) {
+		IVT_IntervalTreeNode *node = stack[--sp];
+
+		if (node->posmin > edge_R_inced || node->posmax < edge_L_inced) continue;
+
+		if ((node->interval.start <= edge_L_inced && node->interval.end >= edge_L_inced) ||
+			(node->interval.start >= edge_L_inced && node->interval.start <= edge_R_inced)) {
+			if ((*items) < outbuf_capa) outbuf[(*items)++] = &node->interval;
+			if ((*items) == outbuf_capa) break;
+		}
+
+		if (node->right && !(node->right->posmin > edge_R_inced || node->right->posmax < edge_L_inced)) stack[sp++] = node->right;
+		if (node->left && !(node->left->posmin > edge_R_inced || node->left->posmax < edge_L_inced)) stack[sp++] = node->left;
+	}
+}
+

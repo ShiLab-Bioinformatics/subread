@@ -61,7 +61,7 @@
 #define mark_gapped_read(res) (res)-> result_flags|= CORE_IS_GAPPED_READ;
 
 #define CORE_MAX_CIGAR_STR_LEN 110
-#define CORE_ADDITIONAL_INFO_LENGTH 400
+#define CORE_ADDITIONAL_INFO_LENGTH 1000
 #define READPAIRS_FOR_CALC_EXPT_TLEN 1000
 
 typedef struct{
@@ -599,6 +599,8 @@ typedef struct{
 #define MODULE_INDEL_ID 0
 #define MODULE_JUNCTION_ID 1
 
+#define STEP_JUNC_TABLE 5
+#define STEP_REALIGN_CELLCOUNTS 20
 #define STEP_VOTING 10
 #define STEP_ITERATION_ONE 20
 #define STEP_ITERATION_TWO 30

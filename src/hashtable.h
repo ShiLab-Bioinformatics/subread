@@ -55,14 +55,21 @@ typedef struct {
 } ArrayList;
 
 int ArrayListContainsPtr(ArrayList * list, void * who);
+int ArrayListContainsString(ArrayList * list, char * who);
 ArrayList * ArrayListCreate(int init_capacity);
 ArrayList * ArrayListDuplicate(ArrayList * ori);
 void ArrayListDestroy(ArrayList * list);
 void * ArrayListGet(ArrayList * list, srInt_64 n);
 void * ArrayListSet(ArrayList * list, srInt_64 n, void * new_elem);
 void * ArrayListRandom(ArrayList * list);
+void ArrayListUnique(ArrayList * list, int same_item(void * L_elem, void * R_elem, ArrayList * me));
 int ArrayListPush(ArrayList * list, void * new_elem);
+int ArrayListStringJoin(ArrayList * list, char *outbuf, int out_max_len);
 int ArrayListPush_NoRepeatedPtr(ArrayList * list, void * new_elem);
+int ArrayListFilter(ArrayList * list, int (*keep_me)(void *elem, ArrayList * me));
+ArrayList * ArrayList_Int_Intersect(ArrayList * list, ArrayList * l2);
+ArrayList* ArrayList_Int_Hash_Intersect(ArrayList * list, HashTable * h2_key_plus1);
+void ArrayListExtend(ArrayList * list, ArrayList * additional);
 // Shift is the other direction of Pop:
 // Say, a list has elements 0,1,2,3,4
 // Pop removes 4 from the list and returns it.
@@ -76,8 +83,8 @@ void ArrayListSetDeallocationFunction(ArrayList * list,  void (*elem_deallocator
 void ArrayListSort(ArrayList * list, int compare_L_minus_R(void * L_elem, void * R_elem, ArrayList * me));
 
 // A simple comparison function if you want to sort unsigned long long ints.
-int ArrayListLLUComparison(void * L_elem, void * R_elem);
-int ArrayListStringComparison(void * L_elem, void * R_elem);
+int ArrayListLLUComparison(void * L_elem, void * R_elem, ArrayList * me);
+int ArrayListStringComparison(void * L_elem, void * R_elem, ArrayList * me);
 
 // This function returns the index of the value in the list that is the minumum value greater than "value_less_than_dent".
 // The elements in the list are all zero-based unsigned long long ints. The list must be sorted (small -> large) before calling this function.

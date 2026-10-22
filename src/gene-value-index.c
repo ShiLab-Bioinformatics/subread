@@ -31,6 +31,7 @@ int gvindex_init(gene_value_index_t * index, unsigned int start_point, unsigned 
 	index->start_point = start_point;
 	index->memory_block_size = total_bases_estimated/4+10;
 	index->values = calloc(index->memory_block_size,1);
+	index->base_values = NULL;
 	if(!index->values)
 	{
 		SUBREADputs(MESSAGE_OUT_OF_MEMORY);
@@ -43,7 +44,7 @@ int gvindex_init(gene_value_index_t * index, unsigned int start_point, unsigned 
 #define gvindex_baseno2offset_m(base_number, index, offset_byte, offset_bit)	{offset_byte =  (base_number - index -> start_base_offset) >>2; offset_bit = base_number % 4 * 2;}
 
 
-void gvindex_baseno2offset(unsigned int base_number, gene_value_index_t * index, unsigned int * offset_byte, unsigned int * offset_bit)
+static void gvindex_baseno2offset(unsigned int base_number, gene_value_index_t * index, unsigned int * offset_byte, unsigned int * offset_bit)
 {
 	// the base number corrsponding to the 0-th bit in the whole value array;
 
@@ -92,9 +93,41 @@ int is_offset_in_chro(gene_value_index_t * offsets, gehash_data_t linear){
 	return ret;
 }
 
+int gvindex_get_range(gene_value_index_t * index, gehash_data_t offset, char * base_space, int num_bases){
+	if(index -> base_values){
+		memcpy(base_space, index -> base_values + offset, num_bases);
+		return 0;
+	}
+	unsigned int offset_byte, offset_bit;
+	gvindex_baseno2offset_m(offset, index, offset_byte, offset_bit);
+	unsigned char basex4 = index->values[offset_byte];
+
+	for (int i = 0; i < num_bases; i++) {
+		if (offset_byte >= index->values_bytes - 1) {
+			while (i < num_bases) {
+				base_space[i++] = 'N';
+			}
+			break;
+		}
+
+		unsigned int one_base_value = basex4 >> offset_bit;
+		base_space[i] = int2base(one_base_value & 3);
+
+		offset_bit += 2;
+		if (offset_bit == 8) {
+			offset_bit = 0;   // Reset bit tracking
+			basex4 = index->values[++offset_byte];	// Move to the next byte
+		}
+	}
+//	base_space[num_bases] = 0;
+
+	return 0;
+}
+
 // return 'A', 'G', 'T' and 'C'
 int gvindex_get(gene_value_index_t * index, gehash_data_t offset)
 {
+	if(index -> base_values) return index -> base_values[offset];
 	unsigned int offset_byte, offset_bit;
 	//if(!is_offset_in_chro( index, offset ))return -1;
 
@@ -186,9 +219,17 @@ int gvindex_dump(gene_value_index_t * index, const char filename [])
 	return is_full;
 }
 
+void gvindex_load_decompress(gene_value_index_t * index){
+	unsigned int linearpos;
 
-int gvindex_load(gene_value_index_t * index, const char filename [])
-{
+	unsigned char *memspace = malloc(index -> length);
+	if(!memspace) SUBREADprintf("ERROR: unable to allocate memory for base-value index.\n");
+
+	for(linearpos =0; linearpos < index -> length; linearpos ++) memspace[linearpos] = gvindex_get(index, linearpos);
+	index -> base_values = memspace;
+}
+
+int gvindex_load_largebuffer(gene_value_index_t * index, const char filename [], int create_basevalue_array) {
 	memset(index,0, sizeof(gene_value_index_t));
 	FILE * fp = f_subr_open(filename, "rb");
 	int read_length;
@@ -223,10 +264,14 @@ int gvindex_load(gene_value_index_t * index, const char filename [])
 	}
 
 	fclose(fp);
+	if(create_basevalue_array) gvindex_load_decompress(index);
 	return 0;
 
 }
 
+int gvindex_load(gene_value_index_t * index, const char filename []){
+	return gvindex_load_largebuffer(index, filename, 0);
+}
 
 int match_chro_wronglen(char * read, gene_value_index_t * index, unsigned int pos, int test_len, int space_type, int * left_match_bases, int * right_match_bases)
 {
@@ -1112,6 +1157,7 @@ int gvindex_match_base(gene_value_index_t * index, gehash_data_t offset, const c
 void gvindex_destory(gene_value_index_t * index)
 {
 	free(index -> values);
+	if(index -> base_values) free(index -> base_values);
 }
 
 

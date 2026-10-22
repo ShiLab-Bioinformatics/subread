@@ -2032,7 +2032,7 @@ float match_base_quality(gene_value_index_t *array_index, char * read_txt,  unsi
 		else
 			true_chr = gvindex_get(array_index, pos + i);
 
-		//SUBREADprintf("%c vs %c\n", true_chr , read_txt[i]);
+		//SUBREADprintf("%c vs %c  [%d]\n", true_chr , read_txt[i], i);
 
 		if (true_chr == read_txt[i])
 		{

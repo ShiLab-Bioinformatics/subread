@@ -1389,7 +1389,7 @@ int gehash_load_option(const char fname [], int option_no, int * result){
 
 int gehash_load(gehash_t * the_table, const char fname [])
 {
-	signed int i, read_length, rrtv;
+	signed int i,j,read_length, rrtv;
 	char magic_chars[8];
 	magic_chars[7]=0;
 
@@ -1407,6 +1407,9 @@ int gehash_load(gehash_t * the_table, const char fname [])
 		SUBREADprintf ("Table file '%s' is not found.\n", fname);
 		return 1;
 	}
+
+	char * btabbuf = malloc(GEHASH_TABFILE_BUFFER);
+	setvbuf(fp, btabbuf, _IOFBF, GEHASH_TABFILE_BUFFER);
 
 	rrtv = fread(magic_chars,1,8,fp);
 	if(rrtv !=8){
@@ -1494,30 +1497,17 @@ int gehash_load(gehash_t * the_table, const char fname [])
 			accued_bytes += current_bytes; 
 			curr_bucks ++;
 			if(curr_bucks >= per_group_bucks){
-				//SUBREADprintf("Allocating %d : %d buckets : %u\n", grp_i, i, accued_bytes);
 				bucket_bytes[grp_i++] = accued_bytes;
 				accued_bytes = 0;
 				curr_bucks = 0;
 			}
-			#ifdef __MINGW32__
-			{
-//if(i%500000 == 0)SUBREADprintf("ESTMHUGE %d/%d\n", i, the_table -> buckets_number);
-
-				char * buffkk = malloc(current_bytes );
-				fread(buffkk,current_bytes ,1, fp);
-				free(buffkk);
-			}
-			#else
-			fseeko(fp, current_bytes, SEEK_CUR);
-			#endif
+			for(j =0; j <current_bytes; j++) fgetc(fp);
 		}
 		if(curr_bucks)
 			bucket_bytes[grp_i++] = accued_bytes;
 		fseeko(fp, (off_t)fp_curr, SEEK_SET);
 
 		for(i=0; i<GEHASH_MEM_PTR_NO ; i++){
-
-//if(i%50000 == 0)SUBREADprintf("MEMHUGE %d/%d\n", i, the_table -> buckets_number);
 			unsigned int current_bytes = bucket_bytes[i];
 			if(current_bytes<0xff000000u){
 				the_table -> malloc_ptr[i] = malloc(current_bytes);
@@ -1533,9 +1523,6 @@ int gehash_load(gehash_t * the_table, const char fname [])
 		curr_bucks = 0;
 		accued_bytes = 0;
 		for(i=0; i<the_table -> buckets_number ; i++){
-
-//if(i%50000 == 0)SUBREADprintf("FILLHUGE %d/%d\n", i, the_table -> buckets_number);
-
 			struct gehash_bucket * current_bucket = the_table -> buckets+i;
 			current_bucket -> current_items = load_int32(fp);
 			load_int32(fp);//useless for lo: space size
@@ -1564,8 +1551,8 @@ int gehash_load(gehash_t * the_table, const char fname [])
 		if (rval != 1)SUBREADprintf("ERROR: cannot find the table table.\n");
 		free(bucket_bytes);
 		fclose(fp);
+		free(btabbuf);
 		return 0;
-
 	}
 	else
 	{
@@ -1620,6 +1607,7 @@ int gehash_load(gehash_t * the_table, const char fname [])
 			return 1;
 		}
 		fclose(fp);
+		free(btabbuf);
 		return 0;
 	}
 }

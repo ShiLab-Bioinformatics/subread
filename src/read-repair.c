@@ -131,7 +131,7 @@ int main_read_repair(int argc, char ** argv)
 			return -1;
 		}else{
 			SAM_pairer_run(&pairer);
-			int has_error = pairer.is_bad_format;
+			int has_error = pairer.format_need_fixing;
 			SAM_pairer_destroy(&pairer);
 			SAM_pairer_writer_destroy(&writer_main);
 			SUBREADprintf("\n%s %.2f minutes\nTotal input reads: %llu ; Unpaired reads: %llu\n\n", has_error?"Program terminated WITH ERRORS!!! Used":"All finished in", (miltime()-t0)/60, pairer.total_input_reads, pairer.total_orphan_reads);

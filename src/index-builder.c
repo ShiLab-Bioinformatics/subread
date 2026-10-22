@@ -73,6 +73,14 @@ void print_build_log(double finished_rate, double read_per_second, double expect
 }
 
 
+void save_none_informative(void * key, void * hashed_obj, HashTable * tab){
+	FILE * fp = tab -> appendix1;
+	unsigned int subread_int = key - NULL;
+	int repeats = hashed_obj - NULL;
+	fwrite(&subread_int, 4 /* fixed size of a subread */,1,fp);
+	fwrite(&repeats, 4 /* fixed size of a subread */,1,fp);
+}
+
 #define MAX_BASES_IN_INDEX 4294900000.0
 
 int build_gene_index(const char index_prefix [], char ** chro_files, int chro_file_number, int threshold, HashTable * huge_table, unsigned int * chro_lens, long long actual_bases, int for_measure_buckets, unsigned int ** bucket_sizes, unsigned int expected_hash_items, unsigned int bucket_no, unsigned int * total_tables){
@@ -437,6 +445,12 @@ int build_gene_index(const char index_prefix [], char ** chro_files, int chro_fi
 			SUBreadSprintf(fn, 3100, "%s.%02d.c.array", index_prefix, index_i);
 			unlink(fn);
 		}
+	} else if(!for_measure_buckets){
+		SUBreadSprintf(fn, 3100, "%s.lowinf", index_prefix);
+		FILE * noninf_fp = f_subr_open(fn,"wb");
+		huge_table -> appendix1 = noninf_fp;
+		HashTableIteration(huge_table, save_none_informative);
+		fclose(noninf_fp);
 	}
 	free(fn);
 	free(ginp);
@@ -674,8 +688,7 @@ int scan_gene_index(const char index_prefix [], char ** chro_files, int chro_fil
 	free(ginp);
 	gehash_destory(&occurrence_table);
 
-	if(huge_table -> numOfElements)
-	{
+	if(huge_table -> numOfElements){
 		print_in_box(80,0,0,"%llu uninformative subreads were found.", huge_table -> numOfElements);
 		print_in_box(80,0,0,"These subreads were excluded from index building.");
 	}

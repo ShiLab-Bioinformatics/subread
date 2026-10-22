@@ -78,7 +78,7 @@ typedef struct{
 extern message_queue_t mt_message_queue;
 #endif
 
-void msgqu_init();
+void msgqu_init(int thread_mode);
 void msgqu_destroy();
 void msgqu_main_loop();
 void msgqu_notifyFinish();
@@ -275,4 +275,70 @@ void *windows_memmem(const void *haystack_start, size_t haystack_len, const void
 void sorting_LLU_array_exchange(void * arr, int i, int j);
 int sorting_LLU_array_compare(void * arr, int i, int j);
 
+
+
+int general_dynamic_align(char * read, int read_len, unsigned int begin_position, char * movement_buffer, int expected_offset, int max_indel_length,
+  void *** buffers, int * penalties, int (* get_index_base_value) (unsigned int pos, void * context, char * base_space, int num_bases), void * general_context);
+int general_dynamic_align_moves_to_cigar(char * movement_buffer, int nmoves, char * cigar);
+void init_typical_dynamic_align(void *** buffers, int * penalties, int max_read_length);
+void destroy_typical_dynamic_align(void *** buffers,int max_read_length);
+char LRM_get_baseval_for_dp(unsigned int pos , void * vvcontext);
+
+/*
+// the interal tree structure funcs
+// Define a structure for an interval
+typedef struct {
+    srInt_64 start;
+    srInt_64 end;
+    void * attr;
+} IVT_Interval;
+
+// Define a structure for a node in the interval tree
+typedef struct IVT_IntervalTreeNode {
+    IVT_Interval interval;
+    srInt_64 posmax;
+    srInt_64 posmin;
+    int height;
+    struct IVT_IntervalTreeNode *left;
+    struct IVT_IntervalTreeNode *right;
+} IVT_IntervalTreeNode;
+*/
+
+typedef struct {
+	srInt_64 start;
+	srInt_64 end;
+	void * attr;
+} IVT_Interval;
+
+// Define a structure for a node in the interval tree
+typedef struct IVT_IntervalTreeNode {
+	IVT_Interval interval;
+	srInt_64 posmax;
+	srInt_64 posmin;
+	struct IVT_IntervalTreeNode *left;
+	struct IVT_IntervalTreeNode *right;
+	uint8_t height;
+} IVT_IntervalTreeNode;
+
+enum { IVT_DFS_STACK_CAPA = 1024 };
+
+
+
+IVT_IntervalTreeNode* IVT_createNode(srInt_64 start, srInt_64 end, void * attr);
+IVT_IntervalTreeNode* IVT_leftRotate(IVT_IntervalTreeNode *x);
+IVT_IntervalTreeNode* IVT_rightRotate(IVT_IntervalTreeNode *y);
+void IVT_updateMax(IVT_IntervalTreeNode *node);
+void IVT_updateHeight(IVT_IntervalTreeNode *node);
+int IVT_getBalance(IVT_IntervalTreeNode *node);
+int IVT_height(IVT_IntervalTreeNode *node);
+IVT_IntervalTreeNode* IVT_insert(IVT_IntervalTreeNode* node, srInt_64 start, srInt_64 end, void * attr);
+void IVT_query_range(IVT_IntervalTreeNode* root, srInt_64 edge_L_inc, srInt_64 edge_R_inc, IVT_Interval **outbuf, int outbuf_capa, int * items);
+int IVT_query(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval **outbuf, int outbuf_capa);
+int IVT_edges_lr(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval** outbuf, int outbuf_capa, int to_left);
+// srInt_64 IVT_query_lr(IVT_IntervalTreeNode* root, srInt_64 point, IVT_Interval** outbuf, srInt_64 outbuf_capa, srInt_64 * is_overlapping_match, srInt_64 to_left);
+void IVT_freeTree(IVT_IntervalTreeNode* root);
+int integer_log2_64 (srInt_64 value);
+int reduce_repeating_cigar(char * src, char * dst);
+unsigned int convert_umi_to_2bit_int(char * umi, int umilen);
+void convert_2bit_int_to_umi(char * umi, unsigned int umiint, int umilen);
 #endif

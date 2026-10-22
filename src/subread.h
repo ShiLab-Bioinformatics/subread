@@ -39,8 +39,10 @@
 #define SCRNA_FASTA_SPLIT1 "|Rsd:cCounts:mFQs|"
 #define SCRNA_FASTA_SPLIT2 "|Rsd:cCounts:1mFQ|"
 
+#define MAX_SCRNA_READ_LENGTH ( 160  /*+ 300 */)
 #define BCL_READBIN_ITEMS_LOCAL 50
 #define BCL_READBIN_SIZE (2*MAX_SCRNA_READ_LENGTH)
+#define MAX_FC_READ_LENGTH 10001
 
 #define SAM_FLAG_PAIRED_TASK	0x01
 #define SAM_FLAG_FIRST_READ_IN_PAIR 0x40
@@ -63,8 +65,6 @@
 #define RUN_ALIGN 		0
 #define RUN_FINAL 		1
 
-
-
 #define MAX_THREADS 40
 #define FC_MAX_THREADS 64
 #define MAX_EVENTS_IN_READ 8
@@ -83,7 +83,8 @@
 #define EXON_LONG_READ_LENGTH 160 
 #define EXON_MAX_CIGAR_LEN 256 
 #define FC_CIGAR_PARSER_ITEMS 11 
-#define FC_LONG_READ_RECORD_HARDLIMIT (8*1024*1024)
+#define FC_LONG_READ_RECORD_HARDLIMIT (64*1024-1)
+#define FC_UNSAFE_BLOCK_SIZE 15000
 
 #define MAX_INDEL_SECTIONS 7
 //#define XBIG_MARGIN_RECORD_SIZE 24 
@@ -317,6 +318,7 @@ typedef struct{
 	unsigned int length;
 	unsigned char * values;
 	unsigned int values_bytes;
+	unsigned char * base_values;
 	void * appendix1;
 	void * appendix2;
 } gene_value_index_t;
@@ -339,8 +341,9 @@ typedef struct {
 	gene_quality_score_t quality [GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
 	gene_vote_number_t last_subread_cluster [GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
 	gene_vote_number_t indel_recorder [GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE][MAX_INDEL_TOLERANCE*3];
-	char current_indel_cursor[GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
-	char toli[GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
+	signed char current_indel_cursor[GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
+	signed char toli[GENE_VOTE_TABLE_SIZE][GENE_VOTE_SPACE];
+
 	int topK_votes[SCRNA_HIGHEST_REPORTED_ALIGNMENTS];
 	int topK_IJ[SCRNA_HIGHEST_REPORTED_ALIGNMENTS ];
 
@@ -499,7 +502,7 @@ typedef struct {
 	int is_EOF;
 } input_BLC_t;
 
-#define MAX_SCRNA_READ_LENGTH 160 
+//#warning "====== Yang Liao added '+300' for debugging junc-detection. Not needed in release. ======"
 
 typedef struct{
 	char read_text[MAX_SCRNA_READ_LENGTH];

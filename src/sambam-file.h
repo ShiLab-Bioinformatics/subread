@@ -27,10 +27,10 @@ typedef unsigned char BS_uint_8;
 typedef unsigned short BS_uint_16;
 typedef unsigned int BS_uint_32;
 
-#define BAM_MAX_CHROMOSOME_NAME_LEN 200 
-#define BAM_MAX_CIGAR_LEN (330000)
+#define BAM_MAX_CHROMOSOME_NAME_LEN 256 
+#define BAM_MAX_CIGAR_LEN 300000
 #define BAM_MAX_READ_NAME_LEN 256
-#define BAM_MAX_READ_LEN 3000
+#define BAM_MAX_READ_LEN 5000000
 
 #define SAMBAM_FILE_SAM	10
 #define SAMBAM_FILE_BAM 20
@@ -43,7 +43,7 @@ typedef unsigned int BS_uint_32;
 #define SAMBAM_COMPRESS_LEVEL_NORMAL Z_BEST_SPEED
 
 #define SAMBAM_GZIP_WINDOW_BITS -15
-#define SAMBAM_INPUT_STREAM_SIZE 140000
+#define SAMBAM_INPUT_STREAM_SIZE 10000000
 
 #define TEST_BAD_BAM_CHUNKS 9999925 
 
@@ -69,6 +69,25 @@ typedef struct
 
 
 #define SB_FETCH(a)  if((a) -> input_binary_stream_write_ptr - (a) -> input_binary_stream_read_ptr < 3000){int test_rlen_2 = SamBam_fetch_next_chunk(a); if(test_rlen_2 == -2){(a)->is_bam_broken = 1;}}
+
+#define SB_FETCH_ONEREAD(a) { \
+    int init_have = (a) -> input_binary_stream_write_ptr - (a) -> input_binary_stream_read_ptr; \
+    while(init_have <4){\
+      int test_rlen_2 = SamBam_fetch_next_chunk(a);\
+      if(test_rlen_2 <1){(a)->is_bam_broken = 1;break;}\
+      init_have+= test_rlen_2;\
+    }\
+    if(!(a)->is_bam_broken){ \
+      int record_len=0;\
+      memcpy(&record_len,(a) -> input_binary_stream_buffer + (a) -> input_binary_stream_read_ptr - \
+        (a) -> input_binary_stream_buffer_start_ptr,4); \
+      while((a) -> input_binary_stream_write_ptr - (a) -> input_binary_stream_read_ptr < record_len +4){\
+        int test_rlen_2 = SamBam_fetch_next_chunk(a); \
+        if(test_rlen_2 <1){(a)->is_bam_broken = 1;break;}\
+      }\
+    }  }
+
+//#define SB_FETCH_ONEREAD(a)   { int record_len=0;memcpy(&record_len,(a) -> input_binary_stream_buffer + (a) -> input_binary_stream_read_ptr - (a) -> input_binary_stream_buffer_start_ptr,4); while((a) -> input_binary_stream_write_ptr - (a) -> input_binary_stream_read_ptr < record_len +4){int test_rlen_2 = SamBam_fetch_next_chunk(a); if(test_rlen_2 <1){(a)->is_bam_broken = 1;break;}} }
 #define SB_EOF(a)  ((a)-> is_eof && (  (a) -> input_binary_stream_write_ptr <= (a) -> input_binary_stream_read_ptr ))
 #define SB_READ(a)  ((a) -> input_binary_stream_buffer + (a) -> input_binary_stream_read_ptr - (a) -> input_binary_stream_buffer_start_ptr)
 #define SB_RINC(a, len)   ((a) -> input_binary_stream_read_ptr) += len

@@ -60,14 +60,28 @@
 #define MAX_FC_READ_LENGTH 10001
 #define MAX_HIT_NUMBER (1000*1000*1000)
 #define MAX_EXTRA_COLS 15
-#define MAX_UMI_LEN 14
 #define FC_FLIST_SPLITOR "\026"
+#define NIL_TXN_PLACEHOLDER "__DBPZ_com_nil_TXN" // SAF format: using placeholder for transcripts. DBPZ_com is my namespace.
 
 typedef struct{
-	char * gene_name;
-	unsigned int pos_first_base;
-	unsigned int pos_last_base;
-} fc_junction_gene_t;
+	ArrayList * exons_in_transcript; // the items in IVT tree obj is deallocated when this ArrayList is destroyed. 
+	char * transcript_id; // this piece of memory is owned by this struct. 
+	char * gene_name;  // this piece of memory is owned by this struct.
+} fc_junction_transcript_t;
+
+typedef struct{
+	char * transcript_id; // This should be the memory address in the fc_junction_transcript_t table. Not a dedicated memory space for exons.
+	int chro_start;
+	int chro_stop;
+	int is_negative;
+} fc_junction_exon_in_transcript_t;
+
+typedef struct{
+	char chromosome_name [CHROMOSOME_NAME_LENGTH+1];
+	char gene_name [FEATURE_NAME_LENGTH+1];
+	int is_negative;
+	ArrayList * transcript_list; // values of fc_junction_transcript_t 
+} fc_junction_genebody_t;
 
 
 #define MAXIMUM_INSERTION_IN_SECTION 8
@@ -81,13 +95,6 @@ typedef struct {
 	unsigned short insertion_lengths[ MAXIMUM_INSERTION_IN_SECTION ];
 } CIGAR_interval_t;
 
-
-
-typedef struct {
-	int space;
-	int used;
-	fc_junction_gene_t ** genes;
-} gene_info_list_t;
 
 typedef struct {
 	char chromosome_name_left[CHROMOSOME_NAME_LENGTH + 1];
@@ -175,18 +182,10 @@ typedef struct {
 	char * chro_name_buff;
 	z_stream bam_file_output_stream;
 
-	HashTable ** scRNA_sample_bc_tables; // sample_ID ==> int64s: cell barcode id <<32 | umi barcode id
-	HashTable * scRNA_registered_UMI_table; // UMI bases ==> UMI_no +1 in this thread
 	HashTable * junction_counting_table;   // key: string chro_name \t last_base_previous_exont \t first_base_next_exon
 	HashTable * splicing_point_table;
 	HashTable * RG_table;	// rg_name -> [ count_table, sum_fc_read_counters, junction_counting_table,  splicing_point_table]
 				// NOTE: some reads have no RG tag. These reads are put into the tables in this object but not in the RG_table -> tables.
-	srInt_64 scRNA_pooled_reads;
-	srInt_64 *scRNA_reads_per_sample;
-	srInt_64 *scRNA_mapped_reads_per_sample;
-	srInt_64 *scRNA_assigned_reads_per_sample;
-	srInt_64 scRNA_has_valid_sample_index;
-	srInt_64 scRNA_has_valid_cell_barcode;
 	fc_read_counters read_counters;
 } fc_thread_thread_context_t;
 
@@ -208,7 +207,7 @@ typedef struct {
 
 	unsigned short chro_reverse_table_current_size;
 	unsigned int * reverse_table_start_index;
-	int reverse_table_start_index_size;
+	unsigned int reverse_table_start_index_size;
 	//unsigned int * reverse_table_end_index;
 } fc_chromosome_index_info;
 
@@ -266,7 +265,6 @@ typedef struct {
 	int read_shift_type;
 	int read_shift_size;
 	int fragment_minimum_overlapping;
-	int do_scRNA_table;
 	float fractional_minimum_overlapping; 
 	float fractional_minimum_feature_overlapping;
 	int only_want_largest_overlap;
@@ -283,46 +281,27 @@ typedef struct {
 	pthread_spinlock_t read_details_out_lock;
 
 	SAM_pairer_context_t read_pairer;
-	SAM_pairer_context_t scRNA_read_pairer;
 
 	char * debug_command;
 	char * unistr_buffer_space;
 	srInt_64 max_BAM_header_size;
 	srInt_64 unistr_buffer_size;
 	srInt_64 unistr_buffer_used;
-	int is_scRNA_BAM_FQ_out_generated;
-	int scRNA_input_mode;
-	int scRNA_dual_index;
-	float scRNA_umi_cutoff;
-	int scRNA_rerun_on_persample_BAM;
-	int * scRNA_applied_umi_cut;
-	HashTable * scRNA_sample_sheet_table;
-	ArrayList * scRNA_sample_barcode_list;
-	ArrayList * scRNA_cell_barcodes_array;
-	HashTable * scRNA_cell_barcode_head_tail_table;
-	HashTable * scRNA_lineno1B_to_sampleno1B_tab;
-	ArrayList * scRNA_sample_id_to_name;
-	HashTable * scRNA_sample_BAM_writers; // sample_ID(1-base) ==> SamBam_writer
 	HashTable * lineno_2_sortedno_tab;
 	int known_cell_barcode_length;
-	HashTable * junction_features_table;
-	HashTable * junction_bucket_table;
+	int ignore_transcript_junction_assignment;
+//	HashTable * junction_features_table;
+//	HashTable * junction_bucket_table;
+	HashTable * junction_transcript_table;
+	HashTable * junction_genebody_table;
+	HashTable * junction_GenebodyTree_table;
+	HashTable * junction_ExonTree_table;
+	HashTable * junction_ExonEdgeTree_table[3];
 	fasta_contigs_t * fasta_contigs;
 
 	HashTable * gene_name_table;	// gene_name -> gene_number
 	HashTable * BAM_chros_to_anno_table;	// name in annotation file -> alias name
 	HashTable * GCcontent_table; // gene_name -> "qc_content_frac"
-	int scRNA_do_one_batch_runner_current;
-	pthread_spinlock_t scRNA_do_one_batch_runner_lock;
-	FILE ** scRNA_barcode_batched_bins;
-	pthread_spinlock_t * scRNA_barcode_batched_locks;
-	int scRNA_barcode_batched_bin_no;
-	int scRNA_barcode_batched_max_Rbin_len;
-	int scRNA_barcode_batched_max_genes;
-	int scRNA_UMI_length;
-	parallel_gzip_writer_t scRNA_fastq_unassigned_writer[4];
-	pthread_spinlock_t scRNA_fastq_unassigned_lock;
-	
 
 	char * RGnames_set;
 	int RGnames_capacity;
@@ -337,8 +316,6 @@ typedef struct {
 	char temp_file_dir[MAX_FILE_NAME_LENGTH];
 	char read_details_path[MAX_FILE_NAME_LENGTH];
 	char annotation_file_screen_output[MAX_FILE_NAME_LENGTH];
-	char scRNA_sample_sheet[MAX_FILE_NAME_LENGTH];
-	char scRNA_cell_barcode_list[MAX_FILE_NAME_LENGTH];
 	unsigned char ** gene_name_array;	// gene_internal_number -> gene_name 
 	int input_file_unique;
 
@@ -353,6 +330,7 @@ typedef struct {
 	srInt_64 * exontable_stop;
 	char feature_name_column[2000];
 	char gene_id_column[100];
+	char transcript_id_column[100];
 
 	srInt_64 * exontable_block_end_index;
 	srInt_64 * exontable_block_max_end;
@@ -758,13 +736,6 @@ int print_FC_configuration(fc_thread_global_context_t * global_context, char * a
 		print_in_box(80,0,0,"             Annotation : %s (%s)", get_short_fname(annot), is_GTF?"GTF":"SAF");
 	print_in_box(80,0,0,"     Dir for temp files : %s", global_context->temp_file_dir);
 
-	if(global_context -> do_scRNA_table){
-		print_in_box(80,0,0,"");
-		print_in_box(80,0,0,"      scRNA count table : <input_file>.scRNA.table");
-		print_in_box(80,0,0,"     scRNA sample sheet : %s", get_short_fname(global_context->scRNA_sample_sheet));
-		print_in_box(80,0,0,"     scRNA barcode list : %s", get_short_fname(global_context->scRNA_cell_barcode_list));
-	}
-
 	if(isReadSummaryReport){
 		print_in_box(80,0,0,"     Assignment details : <input_file>.featureCounts%s", isReadSummaryReport == FILE_TYPE_BAM?".bam":(isReadSummaryReport == FILE_TYPE_SAM?".sam":""));
 		if(global_context -> read_details_path[0])
@@ -870,43 +841,128 @@ int fc_strcmp(const void * s1, const void * s2)
 	return strcmp((char*)s1, (char*)s2);
 }
 
-void junc_gene_free(void *vv){
-	fc_junction_gene_t *v = vv;
-	free(v -> gene_name);
-	free(v);
+void junc_transcript_free(fc_junction_transcript_t * txp){
+	free(txp -> gene_name);
+	free(txp -> transcript_id);
+	ArrayListDestroy(txp -> exons_in_transcript);
+	free(txp);
 }
 
-void register_junc_feature(fc_thread_global_context_t *global_context, char * feature_name, char * chro, unsigned int start, unsigned int stop){
-	HashTable * gene_table = HashTableGet(global_context -> junction_features_table, chro);
-	//SUBREADprintf("REG %s : %p\n", chro, gene_table);
-	if(NULL == gene_table){
-		gene_table = HashTableCreate(48367);
-		HashTableSetDeallocationFunctions(gene_table, NULL, junc_gene_free);
-		HashTableSetKeyComparisonFunction(gene_table, fc_strcmp);
-		HashTableSetHashFunction(gene_table, fc_chro_hash);
-
-		char * new_name = malloc(strlen(chro)+1);
-		strcpy(new_name, chro);
-		HashTablePut(global_context -> junction_features_table, new_name, gene_table);
+void sort_junc_feature_make_gaps(void *k, void *v, HashTable * tab){
+	fc_junction_genebody_t * jg = v;
+	int xk1, seek_strand, txx;
+	ArrayList * transcripts = jg -> transcript_list; 
+	for(seek_strand = 0; seek_strand < 2; seek_strand++){
+		unsigned int min_start = 0xffffffffu;
+		unsigned int max_stop = 0x0u;
+		for(txx = 0; txx < transcripts -> numOfElements ; txx++){
+			fc_junction_transcript_t * txl = ArrayListGet(transcripts , txx);
+			ArrayList * exl = txl -> exons_in_transcript;
+			for(xk1=0; xk1<exl->numOfElements; xk1++){
+				fc_junction_exon_in_transcript_t * one_ex = ArrayListGet(exl,xk1);
+				if(one_ex -> is_negative != seek_strand) continue;
+				min_start = min(min_start, one_ex->chro_start);
+				max_stop = max(max_stop, one_ex->chro_stop);
+			}
+		}
+		if(max_stop == 0x0u) continue;
+		fc_thread_global_context_t *global_context = tab -> appendix1;
+		IVT_IntervalTreeNode * IVT_rootnode = HashTableGet(global_context -> junction_GenebodyTree_table, jg -> chromosome_name);
+		IVT_rootnode = IVT_insert(IVT_rootnode, min_start, max_stop, jg); 
+		HashTablePutReplaceEx(global_context -> junction_GenebodyTree_table, jg -> chromosome_name, IVT_rootnode,0,0,0); // use old key ptr in table; don't free key and value.
 	}
-	fc_junction_gene_t * gene_info = HashTableGet(gene_table, feature_name);
-	if(NULL == gene_info){
-		gene_info = malloc(sizeof(fc_junction_gene_t));
-		gene_info -> gene_name = strdup(feature_name);
-		gene_info -> pos_first_base = start;
-		gene_info -> pos_last_base = stop;
+}
 
-		HashTablePut(gene_table, gene_info -> gene_name, gene_info);
+int sort_junc_feature_sort_exons_cmp(void * L_elem, void * R_elem, ArrayList * me){
+	fc_junction_exon_in_transcript_t *l = L_elem, *r = R_elem;
+	return l->chro_start - r->chro_start;
+}
+
+void sort_junc_feature_sort_exons(void *k, void *v, HashTable * tab){
+	fc_junction_transcript_t * txnobj = v;
+	ArrayListSort(txnobj -> exons_in_transcript, sort_junc_feature_sort_exons_cmp);
+}
+
+// this is called after all the features are loaded.
+void sort_junc_feature(fc_thread_global_context_t *global_context){
+	global_context -> junction_genebody_table -> appendix1 = global_context;
+	HashTableIteration(global_context -> junction_genebody_table, sort_junc_feature_make_gaps);
+	HashTableIteration(global_context -> junction_transcript_table, sort_junc_feature_sort_exons);
+//	fprintf(stderr,"MERGED GeneBodyTree = %ld\n", global_context -> junction_GenebodyTree_table -> numOfElements);
+}
+
+void register_junc_feature(fc_thread_global_context_t *global_context, char * feature_name, char * transcript_id, char * chro, unsigned int start, unsigned int stop, int is_negative){
+	int xk1, edge_tab_i;
+	char transcript_id_place[FEATURE_NAME_LENGTH+30];
+	if(transcript_id==NULL){
+		SUBreadSprintf(transcript_id_place, FEATURE_NAME_LENGTH+30,"%s%s", feature_name, NIL_TXN_PLACEHOLDER);
+		transcript_id=transcript_id_place;
+	}
+
+	fc_junction_exon_in_transcript_t * new_item = calloc(sizeof(fc_junction_exon_in_transcript_t),1);
+	new_item -> transcript_id = HashTableGetKey(global_context -> junction_transcript_table, transcript_id); 
+	char * edgetab_used_gene_name=NULL;
+	if(NULL == new_item -> transcript_id){
+		fc_junction_transcript_t * new_txp = calloc(sizeof(fc_junction_transcript_t),1);
+		new_txp -> exons_in_transcript = ArrayListCreate(10); 
+		ArrayListSetDeallocationFunction(new_txp -> exons_in_transcript, free);
+		ArrayListPush(new_txp -> exons_in_transcript, new_item);
+		new_txp -> gene_name = strdup(feature_name);
+		new_txp -> transcript_id = strdup(transcript_id);
+		new_item -> transcript_id = new_txp -> transcript_id; 
+		HashTablePut(global_context -> junction_transcript_table, new_item->transcript_id, new_txp);
+		edgetab_used_gene_name=new_txp -> gene_name;
 	}else{
-		gene_info -> pos_first_base = min(start, gene_info -> pos_first_base);
-		gene_info -> pos_last_base = max(stop, gene_info -> pos_last_base);
+		fc_junction_transcript_t * has_txp = HashTableGet(global_context -> junction_transcript_table, transcript_id);
+		ArrayListPush(has_txp -> exons_in_transcript, new_item);
+		edgetab_used_gene_name=has_txp -> gene_name;
 	}
-}
 
-void free_bucket_table_list(void * pv){
-	gene_info_list_t * list = (gene_info_list_t*) pv;
-	free(list -> genes);
-	free(list);
+	new_item -> chro_start = start;
+	new_item -> chro_stop = stop;
+	new_item -> is_negative = is_negative;
+
+	IVT_IntervalTreeNode * IVT_rootnode = HashTableGet(global_context -> junction_ExonTree_table, chro);
+	if(NULL == IVT_rootnode){
+		IVT_rootnode = IVT_insert(NULL, start, stop, new_item); // JCount module uses 1-based coordinates.
+		char * new_name = strdup(chro);
+		HashTablePut(global_context -> junction_ExonTree_table, new_name, IVT_rootnode);
+	}else{
+		IVT_rootnode = IVT_insert(IVT_rootnode, start, stop, new_item); // JCount module uses 1-based coordinates.
+		HashTablePutReplaceEx(global_context -> junction_ExonTree_table, chro, IVT_rootnode,0,0,0); // use old key ptr in table; don't free key and value.
+	}
+
+	IVT_IntervalTreeNode * IVT_edgenode = HashTableGet(global_context -> junction_ExonEdgeTree_table[0], chro);
+	IVT_edgenode = IVT_insert(IVT_edgenode, start, start, edgetab_used_gene_name); 
+	IVT_edgenode = IVT_insert(IVT_edgenode, stop, stop, edgetab_used_gene_name); 
+	HashTablePutReplaceEx(global_context -> junction_ExonEdgeTree_table[0], strdup(chro), IVT_edgenode,1,1,0); // use old key ptr in table; don't free key and value.
+
+	for(edge_tab_i=1; edge_tab_i<=2; edge_tab_i++){
+		if(is_negative != ( edge_tab_i==2 )) continue;
+		IVT_edgenode = HashTableGet(global_context -> junction_ExonEdgeTree_table[edge_tab_i], chro);
+		IVT_edgenode = IVT_insert(IVT_edgenode, start, start, edgetab_used_gene_name);
+		IVT_edgenode = IVT_insert(IVT_edgenode, stop, stop, edgetab_used_gene_name);
+		HashTablePutReplaceEx(global_context -> junction_ExonEdgeTree_table[edge_tab_i], strdup(chro), IVT_edgenode,1,1,0);
+	}
+
+	char gene_body_key[FEATURE_NAME_LENGTH + CHROMOSOME_NAME_LENGTH+10];
+	SUBreadSprintf(gene_body_key, FEATURE_NAME_LENGTH + CHROMOSOME_NAME_LENGTH+10 ,"%s\t%s%s", feature_name, chro, is_negative?"NEG":"POS");
+	fc_junction_genebody_t * jgbody = HashTableGet(global_context -> junction_genebody_table, gene_body_key);
+	if(!jgbody){
+		jgbody = malloc(sizeof(fc_junction_genebody_t));
+		memset(jgbody,0,sizeof(fc_junction_genebody_t));
+		strcpy(jgbody -> gene_name, feature_name);
+		strcpy(jgbody -> chromosome_name, chro);
+		jgbody -> transcript_list = ArrayListCreate(10); 
+		// the items are destroyed in  global_context -> junction_transcript_table[txid] => exons_in_transcript
+		HashTablePut(global_context -> junction_genebody_table, strdup(gene_body_key), jgbody);
+	}
+	int transcript_had_in_gene = 0;
+	for(xk1 = 0; xk1 < jgbody ->transcript_list -> numOfElements; xk1++){
+		fc_junction_transcript_t * had_txp = ArrayListGet(jgbody -> transcript_list, xk1);
+		if(strcmp(transcript_id, had_txp -> transcript_id)==0) transcript_had_in_gene = 1;
+	}
+	if(!transcript_had_in_gene) ArrayListPush(jgbody -> transcript_list, HashTableGet(global_context -> junction_transcript_table, transcript_id));
 }
 
 int match_feature_name_column(char * infile, char * needed){
@@ -921,49 +977,10 @@ int match_feature_name_column(char * infile, char * needed){
 	return 0;
 }
 
-#define JUNCTION_BUCKET_STEP (128*1024)
-
-int locate_junc_features(fc_thread_global_context_t *global_context, char * chro, unsigned int pos, fc_junction_gene_t ** ret_info, int max_ret_info_size){
-	gene_info_list_t * list = NULL;
-	char bucket_key[CHROMOSOME_NAME_LENGTH + 20];
-
-	if(global_context -> BAM_chros_to_anno_table) {
-		char * anno_chro_name = HashTableGet( global_context -> BAM_chros_to_anno_table , chro);
-		if(anno_chro_name){
-			SUBreadSprintf(bucket_key, CHROMOSOME_NAME_LENGTH +20, "%s:%u", anno_chro_name, pos - pos % JUNCTION_BUCKET_STEP);
-			list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
-		}
-	}
-
-	if(list == NULL){
-		SUBreadSprintf(bucket_key,  CHROMOSOME_NAME_LENGTH +20, "%s:%u", chro, pos - pos % JUNCTION_BUCKET_STEP);
-		list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
-	}
-
-	if(list == NULL && strlen(chro)>3 && memcmp(chro, "chr", 3)==0){
-		SUBreadSprintf(bucket_key,  CHROMOSOME_NAME_LENGTH +20, "%s:%u", chro+3, pos - pos % JUNCTION_BUCKET_STEP);
-		list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
-	}
-
-	if(list == NULL){
-		SUBreadSprintf(bucket_key,  CHROMOSOME_NAME_LENGTH +20, "chr%s:%u", chro, pos - pos % JUNCTION_BUCKET_STEP);
-		list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
-	}
-
-	int ret = 0;
-
-	if(list){
-		int x1; 
-		for(x1 = 0; x1 < list -> used; x1++){
-			fc_junction_gene_t * gene_info = list -> genes[x1];
-			if(gene_info -> pos_first_base <= pos && gene_info -> pos_last_base >= pos){
-				if(ret < max_ret_info_size)
-					ret_info [ret ++] = gene_info;
-			}
-		}
-	}
-	
-	return ret;
+void junction_genebody_table_free(void * jcv){
+	fc_junction_genebody_t * jc = jcv;
+	ArrayListDestroy(jc -> transcript_list);
+ 	free(jc);
 }
 
 // This function loads annotations from the file.
@@ -987,17 +1004,28 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 	global_context -> longest_chro_name = 0;
 
 	if(global_context -> do_junction_counting){
-		global_context -> junction_bucket_table = HashTableCreate(76037);
-		HashTableSetDeallocationFunctions(global_context -> junction_bucket_table, free, free_bucket_table_list);
-		HashTableSetKeyComparisonFunction(global_context -> junction_bucket_table, fc_strcmp);
-		HashTableSetHashFunction(global_context -> junction_bucket_table, fc_chro_hash);
+		global_context -> junction_genebody_table = StringTableCreate(1603);
+		HashTableSetDeallocationFunctions(global_context -> junction_genebody_table, free, (void (*)(void *))junction_genebody_table_free); 
 
-		global_context -> junction_features_table = HashTableCreate(1603);
-		HashTableSetDeallocationFunctions(global_context -> junction_features_table, free, (void (*)(void *))HashTableDestroy);
-		HashTableSetKeyComparisonFunction(global_context -> junction_features_table, fc_strcmp);
-		HashTableSetHashFunction(global_context -> junction_features_table, fc_chro_hash);
+		global_context -> junction_transcript_table = StringTableCreate(1603);
+		// The keys are not to be freed. They will be freed in the value -> transcript_id.
+		HashTableSetDeallocationFunctions(global_context -> junction_transcript_table, NULL, (void (*)(void *))junc_transcript_free); 
+
+		global_context -> junction_ExonTree_table = StringTableCreate(1603);
+		HashTableSetDeallocationFunctions(global_context -> junction_ExonTree_table, free, (void (*)(void *))IVT_freeTree);
+
+		global_context -> junction_ExonEdgeTree_table[0] = StringTableCreate(1603);
+		HashTableSetDeallocationFunctions(global_context -> junction_ExonEdgeTree_table[0], free, (void (*)(void *))IVT_freeTree);
+
+		global_context -> junction_ExonEdgeTree_table[1] = StringTableCreate(1603);
+		HashTableSetDeallocationFunctions(global_context -> junction_ExonEdgeTree_table[1], free, (void (*)(void *))IVT_freeTree);
+
+		global_context -> junction_ExonEdgeTree_table[2] = StringTableCreate(1603);
+		HashTableSetDeallocationFunctions(global_context -> junction_ExonEdgeTree_table[2], free, (void (*)(void *))IVT_freeTree);
+
+		global_context -> junction_GenebodyTree_table = StringTableCreate(1603);
+		HashTableSetDeallocationFunctions(global_context -> junction_GenebodyTree_table, NULL, (void (*)(void *))IVT_freeTree);
 	}
-
 
 	// first scan: get the chromosome size (that have exons), total number of features
 	// also create chro_name_table : chro_name => fc_chromosome_index_info 
@@ -1068,7 +1096,7 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 	lineno = 0;
 	while(1)
 	{
-		int is_gene_id_found = 0;
+		int is_gene_id_found = 0, is_txn_id_found = 0;
 		int rchars = autozip_gets(&anno_fp, file_line, MAX_ANNOT_LINE_LENGTH);
 		if(rchars < 1) break;
 		if(rchars >= MAX_ANNOT_LINE_LENGTH - 1){
@@ -1177,9 +1205,9 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 			chro_stab -> chro_features ++;
 
 			if( chro_stab -> chro_possible_length >= chro_stab -> reverse_table_start_index_size ) {
-				int old_end = sizeof(int) *( chro_stab -> reverse_table_start_index_size  / REVERSE_TABLE_BUCKET_LENGTH +2);
+				unsigned int old_end = sizeof(int) *( chro_stab -> reverse_table_start_index_size  / REVERSE_TABLE_BUCKET_LENGTH +2);
 				chro_stab -> reverse_table_start_index_size = max(chro_stab -> reverse_table_start_index_size * 2, (int)(chro_stab -> chro_possible_length * 1.3));
-				int new_size = sizeof(int) *( chro_stab -> reverse_table_start_index_size  / REVERSE_TABLE_BUCKET_LENGTH +2);
+				unsigned int new_size = sizeof(int) *( chro_stab -> reverse_table_start_index_size  / REVERSE_TABLE_BUCKET_LENGTH +2);
 				chro_stab -> reverse_table_start_index = realloc( chro_stab -> reverse_table_start_index , new_size);
 				memset(chro_stab -> reverse_table_start_index + old_end / sizeof(int), 0, new_size - old_end);
 			}
@@ -1187,18 +1215,21 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 			is_gene_id_found = 1;
 
 			assert(feature_name);
-			if(global_context -> do_junction_counting)
-				register_junc_feature(global_context , feature_name, seq_name, ret_features[xk1].start, ret_features[xk1].end);
+			if(global_context -> do_junction_counting){
+				register_junc_feature(global_context , feature_name, NULL, seq_name, ret_features[xk1].start, ret_features[xk1].end, ret_features[xk1].is_negative_strand);
+				global_context -> ignore_transcript_junction_assignment = 1;
+			}
 
 			xk1++;
 		} else if(file_type == FILE_TYPE_GTF) {
 			char feature_name_tmp[FEATURE_NAME_LENGTH];
+			char transcript_id_tmp[FEATURE_NAME_LENGTH];
 			SUBreadSprintf(feature_name_tmp, FEATURE_NAME_LENGTH, "LINE_%07u", xk1 + 1);
+			transcript_id_tmp[0]=0;
 			char * seq_name = strtok_r(file_line,"\t",&token_temp);
 			strtok_r(NULL,"\t", &token_temp);// source
 			char * feature_type = strtok_r(NULL,"\t", &token_temp);// feature_type
 			if(match_feature_name_column(feature_type, global_context -> feature_name_column)) {
-
 				if(xk1 >= ret_features_size) {
 					ret_features_size *=2;
 					ret_features = realloc(ret_features, sizeof(fc_feature_info_t) * ret_features_size);
@@ -1241,7 +1272,9 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 				if(extra_attrs && (strlen(extra_attrs)>2))
 				{
 					int attr_val_len = GTF_extra_column_value(extra_attrs , global_context -> gene_id_column , feature_name_tmp, FEATURE_NAME_LENGTH);
+					int txpid_val_len = GTF_extra_column_value(extra_attrs , global_context -> transcript_id_column , transcript_id_tmp, FEATURE_NAME_LENGTH);
 					if(attr_val_len>0) is_gene_id_found=1;
+					if(txpid_val_len>0) is_txn_id_found=1;
 			//		printf("V=%s\tR=%d\n", extra_attrs , attr_val_len);
 
 					if(global_context -> reported_extra_columns){
@@ -1283,8 +1316,7 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 				}
 
 				if(!is_gene_id_found) {
-					if(!is_GFF_warned)
-					{
+					if(!is_GFF_warned) {
 						int ext_att_len = strlen(extra_attrs);
 						if(extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
 						SUBREADprintf("\nERROR: failed to find the gene identifier attribute in the 9th column of the provided GTF file.\nThe specified gene identifier attribute is '%s' \nAn example of attributes included in your GTF annotation is '%s'.\n\n",  global_context -> gene_id_column, extra_attrs);
@@ -1332,8 +1364,14 @@ int load_feature_info(fc_thread_global_context_t *global_context, const char * a
 	
 				chro_stab -> reverse_table_start_index[bin_location]++;
 
-				if(global_context -> do_junction_counting)
-					register_junc_feature(global_context , feature_name_tmp, seq_name, ret_features[xk1].start, ret_features[xk1].end);
+				if(global_context -> do_junction_counting){
+					if(!is_txn_id_found){
+						int ext_att_len = strlen(extra_attrs);
+						if(extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
+						SUBREADprintf("\nERROR: failed to find the transcript identifier attribute in the 9th column of the provided GTF file.\nThe specified gene identifier attribute is '%s' \nAn example of attributes included in your GTF annotation is '%s'.\n\n",  global_context -> transcript_id_column, extra_attrs);
+					}
+					register_junc_feature(global_context , feature_name_tmp, transcript_id_tmp, seq_name, ret_features[xk1].start, ret_features[xk1].end, ret_features[xk1].is_negative_strand);
+				}
 
 				xk1++;
 			}
@@ -1683,6 +1721,8 @@ void sort_feature_info(fc_thread_global_context_t * global_context, unsigned int
 	free(old_info_ptr);
 	free(tmp_chro_info_ptrs);
 	free(chro_feature_ptr);
+
+	if(global_context -> do_junction_counting) sort_junc_feature(global_context);
 }
 
 int strcmp_slash(char * s1, char * s2)
@@ -1784,6 +1824,7 @@ void disallocate_RG_tables(void * pt){
 	free(pt);
 }
 
+void fc_thread_start_open_report_fp(fc_thread_global_context_t * global_context);
 
 void process_pairer_reset(void * pairer_vp){
 //	SUBREADprintf("RESET COUNTERS\n");
@@ -1793,10 +1834,6 @@ void process_pairer_reset(void * pairer_vp){
 	global_context -> sambam_chro_table = NULL;
 	global_context -> sambam_chro_table_items = 0;
 	if(global_context -> assign_reads_to_RG) free(global_context -> RGnames_set);
-	if(global_context -> do_scRNA_table){
-		SUBREADprintf("ERROR: the BAM input is incompatible with scRNA\n");
-		assert(0);
-	}
 
 	int xk1, xk2;
 	for(xk1=0; xk1<global_context-> thread_number; xk1++)
@@ -1853,11 +1890,7 @@ void process_pairer_reset(void * pairer_vp){
 
 	}
 
-	if(global_context -> read_details_out_FP){
-		int tranc_ret = ftruncate(fileno(global_context -> read_details_out_FP), 0);
-		if(0 != tranc_ret) SUBREADprintf("ERROR: Unable to truncate assignment detail file\n");
-		fseek(global_context -> read_details_out_FP, 0 , SEEK_SET);
-	}
+	if(global_context -> read_details_out_FP) fc_thread_start_open_report_fp(global_context);
 }
 
 int is_value_contig_name(char * n, int l){
@@ -1879,102 +1912,6 @@ int is_value_contig_name(char * n, int l){
 
 void ** get_RG_tables(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context, char * rg_name);
 int compress_read_detail_BAM(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context, int write_start, int write_end, char * bam_buf);
-
-void scRNA_sample_SamBam_writers_add_header(void * k, void * v, HashTable * tab){
-	char *bin = tab -> appendix1;
-	int bin_len = tab -> counter1;
-	int txt_ptr = 0, old_ptr=0, xk1, bam_is_from_cellCounts = 0;
-	void ** vv = v;
-	simple_bam_writer * writer = vv[0];
-
-	ArrayList * chroname_size_list = ArrayListCreate(2000);
-	for(txt_ptr=0; txt_ptr <= bin_len; txt_ptr++){
-		if(bin[txt_ptr] == '\n' || txt_ptr == bin_len){
-			if(this_memmem(bin+old_ptr, txt_ptr - old_ptr,"Per-sample-BAM-output:cellCounts", 31))bam_is_from_cellCounts = 1;
-			else if(memcmp("@SQ\t",bin+old_ptr, 4)==0){
-				unsigned int seqlen = 0;
-				char seqname[MAX_CHROMOSOME_NAME_LEN];
-				int seqname_len = 0, state = 0;
-				for(xk1=3; xk1 + old_ptr < txt_ptr; xk1++){
-					int nch = bin[xk1 + old_ptr];
-					switch(state){
-						case 4:
-							if(nch == '\t' ) state = 1;
-							else seqname[seqname_len++]=nch;
-						break;
-
-						case 14:
-							if(isdigit(nch)) seqlen = seqlen*10+nch-'0';
-							else state = nch == '\t'?1:0;
-						break;
-
-						case 13:
-							if(nch == ':') state = 14;
-							else state = nch == '\t'?1:0;
-						break;
-
-						case 12:
-							if(nch == 'N') state = 13;
-							else state = nch == '\t'?1:0;
-						break;
-
-						case 3:
-							if(nch == ':') state = 4;
-							else state = nch == '\t'?1:0;
-						break;
-
-						case 2:
-							if(nch == 'N') state = 3;
-							else state = nch == '\t'?1:0;
-						break;
-
-						case 1:
-							if(nch == 'S' && seqname_len<1) state = 2;
-							else if(nch == 'L' && seqlen<1) state = 12;
-							else state = nch == '\t'?1:0;
-						break;
-
-						default:
-							if(nch == '\t') state = 1;
-					}
-				}
-				seqname[seqname_len]=0;
-				if(seqlen && seqname_len){
-					ArrayListPush(chroname_size_list,strdup(seqname));
-					ArrayListPush(chroname_size_list,NULL+seqlen);
-				}
-			}
-			old_ptr = txt_ptr+1;
-		}
-	}
-
-	char * ncoline = "@CO\tPer-sample-BAM-output:cellCounts\n";
-
-	int binlen_wtr = bin_len;
-	if(bin[bin_len-1]!='\n') binlen_wtr++;
-	if(!bam_is_from_cellCounts) binlen_wtr += strlen(ncoline);
-
-	simple_bam_write(&binlen_wtr,4,writer, 0);
-	simple_bam_write(bin,bin_len, writer, 0);
-	if(bin[bin_len-1]!='\n') simple_bam_write("\n",1, writer, 0);
-	if(!bam_is_from_cellCounts) simple_bam_write(ncoline,strlen(ncoline), writer, 0);
-
-	int seq_count = chroname_size_list -> numOfElements/2;
-	simple_bam_write(&seq_count, 4, writer, 0);
-	for(xk1 =0; xk1 < chroname_size_list -> numOfElements; xk1+=2){
-		char * seqname = ArrayListGet(chroname_size_list, xk1);
-		unsigned int seqlen = ArrayListGet(chroname_size_list, xk1+1)-NULL;
-		int seqname_len = 1+strlen(seqname);
-		simple_bam_write(&seqname_len,4,writer,0);
-		simple_bam_write(seqname,seqname_len,writer,0);
-		simple_bam_write(&seqlen,4,writer,0);
-		free(seqname);
-	}
-	ArrayListDestroy(chroname_size_list);
-	simple_bam_write("",0,writer,1);
-	writer -> total_chromosomes = seq_count;
-}
-
 int process_pairer_header (void * pairer_vp, int thread_no, int is_text, unsigned int items, char * bin, unsigned int bin_len){
 	SAM_pairer_context_t * pairer = (SAM_pairer_context_t *) pairer_vp;
 	fc_thread_global_context_t * global_context = (fc_thread_global_context_t * )pairer -> appendix1;
@@ -1982,12 +1919,6 @@ int process_pairer_header (void * pairer_vp, int thread_no, int is_text, unsigne
 
 	//SUBREADprintf("ENTER PROCESS (THRD %d): IS_TXT=%d,  ITEMS = %d, CURRENT_ITEMS=%d\n", thread_no, is_text, items, global_context -> sambam_chro_table_items);
 
-	if(global_context -> is_scRNA_BAM_FQ_out_generated && global_context -> do_scRNA_table && is_text) {
-		global_context -> scRNA_sample_BAM_writers -> appendix1 = bin;
-		global_context -> scRNA_sample_BAM_writers -> counter1 = bin_len;
-		global_context -> scRNA_sample_BAM_writers -> appendix2 = global_context;
-		HashTableIteration( global_context -> scRNA_sample_BAM_writers, scRNA_sample_SamBam_writers_add_header);
-	}
 	if(global_context -> is_read_details_out == FILE_TYPE_BAM){
 		int write_cursor;
 		int first_block = 1;
@@ -2360,6 +2291,8 @@ void get_readname_from_bin(char * bin, char ** read_name){
 	(*read_name) = bin + 36;
 }
 
+#define INC_intervals_i_AND_CLEAN {(*intervals_i) ++;memset(intervals_buffer+ (*intervals_i), 0, sizeof(CIGAR_interval_t));}
+
 void parse_bin(SamBam_Reference_Info * sambam_chro_table, char * bin, char * bin2, char ** read_name, int * flag, char ** chro, srInt_64 * pos, int * mapq, char ** mate_chro, srInt_64 * mate_pos, srInt_64 * tlen, int * is_junction_read, int * cigar_sect, int * cigar_overflow, unsigned int * Starting_Chro_Points_1BASE, unsigned short * Starting_Read_Points, unsigned short * Section_Read_Lengths, char ** ChroNames, char * Event_After_Section, int * NH_value, int max_M, CIGAR_interval_t * intervals_buffer, int * intervals_i, int assign_reads_to_RG, char ** RG_ptr, int * ret_me_refID, int * ret_mate_refID){
 	int x1, len_of_S1 = 0;
 	*cigar_sect = 0;
@@ -2444,7 +2377,7 @@ void parse_bin(SamBam_Reference_Info * sambam_chro_table, char * bin, char * bin
 
 					if(intervals_buffer){
 						intervals_buffer[ *intervals_i ].chromosomal_length = chro_cursor - intervals_buffer[ *intervals_i ].start_pos;
-						(*intervals_i) ++;
+						INC_intervals_i_AND_CLEAN;
 					}
 				} else (*cigar_overflow)=1;
 
@@ -2479,7 +2412,8 @@ void parse_bin(SamBam_Reference_Info * sambam_chro_table, char * bin, char * bin
 			if( (*cigar_sect) < max_M){
 				if(intervals_buffer){
 					intervals_buffer[ *intervals_i ].chromosomal_length = chro_cursor - intervals_buffer[ *intervals_i ].start_pos + len_of_S1;
-					(*intervals_i)++;
+					INC_intervals_i_AND_CLEAN;
+					
 				}
 				Starting_Chro_Points_1BASE[*cigar_sect] = section_start_chro; 
 				Starting_Read_Points[*cigar_sect] = section_start_read;
@@ -2585,14 +2519,21 @@ void process_line_junctions(fc_thread_global_context_t * global_context, fc_thre
 	int alignment_masks, mapping_qual, NH_value;
 	char *RG_ptr=NULL;
 
+	unsigned int * Starting_Chro_Points_1BASE = malloc(sizeof(int)*global_context -> max_M);
+	unsigned short * Starting_Read_Points = malloc(sizeof(short)*global_context -> max_M);
+	unsigned short * Section_Read_Lengths = malloc(sizeof(short)*global_context -> max_M);
+	char ** ChroNames = malloc(sizeof(char*)*global_context -> max_M);
+ 	char * Event_After_Section = malloc(sizeof(char)*global_context -> max_M);
 	for(is_second_read = 0 ; is_second_read < 2; is_second_read++){
 		char * read_chr, *read_name, *mate_chr;
 		srInt_64 read_pos, fragment_length = 0, mate_pos;
+		/*
 		unsigned int Starting_Chro_Points_1BASE[global_context -> max_M];
 		unsigned short Starting_Read_Points[global_context -> max_M];
 		unsigned short Section_Read_Lengths[global_context -> max_M];
 		char * ChroNames[global_context -> max_M];
 		char Event_After_Section[global_context -> max_M];
+		*/
 		if(is_second_read && !global_context -> is_paired_end_mode_assign) break;
 		char * RG_ptr_one = NULL;
 		int me_refID, mate_refID;
@@ -2606,7 +2547,11 @@ void process_line_junctions(fc_thread_global_context_t * global_context, fc_thre
 	}
 	if(njunc1 >0 || njunc2>0)
 		add_fragment_supported_junction(global_context, thread_context, supported_junctions1, njunc1, supported_junctions2, njunc2, RG_ptr);
-
+	free(Starting_Chro_Points_1BASE);
+	free(Starting_Read_Points);
+	free(Section_Read_Lengths);
+	free(ChroNames);
+	free(Event_After_Section);
 }
 
 void ** get_RG_tables(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context, char * rg_name){
@@ -2646,34 +2591,15 @@ void ** get_RG_tables(fc_thread_global_context_t * global_context, fc_thread_thr
 	return ret;
 }
 
-void add_scRNA_read_tota1_no( fc_thread_global_context_t * global_context,  fc_thread_thread_context_t * thread_context, char * read_name, char * bin1, int step);
-void process_scRNAr2_line_buffer(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context,  char * bin1, char * bin2){
-	char * read_name = bin1+36;
-	add_scRNA_read_tota1_no(global_context, thread_context, read_name, bin1, 2);
-}
-
-int process_pairer_scRNAr2_output(void * pairer_vp, int thread_no, char * bin1, char * bin2){
-	SAM_pairer_context_t * pairer = (SAM_pairer_context_t *) pairer_vp;
-	fc_thread_global_context_t * global_context = (fc_thread_global_context_t * )pairer -> appendix1;
-	fc_thread_thread_context_t * thread_context = global_context -> thread_contexts + thread_no;
-	process_scRNAr2_line_buffer(global_context, thread_context, bin1, bin2);
-	return 0;
-}
-
-
 int process_pairer_output(void * pairer_vp, int thread_no, char * bin1, char * bin2){
 	SAM_pairer_context_t * pairer = (SAM_pairer_context_t *) pairer_vp;
 	fc_thread_global_context_t * global_context = (fc_thread_global_context_t * )pairer -> appendix1;
 	fc_thread_thread_context_t * thread_context = global_context -> thread_contexts + thread_no;
 
-	if(pairer -> long_cigar_mode){
-		if(global_context -> max_M < 65536){
-			//SUBREADprintf("SWITCHED INTO LONG-READ MODE\n");
-			global_context -> max_M = 65536;
-		}
-		if(!global_context->is_read_too_long_to_SAM_BAM_shown &&(global_context -> is_read_details_out == FILE_TYPE_SAM || global_context -> is_read_details_out == FILE_TYPE_BAM)){
-			global_context -> is_read_details_out = 0;
-			SUBREADprintf("ERROR: The read is too long to the SAM or BAM output.\nPlease use the 'CORE' mode for the assignment detail output.\n");
+	if(pairer -> using_long_read_parser){
+		if(0==global_context->is_read_too_long_to_SAM_BAM_shown &&(global_context -> is_read_details_out == FILE_TYPE_SAM || global_context -> is_read_details_out == FILE_TYPE_BAM)){
+			global_context -> read_pairer.is_internal_error = 1;
+			SUBREADprintf("ERROR: The read is too long to the SAM or BAM output.\nPlease use the 'CORE' mode for the assignment detail output. \n");
 			global_context->is_read_too_long_to_SAM_BAM_shown = 1;
 		}
 	}
@@ -2685,7 +2611,6 @@ int process_pairer_output(void * pairer_vp, int thread_no, char * bin1, char * b
 	return 0;
 }
 
-void sort_bucket_table(fc_thread_global_context_t * global_context);
 void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context,
 			srInt_64 * hits_indices1, int nhits1, srInt_64 * hits_indices2, int nhits2, unsigned int total_frag_len,
 			char ** hits_chro1, char ** hits_chro2, unsigned int * hits_start_pos1, unsigned int * hits_start_pos2, unsigned short * hits_length1, unsigned short * hits_length2, int fixed_fractional_count, char * read_name, char * RG_name, char * bin1, char * bin2);
@@ -2693,6 +2618,9 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 void add_bin_new_tags(char * oldbin, char **newbin, char ** tags, char * types, void ** vals){
 	int new_tags_length = 0;
 	int tagi;
+
+	add_bin_new_tags_reduce_longtag(oldbin);
+
 	for(tagi = 0; tags[tagi]; tagi++){
 		char type = types[tagi];
 		if(type == 'i') new_tags_length += 7;
@@ -2708,7 +2636,6 @@ void add_bin_new_tags(char * oldbin, char **newbin, char ** tags, char * types, 
 	memcpy(*newbin, oldbin, oldbin_len);
 	newbin_len -= 4;
 	memcpy(*newbin, &newbin_len, 4);
-	newbin_len += 4;
 	
 	for(tagi = 0; tags[tagi]; tagi++){
 		memcpy( (*newbin) + oldbin_len, tags[tagi] ,2);
@@ -2724,7 +2651,6 @@ void add_bin_new_tags(char * oldbin, char **newbin, char ** tags, char * types, 
 		}
 	}
 }
-
 
 
 int compress_read_detail_BAM(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context, int write_start, int write_end, char * bam_buf){
@@ -2807,7 +2733,7 @@ void write_read_detailed_remainder(fc_thread_global_context_t * global_context, 
 		if(write_bin_ptr >= thread_context -> read_details_buff_used ) break;
 		int tmplen = 0;
 		memcpy(&tmplen, thread_context -> read_details_buff + write_bin_ptr, 4);
-		if(tmplen < 9 || tmplen > 3*MAX_FC_READ_LENGTH){
+		if(tmplen < 9 || tmplen + 4 > FC_UNSAFE_BLOCK_SIZE){
 			SUBREADprintf("ERROR: Format error : len = %d\n", tmplen);
 			//oexit(-1);
 			return ;
@@ -2825,16 +2751,16 @@ void write_read_detailed_remainder(fc_thread_global_context_t * global_context, 
 	thread_context -> read_details_buff_used =0;
 }
 
-
 int add_read_detail_bin_buff(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context,  char * bin, int do_write){
 	int binlen=0;
 
 	memcpy(&binlen, bin, 4);
 	binlen += 4;
-	if(binlen > MAX_FC_READ_LENGTH * 3){
+	if(binlen > FC_UNSAFE_BLOCK_SIZE){
 		if(!global_context->is_read_too_long_to_SAM_BAM_shown){
-				SUBREADprintf("ERROR: The read is too long to the SAM or BAM output.\nPlease use the 'CORE' mode for the assignment detail output.\n");
-				global_context->is_read_too_long_to_SAM_BAM_shown = 1;
+			global_context -> read_pairer.is_internal_error = 1;
+			SUBREADprintf("ERROR: The read is too long to the SAM or BAM output.\nPlease use the 'CORE' mode for the assignment detail output.\n");
+			global_context->is_read_too_long_to_SAM_BAM_shown = 1;
 		}
 		return -1;
 	}
@@ -2843,7 +2769,7 @@ int add_read_detail_bin_buff(fc_thread_global_context_t * global_context, fc_thr
 	thread_context -> read_details_buff_used  += binlen;
 
 	if(do_write){
-		if(global_context -> is_read_details_out == FILE_TYPE_SAM || thread_context -> read_details_buff_used >= 55000) write_read_detailed_remainder(global_context, thread_context);
+		if(global_context -> is_read_details_out == FILE_TYPE_SAM || thread_context -> read_details_buff_used >= 65000 - FC_UNSAFE_BLOCK_SIZE) write_read_detailed_remainder(global_context, thread_context);
 	}
 	return 0;
 }
@@ -2919,8 +2845,6 @@ void warning_anno_BAM_chromosomes(fc_thread_global_context_t * global_context){
 	HashTableDestroy(ANNO_chro_tab);
 }
 
-void add_scRNA_read_to_pool( fc_thread_global_context_t * global_context,  fc_thread_thread_context_t * thread_context, srInt_64 assign_target_number, char * read_name, char * read_bin, ArrayList * target_list );
-
 void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_thread_context_t * thread_context, char * bin1, char * bin2)
 {
 	if(global_context -> is_input_bad_format) return;
@@ -2950,8 +2874,9 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 	}
 
 	if(global_context -> need_calculate_overlap_len ){
-		memset( CIGAR_intervals_R1, 0, sizeof(CIGAR_interval_t) *  global_context -> max_M  );
-		memset( CIGAR_intervals_R2, 0, sizeof(CIGAR_interval_t) *  global_context -> max_M  );
+		// we only need to clean the 1st item. The following items are cleaned in parse_bin.
+		memset( CIGAR_intervals_R1, 0, sizeof(CIGAR_interval_t));
+		memset( CIGAR_intervals_R2, 0, sizeof(CIGAR_interval_t));
 	}
 
 	thread_context->all_reads++;
@@ -2965,6 +2890,7 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 		RG_ptr = NULL;
 		int cigar_overflow=0;
 		parse_bin(global_context -> sambam_chro_table, is_second_read?bin2:bin1, is_second_read?bin1:bin2 , &read_name,  &alignment_masks , &read_chr, &read_pos, &mapping_qual, &mate_chr, &mate_pos, &fragment_length, &is_junction_read, &cigar_sections, &cigar_overflow, Starting_Chro_Points_1BASE, Starting_Read_Points, Section_Read_Lengths, ChroNames, Event_After_Section, &NH_value, global_context -> max_M , global_context -> need_calculate_overlap_len?(is_second_read?CIGAR_intervals_R2:CIGAR_intervals_R1):NULL, is_second_read?&CIGAR_intervals_R2_sections:&CIGAR_intervals_R1_sections, global_context -> assign_reads_to_RG, &RG_ptr, &me_refID, &mate_refID);
+		//fprintf(stderr,"READ NAME %s FLAG %d\n",read_name, alignment_masks);
 
 		if(cigar_overflow && 0==global_context -> is_cigar_overflow_warning_shown) {
 			print_in_box(80,0,0,"");
@@ -2990,8 +2916,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 			this_is_inconsistent_read_type = 1;
 		}
 
-		if(global_context -> do_scRNA_table)add_scRNA_read_tota1_no(global_context, thread_context, read_name, bin1, 0);
-
 		if(is_second_read == 0)
 		{
 			//skip the read if unmapped (its mate will be skipped as well if paired-end)
@@ -3007,12 +2931,10 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 				if(global_context -> read_details_out_FP)
 					write_read_details_FP(global_context , thread_context ,"Unassigned_Unmapped",0, NULL, bin1, bin2);
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				return;	// do nothing if a read is unmapped, or the first read in a pair of reads is unmapped.
 			}
 		}
 
-		if(global_context -> do_scRNA_table)add_scRNA_read_tota1_no(global_context, thread_context, read_name, bin1, 1);
 		if(((alignment_masks & SAM_FLAG_UNMAPPED) || (alignment_masks & SAM_FLAG_MATE_UNMATCHED)) && global_context -> is_paired_end_mode_assign && global_context -> is_both_end_required){
 				if(RG_ptr){
 					void ** tab4s = get_RG_tables(global_context, thread_context, RG_ptr);
@@ -3024,7 +2946,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 				if(global_context -> read_details_out_FP)
 					write_read_details_FP(global_context , thread_context ,"Unassigned_Singleton",0, NULL, bin1, bin2);
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				return;
 		}
 
@@ -3038,7 +2959,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 					sumtab -> unassigned_singleton++;
 				}else thread_context->read_counters.unassigned_singleton ++;
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				return; // when running on PE mode, SE reads are seen as "only one end mapped"
 			}
 		}
@@ -3055,7 +2975,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 					write_read_details_FP(global_context, thread_context, "Unassigned_MappingQuality", 0, NULL, bin1, bin2);
 				}
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				return;
 			}
 			if(is_second_read==0 && global_context -> is_paired_end_mode_assign)
@@ -3090,7 +3009,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 
 						if(global_context -> read_details_out_FP)
 							write_read_details_FP(global_context, thread_context, "Unassigned_FragmentLength", -1, NULL, bin1, bin2);
-						if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 						return;
 					}
 				} else {
@@ -3104,7 +3022,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 
 						if(global_context -> read_details_out_FP)
 							write_read_details_FP(global_context, thread_context, "Unassigned_Chimera", -1, NULL, bin1, bin2);
-						if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 						return;
 					}
 				}
@@ -3125,7 +3042,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 				if(global_context -> read_details_out_FP)
 					write_read_details_FP(global_context, thread_context, "Unassigned_Duplicate", -1, NULL, bin1, bin2);
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				return;
 			}
 
@@ -3146,7 +3062,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 				if(global_context -> read_details_out_FP)
 					write_read_details_FP(global_context, thread_context, "Unassigned_MultiMapping", -1, NULL, bin1, bin2);
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				return;
 			}
 		}
@@ -3163,7 +3078,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 
 			if(global_context -> read_details_out_FP)
 				write_read_details_FP(global_context, thread_context, "Unassigned_Secondary", -1, NULL, bin1, bin2);
-			if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 			return;
 		}
 
@@ -3200,7 +3114,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 					sumtab -> unassigned_junction_condition++;
 				}else thread_context->read_counters.unassigned_junction_condition ++;
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				return;
 			}
 		}
@@ -3215,7 +3128,6 @@ void process_line_buffer(fc_thread_global_context_t * global_context, fc_thread_
 				sumtab -> unassigned_junction_condition++;
 			}else thread_context->read_counters.unassigned_junction_condition ++;
 
-			if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 			return;
 		}
 
@@ -3582,997 +3494,6 @@ void overlap_exchange(void * arr, int L, int R){
 	pos[R*2+1] = tt;
 }
 
-int scRNA_get_sample_id(fc_thread_global_context_t *global_context, char * sbc, int read_laneno){
-	int x1;
-
-	//SUBREADprintf("TOTAL_SBC=%ld\n", global_context -> scRNA_sample_barcode_list -> numOfElements);
-	for(x1=0; x1 < global_context -> scRNA_sample_barcode_list -> numOfElements ; x1++ ){
-		char ** lane_and_barcode = ArrayListGet(global_context -> scRNA_sample_barcode_list, x1);
-		int lane_no = lane_and_barcode[0]-(char*)NULL;
-	//	SUBREADprintf("KNOWN_LANE=%d, IN_LANE=%d, to\n", lane_no, read_laneno);
-		if(read_laneno == lane_no){
-			int sample_no = lane_and_barcode[1]-(char*)NULL;
-			char * knownbar = lane_and_barcode[2];
-			if(lane_and_barcode[3]){
-				int hd = hamming_dist_ATGC_max1_2p( sbc, knownbar );
-				if(hd<=2) return sample_no;
-			}else{
-				int hd = hamming_dist_ATGC_max1( sbc, knownbar );
-				if(hd<=1) return sample_no;
-			}
-		}
-	}
-	return -1;
-}
-
-int scRNA_register_umi_id(fc_thread_global_context_t * global_context, fc_thread_thread_context_t *  thread_context, char * ubc){
-
-	int xk1=0,nch;
-	for(xk1=0; 0!=(nch = ubc [xk1]); xk1++){
-		if(!isalpha(nch))break;
-	}
-	ubc[xk1]=0;
-	int uno = HashTableGet(thread_context -> scRNA_registered_UMI_table, ubc ) -NULL -1;
-	if(uno<0) {
-		uno =  thread_context -> scRNA_registered_UMI_table -> numOfElements;
-		assert(strlen(ubc) <=MAX_UMI_LEN);
-		HashTablePut( thread_context -> scRNA_registered_UMI_table, strdup(ubc) , NULL+ uno +1);
-	}
-
-	ubc[xk1]=nch;
-	return uno;
-}
-
-#define IMPOSSIBLE_MEMORY_SPACE 0x5CAFEBABE0000000llu
-int scRNA_get_cell_id(fc_thread_global_context_t * global_context, fc_thread_thread_context_t *  thread_context, char * cbc){
-	//return -1;
-	char tmpc [MAX_READ_NAME_LEN];
-	int xx1;
-	ArrayList * ret=NULL;
-
-	for(xx1=0;xx1<3;xx1++){
-		int xx2;
-		if(xx1==1) ret = ArrayListCreate(100);
-
-		if(xx1>0){
-			tmpc[0] = (xx1==2)?'S':'F';
-			for(xx2=0; xx2<global_context -> known_cell_barcode_length/2 ; xx2++)
-				tmpc[1+xx2] = cbc[2*xx2+xx1-1];
-			tmpc[1+global_context -> known_cell_barcode_length/2]=0;
-		}else{
-			memcpy(tmpc, cbc, global_context -> known_cell_barcode_length);
-			tmpc[global_context -> known_cell_barcode_length]=0;
-		}
-
-		void *xrawarr = HashTableGet(global_context -> scRNA_cell_barcode_head_tail_table, tmpc);
-
-		if(xx1 == 0){
-			//if(xrawarr) SUBREADprintf("CAFE ? %p\n", xrawarr);
-			srInt_64 xint = xrawarr - NULL;
-			if(( xint & 0xFFFFFFFFF0000000llu)== IMPOSSIBLE_MEMORY_SPACE){
-				int only_cell_id = xint - IMPOSSIBLE_MEMORY_SPACE;
-				// no memory was allocated.
-				return only_cell_id;
-			}
-		}else{
-			ArrayList * rawarr = xrawarr;
-			if(rawarr){
-				int xx3,xx2, found;
-				for(xx2=0; xx2<rawarr->numOfElements; xx2++){
-					int bcno = ArrayListGet(rawarr, xx2)-NULL;
-					found=0;
-					for(xx3=0;xx3<ret -> numOfElements;xx3++){
-						if(ArrayListGet(ret, xx3)==NULL+bcno){
-							found=1;
-							break;
-						}
-					}
-
-					if(!found)ArrayListPush(ret, NULL+bcno);
-				}
-			}
-		}
-	}
-
-
-	int tb1=-1;
-	for(xx1=0; xx1<ret -> numOfElements; xx1++){
-		int tbcn = ArrayListGet(ret,xx1)-NULL;
-		char * known_cbc = ArrayListGet(global_context -> scRNA_cell_barcodes_array, tbcn);
-		int hc = hamming_dist_ATGC_max2( known_cbc, cbc );
-
-	//	cbc[16]=0; if(hc <=3)SUBREADprintf("TEST_CBC %s ~ %s = %d\n", known_cbc, cbc, hc);
-		if(hc==1){
-			tb1 = tbcn;
-			break;
-		}
-	}
-	//SUBREADprintf("CANDIDATE CELL BARCODES=%ld ; hit = %d\n", ret->numOfElements, tb1);
-	ArrayListDestroy(ret);
-
-	return tb1;
-}
-
-#define SCRNA_READ_NAME_SPLIT_CHAR '|'
-
-void scRNA_move_barcodes_to_tags(fc_thread_global_context_t * global_context,  fc_thread_thread_context_t * thread_context, char * inbin, char ** outbin_pr, char * fixed_cell_barcode, char * fixed_UMI){
-	int inbin_len=0;
-	memcpy(&inbin_len, inbin, 4);
-	char* outbin = malloc(inbin_len + 400);
-	*outbin_pr = outbin;
-
-	int l_read_name=0, new_l_read_name=0, x1;
-	memcpy(&l_read_name, inbin+12, 1);
-
-	char * BC_seq=NULL, * BC_qual=NULL, *UMI_seq=NULL, *UMI_qual=NULL, *RG=NULL;
-	int BC_len=global_context -> known_cell_barcode_length, UMI_len=0, RG_len=0, field_i = 0;
-
-	for(x1=1; x1<l_read_name-1; x1++){
-		char rnchar = inbin [ 36 + x1];
-		if(rnchar == SCRNA_READ_NAME_SPLIT_CHAR || (rnchar== ':' && global_context -> scRNA_input_mode == GENE_INPUT_BCL)){
-			field_i ++;
-			if(field_i == 1){
-				new_l_read_name = x1+1;
-				BC_seq = inbin+36 + x1+1;
-				UMI_seq = BC_seq + BC_len;
-			}else if(field_i == 2){
-				BC_qual = inbin+36 + x1+1;
-				UMI_len = BC_qual - BC_seq - 1 - global_context -> known_cell_barcode_length;
-				UMI_qual = BC_qual + BC_len;
-			}else if(field_i == 5){
-				RG = inbin+36 + x1+1;
-				RG_len = l_read_name - x1 - 2;
-			}
-		}
-	}
-
-	memcpy(outbin, inbin, 36+new_l_read_name);
-	outbin[36+new_l_read_name-1]=0;
-	memcpy(outbin + 12,&new_l_read_name, 1);
-	memcpy(outbin + 36 + new_l_read_name, inbin + 36 + l_read_name, inbin_len +4 - 36 - l_read_name);
-
-	int ext_ptr = inbin_len +4 - (l_read_name - new_l_read_name);
-	for(x1 = 0;x1<7;x1++){
-		int this_len = BC_len;
-		char * this_tag = "CR", * this_val = BC_seq;
-
-		if(x1 == 1){this_tag = "CY"; this_val = BC_qual;}
-		if(x1 == 2){this_tag = "CB"; this_val = fixed_cell_barcode;}
-		if(x1 == 3){this_tag = "UR"; this_val = UMI_seq;}
-		if(x1 == 4){this_tag = "UY"; this_val = UMI_qual;}
-		if(x1 == 5){this_tag = "UB"; this_val = fixed_UMI;}
-		if(x1 == 6){this_tag = "RG"; this_val = RG;}
-
-		if(x1 == 3 || x1 == 4 || x1 == 5) this_len = UMI_len;
-		if(x1 == 6) this_len = RG_len;
-
-		outbin[ext_ptr]= this_tag[0];
-		outbin[ext_ptr+1]= this_tag[1];
-		outbin[ext_ptr+2]= 'Z';
-		memcpy(outbin+ext_ptr+3, this_val, this_len);
-		outbin[ext_ptr+3+this_len]= 0;
-		ext_ptr += 3+1+this_len;
-	}
-
-	ext_ptr -=4;	// block_size excl itself
-	memcpy(outbin, &ext_ptr, 4);
-}
-
-int scRNA_scan_read_name_str(fc_thread_global_context_t * global_context, char * read_name, char * read_bin, char ** sample_seq, char ** sample_qual, char ** BC_seq, char ** BC_qual, char ** UMI_seq, char ** UMI_qual, char ** lane_str, char ** RG, int * rname_trimmed_len){
-	char * testi;
-	int field_i=0;
-	if(NULL == read_name && read_bin) read_name = read_bin + 36;
-	for(testi = read_name +1; * testi; testi ++){
-		if((*testi)== SCRNA_READ_NAME_SPLIT_CHAR || ((*testi)== ':' && global_context -> scRNA_input_mode == GENE_INPUT_BCL )){
-			field_i++;
-			if(field_i == 1) {
-				if(rname_trimmed_len) (*rname_trimmed_len)=testi-read_name;
-				if(BC_seq)(*BC_seq) = testi+1;
-				if(UMI_seq)(*UMI_seq) = testi+1+global_context -> known_cell_barcode_length;
-			}else if(field_i == 2){
-				if(BC_qual)(*BC_qual) = testi+1;
-				if(UMI_qual)(*UMI_qual) = testi+1+global_context -> known_cell_barcode_length;
-			}else if(field_i == 3){
-				*sample_seq = testi + 1;
-				if(RG)(*RG) = *sample_seq;
-			}else if(field_i == 4){
-				if(sample_qual)(*sample_qual) = testi + 1;
-			}else if(field_i == 5){
-				(*lane_str) = testi + 1;
-				if(memcmp(*lane_str, "@RgLater@", 9)==0) (*lane_str) += 9;
-				break;
-			}
-		}
-	}
-
-	if(field_i < 3 && read_bin){
-		int bin_len = 0;
-		char tag_type = 0;
-		int bintag_start = SAM_pairer_get_tag_bin_start(read_bin);
-		memcpy(&bin_len, read_bin, 4);
-		bin_len = bin_len +4 -bintag_start;
-
-		if(BC_seq) SAM_pairer_iterate_tags((unsigned char*)read_bin+bintag_start, bin_len , "CR", &tag_type, BC_seq);
-		if(UMI_seq) SAM_pairer_iterate_tags((unsigned char*)read_bin+bintag_start, bin_len , "UR", &tag_type, UMI_seq);
-
-		if(BC_qual) SAM_pairer_iterate_tags((unsigned char*)read_bin+bintag_start, bin_len , "CY", &tag_type, BC_qual);
-		if(UMI_qual) SAM_pairer_iterate_tags((unsigned char*)read_bin+bintag_start, bin_len , "UY", &tag_type, UMI_qual);
-
-		if(RG) SAM_pairer_iterate_tags((unsigned char*)read_bin+bintag_start, bin_len , "RG", &tag_type, RG);
-	}
-
-	return field_i;
-}
-
-void scRNA_find_sample_cell_umi_from_readname(fc_thread_global_context_t * global_context,  fc_thread_thread_context_t * thread_context, char * read_name, char * read_bin,
-  int * sample_id, char ** BC_seq, char ** UMI_seq, char ** RG){
-	int field_i = 0, laneno = 0;
-	char * testi, * lane_str = NULL, *sample_barcode = NULL;
-
-	if(sample_id)*sample_id = -1;
-
-	field_i = scRNA_scan_read_name_str(global_context, read_name, read_bin, &sample_barcode, NULL, BC_seq, NULL, UMI_seq, NULL, &lane_str, RG, NULL);
-
-	if(!sample_id){
-		if(!(UMI_seq && BC_seq))SUBREADprintf("ERROR: Cannot get UMI or BC: %s, %s\n", *UMI_seq, *BC_seq);
-		return;
-	}
-
-	if(global_context -> scRNA_input_mode == GENE_INPUT_SCRNA_BAM){
-		*sample_id = 1; // on the BAM mode, every featureCounts run only has one sample
-	}else if(global_context -> scRNA_input_mode == GENE_INPUT_SCRNA_FASTQ){
-		if(sample_barcode == NULL || memcmp(sample_barcode, "input#", 6) || !isdigit(sample_barcode[6]))
-			SUBREADprintf("SPBCFMT_ERR %d // %s in %s // %s\n", field_i, sample_barcode, read_name, read_name +13 +global_context -> known_cell_barcode_length);
-		else{
-			
-			int lineno = atoi(sample_barcode +6) +1;
-			*sample_id = (HashTableGet(global_context -> scRNA_lineno1B_to_sampleno1B_tab, NULL+lineno)-NULL);
-		}
-	}else{
-		if(field_i !=5 || (*lane_str)!='L')
-			SUBREADprintf("LANESTR_ERR %d , %s\n", field_i, lane_str);
-		for(testi = lane_str+1; *testi; testi++){
-			if(!isdigit(*testi))break;
-			laneno = laneno*10 + (*testi)-'0';
-		}
-
-		*sample_id = scRNA_get_sample_id(global_context, sample_barcode, laneno); 
-		//Rprintf("LOOKUP SAMPLE %d by %s-%s-%d\n", *sample_id, sample_barcode, lane_str, laneno);
- 	}
-}
-
-void add_scRNA_read_tota1_no( fc_thread_global_context_t * global_context,  fc_thread_thread_context_t * thread_context, char * read_name, char * bambin, int step){
-	int sample_id= -1;
-	char * cell_bc = NULL, * umi = NULL;
-	int known_sample_id = 0;
-	if(global_context -> scRNA_rerun_on_persample_BAM) known_sample_id = global_context -> this_input_number+1; 
-
-	scRNA_find_sample_cell_umi_from_readname(global_context, thread_context, read_name, bambin, (known_sample_id>0)?NULL:&sample_id, &cell_bc, &umi, NULL);
-	if(known_sample_id>0) sample_id = known_sample_id;
-
-	if(global_context -> scRNA_UMI_length <1){
-		int umi_end_pos=0,nch;
-		for(umi_end_pos=0; 0!=(nch = umi [umi_end_pos]); umi_end_pos++) if(!isalpha(nch))break;
-		global_context -> scRNA_UMI_length = umi_end_pos;
-	}
-
-	//SUBREADprintf("QQVT 01 %s   THR %d  SPID=%d\n", read_name, thread_context -> thread_id, sample_id);
-	if(sample_id>0){
-		if(step==0){
-			thread_context -> scRNA_reads_per_sample[sample_id-1] ++;
-		}else if(step==1) thread_context -> scRNA_mapped_reads_per_sample[sample_id-1] ++;
-	}
-	if(step == 0){
-		if(global_context -> is_scRNA_BAM_FQ_out_generated){
-			void * pps[6];
-			void ** sample_bam_2fps = (void**)pps;
-
-			if(sample_id<=0){
-				pps[0]=NULL;
-				pps[1]=global_context -> scRNA_fastq_unassigned_writer;
-				pps[2]=global_context -> scRNA_fastq_unassigned_writer+1;
-				if(global_context -> scRNA_dual_index)pps[3]=global_context -> scRNA_fastq_unassigned_writer+2;
-				else pps[3]=NULL;
-				pps[4]=global_context -> scRNA_fastq_unassigned_writer+3;
-				pps[5]=&global_context -> scRNA_fastq_unassigned_lock;
-			}else sample_bam_2fps = HashTableGet(global_context -> scRNA_sample_BAM_writers, NULL+(sample_id-1) + 1); // sample_id-1: 0,1,2,...
-
-			if(GENE_INPUT_SCRNA_FASTQ != global_context -> scRNA_input_mode){
-				parallel_gzip_writer_t **gz3fps = (parallel_gzip_writer_t **)sample_bam_2fps+1;
-				parallel_gzip_writer_add_read_fqs_scRNA(gz3fps, bambin, thread_context -> thread_id);
-				// I2 always has the same length as I1, hence no test is required.
-				if( gz3fps[0]-> thread_objs[thread_context -> thread_id].in_buffer_used >= PARALLEL_GZIP_TXT_BUFFER_SIZE - PARALLEL_GZIP_TXT_BUFFER_MARGIN ||
-				    gz3fps[1]-> thread_objs[thread_context -> thread_id].in_buffer_used >= PARALLEL_GZIP_TXT_BUFFER_SIZE - PARALLEL_GZIP_TXT_BUFFER_MARGIN ||
-				    gz3fps[3]-> thread_objs[thread_context -> thread_id].in_buffer_used >= PARALLEL_GZIP_TXT_BUFFER_SIZE - PARALLEL_GZIP_TXT_BUFFER_MARGIN ){
-					parallel_gzip_zip_texts(gz3fps[0], thread_context -> thread_id, 0);
-					parallel_gzip_zip_texts(gz3fps[1], thread_context -> thread_id, 0);
-					if(gz3fps[2]) parallel_gzip_zip_texts(gz3fps[2], thread_context -> thread_id, 0);
-					parallel_gzip_zip_texts(gz3fps[3], thread_context -> thread_id, 0);
-					pthread_spin_lock(sample_bam_2fps[5]);
-					parallel_gzip_writer_flush(gz3fps[0], thread_context -> thread_id);
-					parallel_gzip_writer_flush(gz3fps[1], thread_context -> thread_id);
-					if(gz3fps[2]) parallel_gzip_writer_flush(gz3fps[2], thread_context -> thread_id);
-					parallel_gzip_writer_flush(gz3fps[3], thread_context -> thread_id);
-					pthread_spin_unlock(sample_bam_2fps[5]);
-				}
-			}
-		}
-	}
-
-}
-
-void scRNA_do_one_batch_write_extend_rbin(fc_thread_global_context_t * global_context, char * rbin, int binlen, FILE * fp, char * fixedbc_seq, char * fixedumi_seq, srInt_64 gene_no, srInt_64 * genes){
-	char * cellbc_seq=NULL,*umi_seq=NULL, * cellbc_qual=NULL,*umi_qual=NULL, *sample_seq=NULL, *sample_qual=NULL, *lane_str=NULL;
-	int rname_trimmed_len=0;
-	scRNA_scan_read_name_str(global_context, NULL, rbin, & sample_seq, & sample_qual, & cellbc_seq, & cellbc_qual, & umi_seq, & umi_qual, &lane_str, NULL, &rname_trimmed_len);
-	char new_rbin_stake[ binlen + 150 ]; // removed barcodes/qual from read names, add them to extra fields if they weren't there. Gene names are not put here.
-	char * new_rbin = new_rbin_stake;
-	int new_rbin_len = 0, n_cigar_op =0, l_read_name=0, l_seq=0;
-
-	memcpy(new_rbin, rbin, 36);
-	new_rbin_len += 36;
-
-	memcpy(&n_cigar_op, rbin+16,2);
-	memcpy(&l_seq, rbin+20,4);
-	l_read_name=((unsigned char*)rbin)[12];
-	new_rbin[12] = rname_trimmed_len+1;
-	memcpy(new_rbin+new_rbin_len, rbin+36, rname_trimmed_len);
-	new_rbin[36+rname_trimmed_len]=0;
-	new_rbin_len+= rname_trimmed_len+1;
-	memcpy(new_rbin+new_rbin_len, rbin +36 + l_read_name, 4*n_cigar_op + l_seq + (l_seq+1)/2);
-	new_rbin_len += 4*n_cigar_op + l_seq + (l_seq+1)/2;
-	char * ext_bin_ptr = rbin + 36 + l_read_name +4*n_cigar_op + l_seq + (l_seq+1)/2;
-
-	int CR_found=0, CB_found=0, CY_found=0, UR_found=0, UY_found=0, UB_found=0;
-	while(ext_bin_ptr < rbin+binlen+4){
-		char * tagstr = NULL; 
-		int taglen = 0;
-		if(ext_bin_ptr[0]=='C' && ext_bin_ptr[1]=='R' && ext_bin_ptr[2]=='Z'){
-			CR_found = 1;
-			tagstr = cellbc_seq;
-			taglen = global_context -> known_cell_barcode_length;
-		}else if(ext_bin_ptr[0]=='C' && ext_bin_ptr[1]=='B' && ext_bin_ptr[2]=='Z'){
-			CB_found = 1;
-			tagstr = fixedbc_seq;
-			taglen = global_context -> known_cell_barcode_length;
-		}else if(ext_bin_ptr[0]=='C' && ext_bin_ptr[1]=='Y' && ext_bin_ptr[2]=='Z'){
-			CY_found = 1;
-			tagstr = cellbc_qual;
-			taglen = global_context -> known_cell_barcode_length;
-		}else if(ext_bin_ptr[0]=='U' && ext_bin_ptr[1]=='R' && ext_bin_ptr[2]=='Z'){
-			UR_found = 1;
-			tagstr = umi_seq;
-			taglen = global_context -> scRNA_UMI_length;
-		}else if(ext_bin_ptr[0]=='U' && ext_bin_ptr[1]=='B' && ext_bin_ptr[2]=='Z'){
-			UB_found = 1;
-			tagstr = fixedumi_seq;
-			taglen = global_context -> scRNA_UMI_length;
-		}else if(ext_bin_ptr[0]=='U' && ext_bin_ptr[1]=='Y' && ext_bin_ptr[2]=='Z'){
-			UY_found = 1;
-			tagstr = umi_qual;
-			taglen = global_context -> scRNA_UMI_length;
-		}
-	
-		if(tagstr){
-			new_rbin[new_rbin_len++]=*(ext_bin_ptr++);
-			new_rbin[new_rbin_len++]=*(ext_bin_ptr++);
-			new_rbin[new_rbin_len++]=*(ext_bin_ptr++);
-			int taglenold = strlen(ext_bin_ptr);
-			memcpy(new_rbin+new_rbin_len,tagstr, taglen);
-			*(new_rbin+new_rbin_len+taglen)=0;
-			ext_bin_ptr += taglenold+1;
-			new_rbin_len += taglen+1;
-		}else{
-			int content_len = SAP_pairer_skip_tag_body_len(ext_bin_ptr);
-			memcpy(new_rbin + new_rbin_len, ext_bin_ptr, content_len );
-			new_rbin_len += content_len;
-			ext_bin_ptr += content_len;
-		}
-	}
-	if(!CR_found){
-		new_rbin[new_rbin_len++]='C';new_rbin[new_rbin_len++]='R';new_rbin[new_rbin_len++]='Z';
-		memcpy(new_rbin+new_rbin_len, cellbc_seq, global_context -> known_cell_barcode_length);
-		*(new_rbin+new_rbin_len+global_context -> known_cell_barcode_length)=0;
-		new_rbin_len += global_context -> known_cell_barcode_length+1;
-	}
-	if(fixedbc_seq && !CB_found){
-		new_rbin[new_rbin_len++]='C';new_rbin[new_rbin_len++]='B';new_rbin[new_rbin_len++]='Z';
-		memcpy(new_rbin+new_rbin_len, fixedbc_seq, global_context -> known_cell_barcode_length);
-		*(new_rbin+new_rbin_len+global_context -> known_cell_barcode_length)=0;
-		new_rbin_len += global_context -> known_cell_barcode_length+1;
-	}
-	if(!CY_found){
-		new_rbin[new_rbin_len++]='C';new_rbin[new_rbin_len++]='Y';new_rbin[new_rbin_len++]='Z';
-		memcpy(new_rbin+new_rbin_len, cellbc_qual, global_context -> known_cell_barcode_length);
-		*(new_rbin+new_rbin_len+global_context -> known_cell_barcode_length)=0;
-		new_rbin_len += global_context -> known_cell_barcode_length+1;
-	}
-
-	if(!UR_found){
-		new_rbin[new_rbin_len++]='U';new_rbin[new_rbin_len++]='R';new_rbin[new_rbin_len++]='Z';
-		memcpy(new_rbin+new_rbin_len, umi_seq, global_context -> scRNA_UMI_length);
-		*(new_rbin+new_rbin_len+global_context -> scRNA_UMI_length)=0;
-		new_rbin_len += global_context -> scRNA_UMI_length+1;
-	}
-	if(fixedumi_seq && !UB_found){
-		new_rbin[new_rbin_len++]='U';new_rbin[new_rbin_len++]='B';new_rbin[new_rbin_len++]='Z';
-		memcpy(new_rbin+new_rbin_len, fixedumi_seq, global_context -> scRNA_UMI_length);
-		*(new_rbin+new_rbin_len+global_context -> scRNA_UMI_length)=0;
-		new_rbin_len += global_context -> scRNA_UMI_length+1;
-	}
-	if(!UY_found){
-		new_rbin[new_rbin_len++]='U';new_rbin[new_rbin_len++]='Y';new_rbin[new_rbin_len++]='Z';
-		memcpy(new_rbin+new_rbin_len, umi_qual, global_context -> scRNA_UMI_length);
-		*(new_rbin+new_rbin_len+global_context -> scRNA_UMI_length)=0;
-		new_rbin_len += global_context -> scRNA_UMI_length+1;
-	}
-
-	new_rbin_len-=4;
-	memcpy(new_rbin, &new_rbin_len,4);
-	fwrite(new_rbin, 1, new_rbin_len+4, fp);
-
-	if(new_rbin!=new_rbin_stake)free(new_rbin);
-}
-
-//int cttt = 0;
-
-void add_scRNA_read_to_pool( fc_thread_global_context_t * global_context,  fc_thread_thread_context_t * thread_context, srInt_64 assign_target_number, char * read_name, char * read_bin, ArrayList * target_list ){ // the index of gene or the index of exon
-	char * cell_barcode = NULL, * umi_barcode = NULL; 
-	int sample_id = -1, known_sample_id = 0;
-	if(global_context -> scRNA_rerun_on_persample_BAM) known_sample_id = global_context -> this_input_number+1; 
-
-	scRNA_find_sample_cell_umi_from_readname(global_context, thread_context, read_name, read_bin, (known_sample_id >0)?NULL:&sample_id, &cell_barcode, &umi_barcode, NULL);
-	if(known_sample_id >0) sample_id = known_sample_id;
-
-	int cell_id = scRNA_get_cell_id(global_context, thread_context, cell_barcode);
-//	int umi_id = scRNA_register_umi_id( global_context, thread_context, umi_barcode);
-
-	//SUBREADprintf("P0\n");
-	thread_context -> scRNA_pooled_reads ++;
-	if(sample_id >0)thread_context -> scRNA_has_valid_sample_index ++;
-	if(cell_id >=0)thread_context -> scRNA_has_valid_cell_barcode ++;
-
-	if(thread_context -> thread_id == 0 && thread_context -> scRNA_pooled_reads == 20000){
-		print_in_box(80,0,0,"   scRNA quality control in first 20,000 reads:");
-		print_in_box(80,0,0,"     %.1f pct reads have valid sample indices.", thread_context->scRNA_has_valid_sample_index*100./thread_context -> scRNA_pooled_reads);
-		print_in_box(80,0,0,"     %.1f pct reads have valid cell barcodes.", thread_context->scRNA_has_valid_cell_barcode*100./thread_context -> scRNA_pooled_reads);
-		print_in_box(80,0,0,"");
-	}
-
-	//if(sample_id >0) SUBREADprintf("P1 Cell=%s, Umi=%s, Lane=%d ==> sample %d\n", cell_barcode, umi_barcode, laneno, sample_id);
-	if(sample_id >0){
-		int barcode_hashed_key;
-
-		if(assign_target_number >=0 || target_list) thread_context -> scRNA_assigned_reads_per_sample[sample_id-1] ++; 
-
-		// has cell-bc, assigned : to hashed bin
-		// has cell-bc, not assigned, has mapping location: to hashed bin, with 0-len gene list
-		// no cell-bc, has mapping location: to the MAX - 1 bin, with 0-len gene list
-		// no mapping location: to the MAX bin; only has rbins but no headers.
-		if(cell_id >=0 && (assign_target_number>=0 || target_list))barcode_hashed_key = cell_id % global_context -> scRNA_barcode_batched_bin_no;
-		else{
-			int chro_no = -1, chro_pos = -1;
-			memcpy(&chro_no, read_bin + 4, 4);
-			memcpy(&chro_pos, read_bin + 8, 4);
-			if(cell_id >= 0 && chro_no>=0) barcode_hashed_key = cell_id % global_context -> scRNA_barcode_batched_bin_no;
-			else if(cell_id <0 && chro_no>=0) barcode_hashed_key = global_context -> scRNA_barcode_batched_bin_no;
-			else barcode_hashed_key = global_context -> scRNA_barcode_batched_bin_no+1;
-
-		}
-
-		pthread_spin_lock(global_context -> scRNA_barcode_batched_locks+barcode_hashed_key);
-		FILE * myfp = global_context -> scRNA_barcode_batched_bins[barcode_hashed_key];
-		fwrite(&sample_id,1,4,myfp);
-		srInt_64 itemno = 1;
-		if(barcode_hashed_key<=global_context -> scRNA_barcode_batched_bin_no){
-			fwrite(&cell_id,1,4,myfp);
-			if(assign_target_number<0){
-				itemno = target_list?target_list -> numOfElements:0;
-				itemno = itemno | (1llu << 63);
-				fwrite(&itemno,1,8,myfp);
-				int x1;
-				if(target_list)for(x1=0;x1<target_list -> numOfElements;x1++){
-					srInt_64 geneno_0B = ArrayListGet(target_list, x1) -NULL;
-					fwrite(&geneno_0B,1,8,myfp);
-				}
-			}else fwrite(&assign_target_number,1,8,myfp);
-			fwrite(umi_barcode,1,global_context -> scRNA_UMI_length,myfp);
-		}
-		int read_bin_len=0;
-		memcpy(&read_bin_len , read_bin, 4);
-
-		if(barcode_hashed_key==global_context -> scRNA_barcode_batched_bin_no+1){ // the read is unmapped. It can still have a fixed cell barcode
-			char * new_cellbc = NULL;
-			if(cell_id>=0)new_cellbc = ArrayListGet(global_context -> scRNA_cell_barcodes_array, cell_id);
-			scRNA_do_one_batch_write_extend_rbin(global_context, read_bin, read_bin_len, myfp, new_cellbc, NULL, -1, NULL);
-		}else fwrite(read_bin, 1, read_bin_len+4, myfp);
-		pthread_spin_unlock(global_context -> scRNA_barcode_batched_locks+barcode_hashed_key);
-	}
-}
-
-int scRNA_do_one_batch_sort_compare(void * ar, int l, int r){
-	void ** arr = ar;
-	void ** bin_ptrs = arr[0];
-	fc_thread_global_context_t * global_context = arr[1];
-
-	char * Lptr = bin_ptrs[l];
-	char * Rptr = bin_ptrs[r];
-	srInt_64 Lgenes=0, Rgenes=0;
-	memcpy(&Lgenes, Lptr+8, 8);
-	memcpy(&Rgenes, Rptr+8, 8);
-	if(Lgenes & (1LLU<<63))Lgenes=Lgenes & 0x7fffffffllu; else Lgenes=0;
-	if(Rgenes & (1LLU<<63))Rgenes=Rgenes & 0x7fffffffllu; else Rgenes=0;
-	srInt_64 Lpos= ((0LLU+*(int*)(Lptr+16+Lgenes*8+global_context->scRNA_UMI_length+4))<<32) | *(unsigned int*)(Lptr+16+Lgenes*8+global_context->scRNA_UMI_length+4+4);
-	srInt_64 Rpos= ((0LLU+*(int*)(Rptr+16+Rgenes*8+global_context->scRNA_UMI_length+4))<<32) | *(unsigned int*)(Rptr+16+Rgenes*8+global_context->scRNA_UMI_length+4+4);
-	if(Lpos>Rpos)return 1;
-	if(Lpos<Rpos)return -1;
-	return 0;
-}
-
-void scRNA_do_one_batch_sort_exchange(void * ar, int l, int r){
-	void ** arr = ar;
-	void ** bin_ptrs = arr[0];
-	void * tp = bin_ptrs[l];
-	bin_ptrs[l]=bin_ptrs[r];
-	bin_ptrs[r]=tp;
-}
-
-void scRNA_do_one_batch_sort_merge(void * ar, int start, int items, int items2){
-	void ** arr = ar;
-	void ** bin_ptrs = arr[0];
-	bin_ptrs +=start;
-
-	void ** tmp = malloc(sizeof(void*)*(items2+items));
-	int i1_cursor=0, i2_cursor=items, wptr=0;
-	while(1){
-		if(i1_cursor == items && i2_cursor == items + items2 )break;
-		int select_items_1 = (i2_cursor == items + items2) || (i1_cursor < items && scRNA_do_one_batch_sort_compare(ar, start+ i1_cursor,start + i2_cursor) <= 0);
-		if(select_items_1) tmp[wptr++] = bin_ptrs[i1_cursor++];
-		else tmp[wptr++] = bin_ptrs[i2_cursor++];
-	}
-	memcpy(bin_ptrs, tmp, sizeof(void*)*(items2+items));
-	free(tmp);
-}
-
-struct cell_gene_umi_supp{
-	int cellbc;
-	srInt_64 gene_no;
-	char umi[MAX_UMI_LEN];
-	int supp_reads;
-};
-
-int scRNA_hamming_max2_fixlen(char * u1, char * u2, int ulen){
-	int x, ret=0;
-	for(x=0; x<ulen; x++){
-		if(u1[x]!=u2[x]) ret++;
-		if(ret>1)return ret;
-	}
-	return ret;
-}
-
-#define ADD_count_hash(bc,gn,no)   HashTablePut(cellBCp0_genep0_P1_to_UMIs, NULL +1+(((1LLU*(bc))<<32)| (gn) ),  HashTableGet(   cellBCp0_genep0_P1_to_UMIs, NULL +1+(((1LLU*(bc))<<32)| (gn))) +(no) )
-
-void scRNA_do_one_batch_UMI_merge_one_cell(ArrayList* structs, int sec_start, int sec_end, int is_UMI_step2, HashTable * filtered_CGU_table){
-	int x1;
-	void ** app1 = structs -> appendix1;
-	fc_thread_global_context_t * global_context = app1[0];
-	HashTable * cellBCp0_genep0_P1_to_UMIs = app1[2];
-	int sample_id = app1[3]-NULL;
-
-	if(is_UMI_step2){
-		// NB: when this function is called, sec_end - sec_start MUST be >=2.
-		for(x1 = sec_start; x1<sec_end; x1++) {
-			struct cell_gene_umi_supp * str1 = ArrayListGet(structs, x1);
-			if(x1 == sec_start){
-				struct cell_gene_umi_supp * str2 = ArrayListGet(structs, sec_start+1);
-				if(str1 -> supp_reads > str2 -> supp_reads){
-					ADD_count_hash(str1->cellbc, str1->gene_no,1);
-					continue;
-				}
-			}
-
-			str1 -> cellbc = -1;
-			char replaced_key[40+MAX_UMI_LEN];
-#ifdef __MINGW32__
-			int keyptr = SUBreadSprintf(replaced_key, 40+MAX_UMI_LEN,"%d-%" PRId64 "-", str1 -> cellbc, str1 -> gene_no);
-#else
-			int keyptr = SUBreadSprintf(replaced_key, 40+MAX_UMI_LEN,"%d-%lld-", str1 -> cellbc, str1 -> gene_no);
-#endif
-			memcpy(replaced_key+keyptr, str1 -> umi, global_context -> scRNA_UMI_length);
-			replaced_key[keyptr+global_context -> scRNA_UMI_length]=0;
-			HashTablePut(filtered_CGU_table, strdup(replaced_key), NULL-1);
-		}
-	}else{
-		ArrayList * accepted_list =NULL;
-		HashTable * looktable = NULL;
-		if(sec_end - sec_start >30){
-			looktable = StringTableCreate((sec_end - sec_start)/5);
-			HashTableSetDeallocationFunctions(looktable, free, (void (*)(void *value))ArrayListDestroy);
-		}else accepted_list = ArrayListCreate(sec_end - sec_start);
-
-		for(x1=sec_start; x1<sec_end; x1++){
-			struct cell_gene_umi_supp * try_str = ArrayListGet(structs , x1);
-			int x2, found = 0;
-			ArrayList * test_accs;
-			int hx;
-
-			if(looktable){
-				for(hx = 0; hx<2; hx++){
-					char test_ky[MAX_UMI_LEN];
-					test_ky[0] = hx?'S':'F';
-					memcpy(test_ky +1, try_str -> umi + hx * global_context -> scRNA_UMI_length/2 , global_context -> scRNA_UMI_length/2);
-					test_ky[1+global_context -> scRNA_UMI_length/2]=0;
-
-					test_accs = HashTableGet(looktable, test_ky);
-					if(!test_accs)continue;
-
-					for(x2=0; x2<test_accs->numOfElements; x2++){
-						struct cell_gene_umi_supp * acc_str = ArrayListGet(test_accs, x2);
-						if(scRNA_hamming_max2_fixlen(acc_str -> umi, try_str -> umi, global_context -> scRNA_UMI_length)<2){
-							found=1;
-							acc_str -> supp_reads += try_str -> supp_reads;
-							try_str -> cellbc = -1;
-
-							char replaced_key[55+MAX_UMI_LEN];
-#ifdef __MINGW32__
-							int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%" PRId64 "-", sample_id, try_str -> cellbc, try_str -> gene_no);
-#else
-							int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%lld-", sample_id, try_str -> cellbc, try_str -> gene_no);
-#endif
-
-							memcpy(replaced_key+keyptr, try_str -> umi, global_context -> scRNA_UMI_length);
-							replaced_key[keyptr+global_context -> scRNA_UMI_length]=0;
-							HashTablePut(filtered_CGU_table, strdup(replaced_key), acc_str -> umi);
-							break;
-						}
-					}
-					if(found)break;
-				}
-			}else{
-				test_accs = accepted_list;
-
-				for(x2=0; x2<test_accs->numOfElements; x2++){
-					struct cell_gene_umi_supp * acc_str = ArrayListGet(test_accs, x2);
-					int hamming = scRNA_hamming_max2_fixlen(acc_str -> umi, try_str -> umi, global_context -> scRNA_UMI_length);
-					if(hamming<2){
-						found=1;
-						acc_str -> supp_reads += try_str -> supp_reads;
-						try_str -> cellbc = -1;
-
-						char replaced_key[55+MAX_UMI_LEN];
-#ifdef __MINGW32__
-						int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%" PRId64 "-", sample_id, try_str -> cellbc, try_str -> gene_no);
-#else
-						int keyptr = SUBreadSprintf(replaced_key, 55+MAX_UMI_LEN,"%d-%d-%lld-", sample_id, try_str -> cellbc, try_str -> gene_no);
-#endif
-						memcpy(replaced_key+keyptr, try_str -> umi, global_context -> scRNA_UMI_length);
-						replaced_key[keyptr+global_context -> scRNA_UMI_length]=0;
-						HashTablePut(filtered_CGU_table, strdup(replaced_key), acc_str -> umi);
-						break;
-					}
-				}
-			}
-			if(!found){
-				if(looktable){
-					for(hx = 0; hx<2; hx++){
-						char test_ky[MAX_UMI_LEN];
-						test_ky[0] = hx?'S':'F';
-						memcpy(test_ky +1, try_str -> umi + hx * global_context -> scRNA_UMI_length/2 , global_context -> scRNA_UMI_length/2);
-						test_ky[1+global_context -> scRNA_UMI_length/2]=0;
-						test_accs = HashTableGet(looktable, test_ky);
-						if(!test_accs){
-							test_accs = ArrayListCreate(10);
-							HashTablePut(looktable, strdup(test_ky), test_accs);
-						}
-						ArrayListPush(test_accs, try_str);
-					}
-				}else ArrayListPush(accepted_list, try_str);
-			}
-		}
-
-		if(looktable)HashTableDestroy(looktable);
-		else ArrayListDestroy(accepted_list);
-	}
-}
-
-void scRNA_do_one_batch_UMI_merge_one_step(ArrayList* structs, int is_UMI_step2, HashTable * filtered_CGU_table){
-	void ** app1 = structs -> appendix1;
-	fc_thread_global_context_t * global_context = app1[0];
-	HashTable * cellBCp0_genep0_P1_to_UMIs = app1[2];
-	srInt_64 x1, sec_start = 0;
-	srInt_64 old_sec_key = -1;
-
-	for(x1=0; x1<=structs -> numOfElements; x1++){
-		srInt_64 sec_key = -1;
-		int is_umi_changed = 0;
-
-		struct cell_gene_umi_supp * str1 =NULL;
-		if(x1<structs -> numOfElements){
-			str1 = ArrayListGet(structs, x1);
-			if(str1 -> cellbc <0) continue;
-			sec_key = str1 -> cellbc;
-			sec_key = sec_key << 32;
-			if(is_UMI_step2 && sec_key == old_sec_key){
-				struct cell_gene_umi_supp * strold = ArrayListGet(structs, sec_start);
-				is_umi_changed = memcmp(strold -> umi, str1-> umi, global_context-> scRNA_UMI_length);
-			}else if(!is_UMI_step2) sec_key = sec_key | str1 -> gene_no;
-				// gene_no itself is 64-bit, but it is nearly impossible to have two neighbouring
-				// structures that have the same last 32-bit of gene_no.
-		}
-
-		if( (x1>sec_start && sec_key!=old_sec_key) || is_umi_changed){ // when x1 == numOfElements, sec_key is -1. If old_sec_key is also -1, no item is included in the list. If old_sec_key is >=0, the last sec is processed.
-			struct cell_gene_umi_supp * str0 = ArrayListGet(structs, sec_start);
-			if(x1 - sec_start>1 && str0->cellbc>=0) scRNA_do_one_batch_UMI_merge_one_cell(structs, sec_start, x1, is_UMI_step2, filtered_CGU_table);
-			else if(is_UMI_step2 && str0->cellbc>=0) ADD_count_hash(str0->cellbc,str0->gene_no,1);
-
-			sec_start = x1;
-		}
-		old_sec_key = sec_key;
-	}
-}
-
-int scRNA_do_one_batch_tab_to_struct_list_compare(void * L_elem, void * R_elem, ArrayList * me){
-	struct cell_gene_umi_supp *L = L_elem, *R = R_elem;
-	void ** app1 = me -> appendix1;
-	fc_thread_global_context_t * global_context = app1[0];
-	int sort_by_geneid_then_umi = app1[1] - NULL;
-
-	if(L->cellbc > R->cellbc) return 1;
-	if(L->cellbc < R->cellbc) return -1;
-
-	if(sort_by_geneid_then_umi){
-		if(L->gene_no>R->gene_no) return 1;
-		if(L->gene_no<R->gene_no) return -1;
-	}else{
-		int umicmps = memcmp(L->umi, R->umi, global_context -> scRNA_UMI_length);
-		if(umicmps) return umicmps;
-	}
-
-	if(L->supp_reads < R->supp_reads) return 1;
-	if(L->supp_reads > R->supp_reads) return -1; // reversed by # supp reads
-
-	if(sort_by_geneid_then_umi){
-		int umicmps = memcmp(L->umi, R->umi, global_context -> scRNA_UMI_length);
-		if(umicmps) return umicmps;
-	}else{
-
-		if(L->gene_no>R->gene_no) return 1;
-		if(L->gene_no<R->gene_no) return -1;
-	}
-	return 0;
-}
-
-void scRNA_do_one_batch_tab_to_struct_list(void *ky, void *val, HashTable * tab){
-	int supp_reads = val-NULL;
-	ArrayList ** cell_gene_umi_list = tab -> appendix1;
-	int UMI_length = tab -> counter1;
-
-	struct cell_gene_umi_supp * new_item = malloc(sizeof(struct cell_gene_umi_supp));
-	char * kyptr = ky;
-	int sample_id = atoi(kyptr); // one-based sample id
-	for(; '-' != *kyptr; kyptr++);
-	kyptr++;
-	new_item -> cellbc = atoi(kyptr);
-	for(; '-' != *kyptr; kyptr++);
-	kyptr++;
-	new_item -> gene_no = atoll(kyptr);
-	for(; '-' != *kyptr; kyptr++);
-	memcpy(new_item->umi, kyptr+1, UMI_length);
-	new_item -> supp_reads = supp_reads;
-	if(sample_id<1)SUBREADprintf("WRONG SAMPLE ID: %d from '%s'\n", sample_id, (char*)ky);
-	ArrayListPush(cell_gene_umi_list[sample_id-1], new_item);
-}
-
-void scRNA_do_one_batch_write_UMIs(void * vcell_gene, void * vumis, HashTable * me){
-	FILE * fp = me->appendix1;
-	vcell_gene --;
-	fwrite(&vcell_gene,1,8,fp);
-	fwrite(&vumis,1,8,fp);
-}
-
-srInt_64 two_long_hash(void * ky){
-	srInt_64 * ky2 = ky;
-	return ky2[0]^ky2[1];
-}
-
-int two_long_compare(void * k1, void * k2){
-	srInt_64 * k13 = k1, *k23 = k2;
-	if(k13[0]!=k23[0])return 1;
-	if(k13[1]!=k23[1])return 1;
-	return 0;
-}
-
-#ifdef __MINGW32__
-#define ADD_key_FMT1 "%d-%d-%" PRId64 "-%s"
-#else
-#define ADD_key_FMT1 "%d-%d-%lld-%s"
-#endif
-#define ADD_key_struct { char my_key [50+MAX_UMI_LEN]; \
-	SUBreadSprintf(my_key, 50+MAX_UMI_LEN,ADD_key_FMT1, sample_id, cell_no, gene_no, UMI_str); \
-	srInt_64 supp_reads = HashTableGet(supp_reads_SCGU, my_key)-NULL; \
-	if(1>supp_reads) HashTablePut(supp_reads_SCGU, strdup(my_key), NULL+1); \
-	else HashTablePutReplaceEx(supp_reads_SCGU, my_key, NULL+supp_reads+1, 0,0,0); }
-
-void * scRNA_do_one_batch(void * paramsp1){
-	srInt_64 x1;
-	void ** params = paramsp1;
-	fc_thread_global_context_t * global_context = params[0];
-	ArrayList * file_size_list = params[2];
-	char *temp_dir = global_context -> temp_file_dir;
-	free(paramsp1);
-	int me_max_Rbin_len = 0;
-	int me_max_genes = 0;
-	char ** bin_ptrs = malloc(sizeof(char*) * 1500000), * batch_content=NULL;
-	int bin_ptr_size = 1500000;
-	while(1){
-		int this_batch_no = -1;
-		pthread_spin_lock(&global_context -> scRNA_do_one_batch_runner_lock);
-		if(global_context -> scRNA_do_one_batch_runner_current < global_context -> scRNA_barcode_batched_bin_no +1){
-			int this_batch_sorted_idx = (global_context -> scRNA_do_one_batch_runner_current ++);
-			srInt_64 this_batch_size_and_no = ArrayListGet(file_size_list, file_size_list->numOfElements-1 -this_batch_sorted_idx)-NULL;
-			this_batch_no = (int)(this_batch_size_and_no&0xfffffllu);
-		}
-		if(me_max_genes > global_context -> scRNA_barcode_batched_max_genes) global_context -> scRNA_barcode_batched_max_genes = me_max_genes;
-		if(me_max_Rbin_len > global_context->scRNA_barcode_batched_max_Rbin_len) global_context->scRNA_barcode_batched_max_Rbin_len = me_max_Rbin_len;
-		pthread_spin_unlock(&global_context -> scRNA_do_one_batch_runner_lock);
-		if(0>this_batch_no)break;
-		char tmp_fname[MAX_FILE_NAME_LENGTH+80];
-		SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+80, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), this_batch_no);
-		FILE * fp = fopen(tmp_fname, "rb");
-		fseek(fp, 0, SEEK_END);
-		srInt_64 batch_fsize = ftello(fp);
-		fseek(fp, 0, SEEK_SET);
-		if(batch_content==NULL) batch_content = malloc(batch_fsize);
-		srInt_64 batch_content_len = fread(batch_content, 1, batch_fsize, fp);
-		fclose(fp);
-		if(batch_content_len!=batch_fsize){
-			SUBREADprintf("ERROR: Cannot load file at once: %d!\n", this_batch_no);
-			return NULL;
-		}
-
-		HashTable * supp_reads_SCGU = StringTableCreate(500000);
-		HashTableSetDeallocationFunctions(supp_reads_SCGU, free, NULL);
-		srInt_64 scanptr = 0;
-		int rbin_no = 0;
-		char UMI_str[MAX_UMI_LEN+1];
-
-		while(scanptr < batch_content_len-1){
-			int cell_no=0, sample_id=0;
-			srInt_64 gene_no=0;
-			if(bin_ptr_size<=rbin_no){
-				bin_ptr_size = bin_ptr_size*2;
-				bin_ptrs = realloc(bin_ptrs, sizeof(char*)*bin_ptr_size);
-			}
-			bin_ptrs[rbin_no] = batch_content+scanptr;
-			memcpy(&sample_id, batch_content+scanptr, 4);
-			scanptr += 4; // sample_ID 
-			memcpy(&cell_no, batch_content+scanptr, 4);
-			scanptr += 4; // cellbarcode_NO
-			memcpy(&gene_no, batch_content+scanptr, 8);
-			scanptr += 8; // gene_id 
-			if(gene_no & (1LLU<<63)){
-				int genes = (int)(gene_no & 0x7fffffffllu);
-				if(genes > me_max_genes)me_max_genes=genes;
-
-				memcpy(UMI_str, batch_content+scanptr+8*genes, global_context -> scRNA_UMI_length);
-				UMI_str[global_context -> scRNA_UMI_length]=0;
-
-				for(x1=0; x1<genes; x1++){
-					memcpy(&gene_no, batch_content+scanptr, 8);
-					scanptr += 8;
-					ADD_key_struct;
-				}
-			}else{
-				UMI_str[global_context -> scRNA_UMI_length]=0;
-				memcpy(UMI_str, batch_content+scanptr, global_context -> scRNA_UMI_length);
-				ADD_key_struct;
-			}
-
-			scanptr += global_context -> scRNA_UMI_length ; // UMI str
-
-			int rbinlen = 0;
-			memcpy(&rbinlen, batch_content+scanptr, 4);
-
-			if(me_max_Rbin_len < rbinlen) me_max_Rbin_len = rbinlen;
-			scanptr += rbinlen +4; // read_bin
-
-//			if(sample_id <0 || sample_id > 1000) SUBREADprintf("Wrong Sample: RNO=%d; ptr=%lld\n", rbin_no, scanptr);
-			rbin_no++;
-		}
-		ArrayList ** cell_gene_umi_list = malloc(sizeof(void*)*global_context -> scRNA_sample_sheet_table -> numOfElements);
-		for(x1 =0; x1< global_context -> scRNA_sample_sheet_table -> numOfElements; x1++){
-			cell_gene_umi_list[x1]=ArrayListCreate(2000000);
-			ArrayListSetDeallocationFunction(cell_gene_umi_list[x1], free);
-		}
-		supp_reads_SCGU -> appendix1 = cell_gene_umi_list;
-		supp_reads_SCGU -> appendix2 = global_context;
-		supp_reads_SCGU -> counter1 = global_context -> scRNA_UMI_length;
-		HashTableIteration(supp_reads_SCGU, scRNA_do_one_batch_tab_to_struct_list);
-		HashTable * filtered_SCGU_table = StringTableCreate(max(10000,cell_gene_umi_list[0] -> numOfElements / 10));
-		HashTableSetDeallocationFunctions(filtered_SCGU_table, free, NULL);
-
-		fp = fopen(tmp_fname, "wb");
-		for(x1 = 0; x1 < global_context -> scRNA_sample_sheet_table -> numOfElements; x1++){
-			HashTable * cellbcP0_to_geneno0B_P1_to_UMIs = HashTableCreate(500000);
-
-			void * app1[3];
-			cell_gene_umi_list[x1] -> appendix1 = app1;
-			app1[0] = global_context;
-			app1[1] = NULL+1;
-						// 0 : sorted by cell_bc, then UMIstr, then supported_reads, then gene
-						// 1 : sorted by cell_bc, then gene, then supported_reads, then UMIstr
-						// supported_reads : large -> small; the other: small -> large
-			ArrayListSort(cell_gene_umi_list[x1],  scRNA_do_one_batch_tab_to_struct_list_compare);
-			scRNA_do_one_batch_UMI_merge_one_step(cell_gene_umi_list[x1], 0, filtered_SCGU_table);
-
-			app1[1] = NULL+0;
-			app1[2] = cellbcP0_to_geneno0B_P1_to_UMIs;
-			ArrayListSort(cell_gene_umi_list[x1], scRNA_do_one_batch_tab_to_struct_list_compare);
-			scRNA_do_one_batch_UMI_merge_one_step(cell_gene_umi_list[x1], 1, filtered_SCGU_table);
-
-			cellbcP0_to_geneno0B_P1_to_UMIs -> appendix1 = fp;
-			fwrite(&cellbcP0_to_geneno0B_P1_to_UMIs -> numOfElements,1,8,fp);
-			HashTableIteration(cellbcP0_to_geneno0B_P1_to_UMIs, scRNA_do_one_batch_write_UMIs);
-			HashTableDestroy(cellbcP0_to_geneno0B_P1_to_UMIs);
-		}
-
-		void * sort_base[2];
-		sort_base[0] = bin_ptrs;
-		sort_base[1] = global_context;
-		merge_sort(sort_base, rbin_no, scRNA_do_one_batch_sort_compare, scRNA_do_one_batch_sort_exchange, scRNA_do_one_batch_sort_merge);
-
-
-
-		for(x1 = 0; x1 < rbin_no; x1++){
-			char * binptr = bin_ptrs[x1];
-			int cellid =0, sampleid = 0;
-			srInt_64 gene_no =0, genes = 0, geneno_0 = 0;
-			char * umi, * glist_ptr =NULL;
-			memcpy(&sampleid, binptr, 4);
-			memcpy(&cellid, binptr+4, 4);
-			memcpy(&gene_no, binptr+8, 8);
-			if(gene_no & (1LLU<<63)){
-				glist_ptr =binptr + 16;
-				genes = (int)(gene_no & 0x7fffffff);
-				memcpy(&geneno_0, binptr+16, 8);
-			}
-			umi = binptr + 16 + 8*genes;
-			char SCGU_key [40+MAX_UMI_LEN];
-
-#ifdef __MINGW32__
-			int keyptr = SUBreadSprintf(SCGU_key, 40+MAX_UMI_LEN,"%d-%d-%" PRId64 "-", sampleid, cellid,  (gene_no & (1LLU<<63))? geneno_0: gene_no);
-#else
-			int keyptr = SUBreadSprintf(SCGU_key, 40+MAX_UMI_LEN,"%d-%d-%lld-", sampleid, cellid,  (gene_no & (1LLU<<63))? geneno_0: gene_no);
-#endif
-			memcpy(SCGU_key+keyptr, umi, global_context -> scRNA_UMI_length);
-			SCGU_key[keyptr+global_context -> scRNA_UMI_length] = 0;
-
-			char * new_UMI = HashTableGet(filtered_SCGU_table, SCGU_key);
-			if(new_UMI) umi = new_UMI;
-			if(umi == NULL-1) umi="-----------------------------------------";
-			fwrite(&sampleid, 1, 4, fp);
-			fwrite(&cellid, 1, 4, fp);
-			fwrite(&gene_no, 1, 8, fp);
-			if(gene_no & (1LLU<<63)) fwrite( glist_ptr, 1, 8*genes, fp );
-			fwrite(umi,1, global_context -> scRNA_UMI_length, fp);
-			int binlen;
-
-			memcpy(&binlen, binptr+16+8*genes+global_context -> scRNA_UMI_length,4 );
-			char * new_cellbc = NULL;
-			if(cellid>=0)new_cellbc = ArrayListGet(global_context -> scRNA_cell_barcodes_array, cellid);
-			scRNA_do_one_batch_write_extend_rbin(global_context, binptr+16+8*genes+global_context -> scRNA_UMI_length, binlen, fp, new_cellbc, umi[0]=='-'?NULL:umi, gene_no, (srInt_64*)glist_ptr);
-		}
-		fclose(fp);
-		HashTableDestroy(supp_reads_SCGU);
-		HashTableDestroy(filtered_SCGU_table);
-		for(x1 =0; x1< global_context -> scRNA_sample_sheet_table -> numOfElements; x1++)ArrayListDestroy(cell_gene_umi_list[x1]);
-		free(cell_gene_umi_list);
-	}
-	free(batch_content);
-	free(bin_ptrs);
-	return NULL;
-}
-
 unsigned int calc_score_overlaps(fc_thread_global_context_t * global_context,  fc_thread_thread_context_t * thread_context, char ** chros, unsigned int * start_poses, unsigned short * lens, int sections, char * read_name){
 	unsigned int in_intervals[ 2*sections ];
 	unsigned int out_intervals[ 2*sections ], x1;
@@ -4633,11 +3554,6 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 			char * final_feture_name = (char *)global_context -> gene_name_array[final_gene_number];
 			write_read_details_FP(global_context, thread_context, "Assigned", 1, final_feture_name, bin1, bin2);
 		}
-		if(global_context -> do_scRNA_table){
-			srInt_64 assignment_target_number = hit_exon_id;
-			if(global_context->is_gene_level) assignment_target_number = global_context -> exontable_geneid[hit_exon_id];
-			add_scRNA_read_to_pool(global_context, thread_context, assignment_target_number, read_name, bin1, NULL);
-		}
 	} else if(global_context -> need_calculate_overlap_len == 0 && nhits2 == 1 && nhits1 == 1 && hits_indices2[0]==hits_indices1[0]) {
 		srInt_64 hit_exon_id = hits_indices1[0];
 		
@@ -4660,11 +3576,6 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 			write_read_details_FP(global_context, thread_context, "Assigned", 1, final_feture_name, bin1, bin2);
 		}
 
-		if(global_context -> do_scRNA_table){
-			srInt_64 assignment_target_number = hit_exon_id;
-			if(global_context->is_gene_level) assignment_target_number = global_context -> exontable_geneid[hit_exon_id];
-			add_scRNA_read_to_pool(global_context, thread_context, assignment_target_number, read_name, bin1, NULL);
-		}
 	} else {
 		// Build a voting table.
 		// The voting table should be:
@@ -4688,7 +3599,10 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 		unsigned int * scoring_flags = thread_context -> scoring_buff_flags;		// size is : MAX_HIT_NUMBER *2
 		unsigned int * scoring_overlappings = thread_context -> scoring_buff_overlappings;		// size is : MAX_HIT_NUMBER *2
 		srInt_64 * scoring_exon_ids = thread_context -> scoring_buff_exon_ids;		// size is : MAX_HIT_NUMBER *2
-		int scoring_count = 0,  score_x1, longest_overlap_score;
+		// Zero disables the largest-overlap filter when overlap lengths are not
+		// calculated. Initialise here as well as in the calculation branch so the
+		// later filter cannot read an indeterminate value.
+		int scoring_count = 0,  score_x1, longest_overlap_score = 0;
 
 		if( global_context -> need_calculate_overlap_len ){
 			int end1, end2, hit_x1, hit_x2;
@@ -4898,7 +3812,6 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 				sumtab -> unassigned_nofeatures++;
 			}else thread_context->read_counters.unassigned_nofeatures ++;
 
-			if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 		}else{
 			if(global_context -> need_calculate_overlap_len) { 
 				// Apply filters against overlap lengths. 
@@ -4946,7 +3859,6 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 					sumtab -> unassigned_overlapping_length++;
 				}else thread_context->read_counters.unassigned_overlapping_length ++;
 
-				if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 			}else{
 				if(1 == passed_filters_count && !global_context -> is_multi_overlap_allowed) {
 					// some undesired scoring_numbers may be >0.
@@ -4971,11 +3883,6 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 						write_read_details_FP(global_context, thread_context,"Assigned", 1, final_feture_name, bin1, bin2);
 					}
 
-					if(global_context -> do_scRNA_table){
-						srInt_64 assignment_target_number = max_exon_id;
-						if(global_context->is_gene_level) assignment_target_number = global_context -> exontable_geneid[max_exon_id];
-						add_scRNA_read_to_pool(global_context, thread_context, assignment_target_number, read_name, bin1, NULL);
-					}
 				}else if(global_context -> is_multi_overlap_allowed) {
 					for(score_x1 = 0; score_x1 < scoring_count ; score_x1++)
 						if(scoring_numbers[score_x1]<passed_filters_score) scoring_numbers[score_x1] = 0;
@@ -4984,21 +3891,16 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 
 					char final_feture_names[GENE_NAME_LIST_BUFFER_SIZE];
 					int assigned_no = 0, xk1;
-					final_feture_names[0]=0;
 					int is_etc = 0;
 
 					ArrayList * assigned_list = NULL;
-					if(global_context -> do_scRNA_table)assigned_list = ArrayListCreate(20);
+					if(global_context -> read_details_out_FP) assigned_list = ArrayListCreate(nhits1+nhits2);
 					for(xk1 = 0; xk1 < scoring_count; xk1++) {
-
 						// This change was made on 31/MAR/2016
 						if( scoring_numbers[xk1] < 1 ) continue ;
 
 						srInt_64 tmp_voter_id = scoring_exon_ids[xk1];
-						srInt_64 assignment_target_number = tmp_voter_id;
-						if(global_context->is_gene_level) assignment_target_number = global_context -> exontable_geneid[tmp_voter_id];
 
-						if(global_context -> do_scRNA_table)ArrayListPush(assigned_list, NULL+assignment_target_number);
 						if(RG_name){
 							void ** tab4s = get_RG_tables(global_context, thread_context, RG_name);
 							read_count_type_t * count_table = tab4s[0];
@@ -5006,25 +3908,31 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 						}else thread_context->count_table[tmp_voter_id] += calculate_multi_overlap_fraction(global_context, fixed_fractional_count, passed_filters_count);
 
 						if(global_context -> read_details_out_FP) {
+							int final_gene_number = global_context -> exontable_geneid[tmp_voter_id];
+							unsigned char * final_feture_name = global_context -> gene_name_array[final_gene_number];
+							ArrayListPush(assigned_list, final_feture_name);
+							assigned_no++;
+						}
+					}
+
+					if(global_context -> read_details_out_FP){
+						final_feture_names[0]=0;
+						if(assigned_list -> numOfElements>1) ArrayListSort(assigned_list,ArrayListStringComparison); 
+						long gene_cat_i;
+						for(gene_cat_i=0; gene_cat_i<assigned_list -> numOfElements; gene_cat_i++){
+							void * final_feture_name = ArrayListGet(assigned_list,gene_cat_i);
 							if(strlen(final_feture_names)< (GENE_NAME_LIST_BUFFER_SIZE - 40 - FEATURE_NAME_LENGTH)) {
-								int final_gene_number = global_context -> exontable_geneid[tmp_voter_id];
-								unsigned char * final_feture_name = global_context -> gene_name_array[final_gene_number];
 								strncat(final_feture_names, (char *)final_feture_name, GENE_NAME_LIST_BUFFER_SIZE-1);
 								strncat(final_feture_names, ",", GENE_NAME_LIST_BUFFER_SIZE-1);
 							}else{
 								is_etc ++;
 							}
-							assigned_no++;
 						}
+						ArrayListDestroy(assigned_list);
+
+						if(is_etc) SUBreadSprintf(final_feture_names + strlen(final_feture_names), GENE_NAME_LIST_BUFFER_SIZE-strlen(final_feture_names), "... (%d names ommited),", is_etc);
+						final_feture_names[GENE_NAME_LIST_BUFFER_SIZE-1]=0;
 					}
-
-					if(global_context -> do_scRNA_table && assigned_list->numOfElements>0)
-						add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, assigned_list);
-
-					if(assigned_list)ArrayListDestroy(assigned_list);
-
-					if(is_etc) SUBreadSprintf(final_feture_names + strlen(final_feture_names), GENE_NAME_LIST_BUFFER_SIZE-strlen(final_feture_names), "... (%d names ommited),", is_etc);
-					final_feture_names[GENE_NAME_LIST_BUFFER_SIZE-1]=0;
 
 					if(RG_name){
 						void ** tab4s = get_RG_tables(global_context, thread_context, RG_name);
@@ -5051,1037 +3959,20 @@ void vote_and_add_count(fc_thread_global_context_t * global_context, fc_thread_t
 						thread_context->read_counters.unassigned_ambiguous ++;
 					}
 
-					if(global_context -> do_scRNA_table) add_scRNA_read_to_pool(global_context, thread_context, -1, read_name, bin1, NULL);
 				}
 			}
 		}
 	}
-}
-
-void scRNA_merge_thread_reads_in(void *ky, void *val, HashTable * tab){
-	int * thread_umi_no_to_global_umi_no = tab->appendix1;
-	int supp_reads_to_umi_in_cell = val-NULL;
-	HashTable * merged_genep1_to_bcumip1_lists_table = tab->appendix2;
-	HashTable * merged_genep1_to_bcumip1_reads_tab_table = tab->appendix3;
-	srInt_64 gene_no = tab->counter1;
-	srInt_64 cellno_locel_umino = (ky - NULL-1);
-	srInt_64 cellno_global_umino = (cellno_locel_umino & 0xffffffff00000000llu) + thread_umi_no_to_global_umi_no[ cellno_locel_umino & 0xffffffff ];
-
-	ArrayList * merged_reads_gene_p1_list = HashTableGet(merged_genep1_to_bcumip1_lists_table , NULL+1+gene_no);
-	if(NULL == merged_reads_gene_p1_list){
-		merged_reads_gene_p1_list = ArrayListCreate(10);
-		HashTablePut(merged_genep1_to_bcumip1_lists_table, NULL+1+gene_no, merged_reads_gene_p1_list);
-	}
-	ArrayListPush( merged_reads_gene_p1_list, NULL+cellno_global_umino +1 );
-//	Rprintf("PUSH_GLB : %016llx\n", cellno_global_umino);
-
-	HashTable * bc_umip1_to_reads_tab = HashTableGet(merged_genep1_to_bcumip1_reads_tab_table, NULL+1+gene_no);
-	if(NULL == bc_umip1_to_reads_tab){
-		bc_umip1_to_reads_tab = HashTableCreate(10000);
-		HashTablePut(merged_genep1_to_bcumip1_reads_tab_table, NULL+1+gene_no, bc_umip1_to_reads_tab);
-	}
-
-	int sup_reads = HashTableGet(bc_umip1_to_reads_tab, NULL+cellno_global_umino+1) - NULL;
-	sup_reads += supp_reads_to_umi_in_cell;
-	HashTablePut(bc_umip1_to_reads_tab, NULL+cellno_global_umino+1, NULL+sup_reads);
-}
-
-void scRNA_merge_thread_reads(void *ky, void *val, HashTable * tab){
-	int * thread_umi_no_to_global_umi_no = tab->appendix1;
-	srInt_64 gene_no = ky-NULL -1;
-	HashTable * merged_genep1_to_bcumip1_lists_table = tab->appendix2;
-	HashTable * merged_genep1_to_bcumip1_reads_tab_table = tab->appendix3;
-	HashTable * in_gene_cell_umi_table = val;
-
-	//SUBREADprintf("scRNA_merge_thread_reads : %llu has %ld\n", gene_no, in_gene_cell_umi_table -> numOfElements);
-
-	in_gene_cell_umi_table -> appendix3 = merged_genep1_to_bcumip1_reads_tab_table;
-	in_gene_cell_umi_table -> appendix2 = merged_genep1_to_bcumip1_lists_table;
-	in_gene_cell_umi_table -> appendix1 = thread_umi_no_to_global_umi_no;
-	in_gene_cell_umi_table -> counter1 = gene_no;
-	HashTableIteration(in_gene_cell_umi_table, scRNA_merge_thread_reads_in);
-}
-
-void scRNA_merge_thread_umitables(void *ky, void *val, HashTable * tab){
-	int * thread_umi_no_to_global_umi_no = tab->appendix1;
-	HashTable * merged_umi_table = tab->appendix2;
-	ArrayList * merged_umi_list = tab->appendix3;
-
-	char * umicode = ky;
-	int local_no = val-NULL-1;
-	assert(local_no >= 0);
-
-	int global_no = HashTableGet(merged_umi_table , umicode)-NULL-1;
-	if(global_no<0){
-		char * newkey = strdup(umicode);
-
-		global_no = merged_umi_table -> numOfElements;
-		HashTablePut(merged_umi_table, newkey, NULL+global_no+1);
-
-		assert(merged_umi_list -> numOfElements == global_no);
-		ArrayListPush(merged_umi_list, newkey);
-	}
-	thread_umi_no_to_global_umi_no[ local_no ] = global_no;
-}
-
-#define MIN_EXPRESSED_UMIS_PER_CELL 100 
-#define MIN_EXPRESSED_UMIS_PER_GENE (3-2) 
-
-void scRNA_merge_write_copy_gene_nos(void * ky, void * va , HashTable *tab){
-	HashTable * used_gene_table = tab -> appendix2;
-	ArrayList * one_sampl_gene_to_cell_umis = va;
-	
-	srInt_64 UMIs = HashTableGet(used_gene_table, ky)-NULL;
-	HashTablePut(used_gene_table, ky, NULL + UMIs + one_sampl_gene_to_cell_umis -> numOfElements);
-}
-
-
-//#warning "======== SCRNA_ALLOWED_MAX_HAMMING_DIFF IS ZERO !! ========"
-#define SCRNA_ALLOWED_MAX_HAMMING_DIFF 1
-
-int scRNA_reduce_cellno_compare(void * arr, int l, int r){
-	void **sd = arr;
-	ArrayList * cellno_umino_p1_list = sd[0];
-	HashTable * cellno_umino_p1_to_reads_tab = sd[4];
-	srInt_64 off = sd[1]-NULL;
-
-	srInt_64 bc_umi_p1_L = ArrayListGet(cellno_umino_p1_list, off+l) - NULL;
-	srInt_64 bc_umi_p1_R = ArrayListGet(cellno_umino_p1_list, off+r) - NULL;
-	int nreads_L = HashTableGet(cellno_umino_p1_to_reads_tab, NULL+bc_umi_p1_L) - NULL;
-	int nreads_R = HashTableGet(cellno_umino_p1_to_reads_tab, NULL+bc_umi_p1_R) - NULL;
-
-	if(nreads_L<1 || nreads_R<1) SUBREADprintf("ERROR: No known read counts: %d, %d\n", nreads_L, nreads_R);
-	if(nreads_L>nreads_R) return -1;
-	if(nreads_L<nreads_R) return 1;
-
-	srInt_64 umiLno = (bc_umi_p1_L-1) & 0xffffffff;
-	srInt_64 umiRno = (bc_umi_p1_R-1) & 0xffffffff;
-	ArrayList * merged_umi_no_to_seq = sd[3];
-	char * umiLseq = ArrayListGet(merged_umi_no_to_seq, umiLno);
-	char * umiRseq = ArrayListGet(merged_umi_no_to_seq, umiRno);
-	return strcmp(umiLseq, umiRseq);
-}
-
-void scRNA_reduce_cellno_exchange(void * arr, int l, int r){
-	void **sd = arr;
-	ArrayList * cellno_umino_p1_list = sd[0];
-	srInt_64 off = sd[1]-NULL;
-
-	void* ti = cellno_umino_p1_list->elementList[off+l];
-	cellno_umino_p1_list->elementList[off+l] = cellno_umino_p1_list->elementList[off+r];
-	cellno_umino_p1_list->elementList[off+r] = ti;
-}
-
-void scRNA_reduce_cellno_merge(void * arr, int start, int items, int items2){
-	void **sd = arr;
-	ArrayList * cellno_umino_p1_list = sd[0];
-	srInt_64 off = sd[1]-NULL;
-
-	void ** tmpelem=malloc(sizeof(void*)*(items+items2));
-	int i1_cursor = start, i2_cursor = items + start, tmp_cursor=0;
-	while(1){
-		if(i1_cursor == items + start && i2_cursor == items + items2 + start )break;
-		int select_items_1 = (i2_cursor == start + items + items2) || (i1_cursor < items + start && scRNA_reduce_cellno_compare(arr, i1_cursor, i2_cursor) <= 0);
-
-		if(select_items_1)
-			tmpelem[tmp_cursor++] = cellno_umino_p1_list->elementList[off+(i1_cursor++)];
-		else
-			tmpelem[tmp_cursor++] = cellno_umino_p1_list->elementList[off+(i2_cursor++)];
-	}
-
-	memcpy(cellno_umino_p1_list -> elementList+off+start, tmpelem, sizeof(void*)*(items+items2));
-	free(tmpelem);
-}
-
-// #define DEBUG_FOR_EXACT
-#define MIN_UMIS_FOR_CANDIDATE_RESCUE 500
-#define SCRNA_AMBIENT_RESCURE_MEDIAN_FRACTION 0.01
-void scRNA_merged_ambient_rescure(fc_thread_global_context_t * global_context, HashTable * cellP1_to_geneP1_to_umis_tab, HashTable * cellnoP1_to_umis_tab, ArrayList * this_sample_45k_90k_barcode_no_P0, ArrayList * this_sample_ambient_rescure_candi, ArrayList * highconf_cellbc_list){
-	ArrayList * sorted_bcno_p1 = HashTableSortedIndexes( cellnoP1_to_umis_tab, 1);
-	HashTable * highconf_cellbc_list_tab = ArrayListToLookupTable_Int(highconf_cellbc_list);
-	srInt_64 x1, high_conf_cells = 0;
-	for(x1=0; x1 < sorted_bcno_p1 -> numOfElements; x1++){
-		void * this_bc_pnt = ArrayListGet(sorted_bcno_p1 ,  x1);
-		if(HashTableGet(highconf_cellbc_list_tab, this_bc_pnt)) high_conf_cells = x1+1;
-		else break; // assuming that all high-umi barcodes are high-confident, this makes x1 being the # of total high-confidence barcodes.	
-	}
-	#ifdef DEBUG_FOR_EXACT
-	#warning "============= EXT 1 ==========="
-	FILE * tfp = fopen("/tmp/del4-YangLiao-rescue-cand.txt","w");
-	#endif
-	if(high_conf_cells >0){
-		srInt_64 median_umis = HashTableGet(cellnoP1_to_umis_tab, ArrayListGet(sorted_bcno_p1 ,  (high_conf_cells-1)/2))-NULL;
-		srInt_64 median_umis_001_cut = (srInt_64)(median_umis *1. *SCRNA_AMBIENT_RESCURE_MEDIAN_FRACTION +0.50000001);
-		for(x1=0; x1 < sorted_bcno_p1 -> numOfElements; x1++){
-			void * this_bc_pnt_p1 = ArrayListGet(sorted_bcno_p1 ,  x1);
-			if(HashTableGet(highconf_cellbc_list_tab, this_bc_pnt_p1)){
-				continue; // it is in high-conf list
-			}
-			srInt_64 this_bc_umis = HashTableGet(cellnoP1_to_umis_tab, this_bc_pnt_p1) - NULL;
-			if(this_bc_umis < median_umis_001_cut) break;
-			if(this_bc_umis < MIN_UMIS_FOR_CANDIDATE_RESCUE) break;
-			if(x1 >= 45000) break;
-			ArrayListPush(this_sample_ambient_rescure_candi, this_bc_pnt_p1-1);
-		}
-		#ifdef DEBUG_FOR_EXACT
-		#warning "============= EXT 2 ==========="
-		for(x1=0; x1<this_sample_ambient_rescure_candi->numOfElements; x1++){
-			int this_bc_no_p0 = ArrayListGet(this_sample_ambient_rescure_candi, x1)-NULL;
-			srInt_64 this_bc_umis = HashTableGet(used_cell_barcode_tab, NULL+this_bc_no_p0+1) - NULL;
-			fprintf(tfp,"CAND %d %d\n", this_bc_no_p0+1, this_bc_umis);
-		}
-		#endif
-	}
-	for(x1=45000; x1 < sorted_bcno_p1 -> numOfElements; x1++){
-		if(x1 >= 90000) break;
-		ArrayListPush(this_sample_45k_90k_barcode_no_P0, ArrayListGet(sorted_bcno_p1 ,  x1)-1 );
-		#ifdef DEBUG_FOR_EXACT
-		#warning "============= EXT 3 ==========="
-		int this_bc_no_p1 = ArrayListGet(sorted_bcno_p1, x1)-NULL;
-		int this_bc_umis = HashTableGet(used_cell_barcode_tab, NULL+this_bc_no_p1) - NULL;
-		fprintf(tfp,"45K90K %d %d\n", this_bc_no_p1, this_bc_umis);
-		#endif
-	}
-	ArrayListDestroy(sorted_bcno_p1);
-	HashTableDestroy(highconf_cellbc_list_tab);
-	#ifdef DEBUG_FOR_EXACT
-	#warning "============= EXT 4 ==========="
-	fclose(tfp);
-
-	FILE * fp = fopen("/tmp/del4-YangLiao-from-python-rescue.txt","r");
-
-	x1=0;
-	while(1){
-		char * tpm=NULL;
-		char fl[100];
-		char * fr = fgets(fl, 99, fp);
-		if(!fr) break;
-		if(fl[0]!='4') continue;
-		int bc_no = atoi(fl+7) -1;
-		this_sample_45k_90k_barcode_no_P0 -> elementList[x1++] = NULL+bc_no;
-		if(x1 >= 45000)break;
-	}
-	fclose(fp);
-	fp = fopen("/tmp/del4-YangLiao-from-python-rescue.txt","r");
-
-	x1=0;
-	this_sample_ambient_rescure_candi -> numOfElements = 0;
-	while(1){
-		char * tpm=NULL;
-		char fl[100];
-		char * fr = fgets(fl, 99, fp);
-		if(!fr) break;
-		if(fl[0]!='C') continue;
-		int bc_no = atoi(fl+5) -1;
-		ArrayListPush(this_sample_ambient_rescure_candi, NULL+bc_no);
-	}
-	fclose(fp);
-	#endif
-}
-
-
-#define SCRNA_BOOTSTRAP_HIGH_INDEX 30
-#define SCRNA_BOOTSTRAP_SAMPLING_TIMES 100
-
-
-int scRNA_merged_bootstrap_a_sample(fc_thread_global_context_t * global_context, HashTable * cellP1_to_geneP1_to_umis_tab, HashTable * cellnoP1_to_umis_tab, ArrayList * highconf_cellbc_list){
-	ArrayList * sorted_idx = HashTableSortedIndexes( cellnoP1_to_umis_tab, 1);
-	srInt_64 x2, x1;
-	float scRNA_umi_cutoff = global_context -> scRNA_umi_cutoff;
-
-	#define SCRNA_IDX_PRIME_NUMBER_BIG 11218439llu;
-	srInt_64 this_total = 0, seed_rand = sorted_idx -> numOfElements/2;
-
-	#ifdef DEBUG_FOR_EXACT
-	#warning "============== THIS BUILD IS ONLY FOR DEBUGGING EXACT RESULTS !!!! ================="
-	ArrayListSort(sorted_idx, NULL);
-	FILE * dfp = fopen("/tmp/del4-YangLiao-for-resample.txt","w");
-	for(x2 = 0; x2 < sorted_idx -> numOfElements ; x2++){
-		int bc_no_p1 = ArrayListGet(sorted_idx, x2)-NULL;
-		int bc_umis = HashTableGet(used_cell_barcode_tab, NULL+bc_no_p1) - NULL;
-		fprintf(dfp,"%d\t%d\t%s\n", bc_no_p1, bc_umis, ArrayListGet(global_context -> scRNA_cell_barcodes_array, bc_no_p1-1));
-	}
-	fclose(dfp);
-	system("python /usr/local/work/liao/subread/scripts/Cellranger-replicate/CrepPY-resample.py");
-	FILE * rfp = fopen("/tmp/del4-YangLiao-from-resample.txt","r");
-	#endif
-
-
-	int last_umi_no= -1;
-	if(scRNA_umi_cutoff >= 0.0){
-		for(x1 = 0; x1 < sorted_idx -> numOfElements ; x1++){
-			void * cellbc_p1_ptr = ArrayListGet(sorted_idx,x1);
-			srInt_64 this_umis = HashTableGet(cellnoP1_to_umis_tab, cellbc_p1_ptr )-NULL;
-			if(this_umis >= scRNA_umi_cutoff-0.1){
-				ArrayListPush(highconf_cellbc_list, ArrayListGet( sorted_idx, x1 ) - 1 );
-				last_umi_no = this_umis;
-			}else break;	// #UMI-sorted so no need to scan more
-		}
-	}else{
-		for(x1 = 0; x1 < SCRNA_BOOTSTRAP_SAMPLING_TIMES; x1++){
-			ArrayList * resampled_list_of_umis = ArrayListCreate( sorted_idx->numOfElements );
-
-			#ifdef DEBUG_FOR_EXACT
-			#warning "============== THIS BUILD IS ONLY FOR DEBUGGING EXACT RESULTS !!!! ================="
-			for(x2 = 0; x2 < sorted_idx -> numOfElements ; x2++){
-				char fl [100];
-				fgets(fl, 99, rfp);
-				int bc_no_p1 = atoi(fl);
-				int this_umis = HashTableGet(cellnoP1_to_umis_tab, NULL+bc_no_p1);
-				ArrayListPush(resampled_list_of_umis, NULL+this_umis);
-			}
-			ArrayListSort(resampled_list_of_umis, NULL);
-			#else
-			for(x2 = 0; x2 < sorted_idx -> numOfElements ; x2++){
-				seed_rand %= sorted_idx -> numOfElements;
-				void * cellbc_p1_ptr = ArrayListGet(sorted_idx, seed_rand);
-				seed_rand += SCRNA_IDX_PRIME_NUMBER_BIG;
-				srInt_64 this_umis = HashTableGet( cellnoP1_to_umis_tab, cellbc_p1_ptr )-NULL;
-				ArrayListPush(resampled_list_of_umis,NULL+this_umis);
-			}
-			#endif
-			ArrayListSort( resampled_list_of_umis, NULL );
-			srInt_64 UMIs_30th_div10 = ArrayListGet(resampled_list_of_umis, resampled_list_of_umis -> numOfElements - SCRNA_BOOTSTRAP_HIGH_INDEX) -NULL;
-			UMIs_30th_div10 = (srInt_64)(UMIs_30th_div10*1./10 + 0.500000001);
-
-			for(x2 =0; x2< resampled_list_of_umis -> numOfElements; x2++){
-				srInt_64 lli = resampled_list_of_umis -> numOfElements -1 -x2;
-				srInt_64 this_umis = ArrayListGet(resampled_list_of_umis, lli)-NULL;
-				if(this_umis >= UMIs_30th_div10) this_total ++;
-				else break;
-			}
-			ArrayListDestroy(resampled_list_of_umis);
-		}
-		double total_f = this_total*1. / SCRNA_BOOTSTRAP_SAMPLING_TIMES;
-		if(0) SUBREADprintf("FINAL_5CODE SELECTION_IDX =  %.5f\n",total_f);
-		this_total = (int)(total_f + 0.500000001);
-
-		#ifdef DEBUG_FOR_EXACT
-		#warning "============== THIS BUILD IS ONLY FOR DEBUGGING EXACT RESULTS !!!! ================="
-		sorted_idx = HashTableSortedIndexes( used_cell_barcode_tab, 1);
-		#endif
-
-		void * last_ptr =NULL;
-		for(x1 = 0; x1 < min(sorted_idx -> numOfElements, this_total) ; x1++){
-			last_ptr = ArrayListGet( sorted_idx, x1 );
-			ArrayListPush(highconf_cellbc_list, last_ptr - 1 );
-		}
-		last_umi_no = HashTableGet(cellnoP1_to_umis_tab ,last_ptr)-NULL;
-	}
-	ArrayListDestroy(sorted_idx);
-	return last_umi_no;
-}
-
-void build_exon_name(fc_thread_global_context_t * global_context, fc_feature_info_t * loaded_features, int sorted_order, char * exon_name, HashTable * sorted_order_p1_to_i_p1_tab){
-	srInt_64 i = HashTableGet( sorted_order_p1_to_i_p1_tab , NULL+1+sorted_order )-NULL-1;
-	SUBreadSprintf(exon_name, FEATURE_NAME_LENGTH+60, "%s:fc@R@Spl:%s:fc@R@Spl:%u:fc@R@Spl:%u:fc@R@Spl:%c", global_context -> unistr_buffer_space + loaded_features[i].feature_name_pos,
-	   global_context-> unistr_buffer_space + loaded_features[i].feature_name_pos + loaded_features[i].chro_name_pos_delta,
-	   loaded_features[i].start, loaded_features[i].end, loaded_features[i].is_negative_strand == 1?'N':(  loaded_features[i].is_negative_strand ==  0? 'P':'X'));
-}
-
-void scRNA_merged_write_sparse_unique_genes(void * ky, void * va, HashTable * tab){
-	HashTable * unique_geneno1B_tab = tab -> appendix1;
-	HashTable * used_cellnoP1_tab = tab -> appendix2;
-
-	int cellbcP1 = ky-NULL;
-	if(used_cellnoP1_tab && !HashTableGet(used_cellnoP1_tab, NULL+cellbcP1))return;
-	HashTable * g2u = va;
-	ArrayList * g2ul = HashTableKeys(g2u);
-	int x1;
-	for(x1=0; x1<g2ul->numOfElements; x1++){
-		void *geneno1B_ptr = ArrayListGet(g2ul,x1);
-		if(!HashTableGet(unique_geneno1B_tab, ArrayListGet(g2ul,x1))) HashTablePut(unique_geneno1B_tab, geneno1B_ptr, NULL+1);
-		tab -> counter1 += HashTableGet(g2u, geneno1B_ptr)-NULL;
-	}
-	ArrayListDestroy(g2ul);
-}
-
-int scRNA_merged_write_sparse_matrix(fc_thread_global_context_t * global_context, HashTable * cellP1_to_geneP1_to_umis_tab, HashTable * cellnoP1_to_umis_tab, ArrayList * used_cell_barcodes, int sample_index, char * tabtype, fc_feature_info_t* loaded_features, HashTable * sorted_order_p1_to_i_p1_tab){
-	int x1,x2;
-
-	char ofname[MAX_FILE_NAME_LENGTH + 100];
-	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.summary",global_context->input_file_name, sample_index+1,tabtype);
-	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.BCtab",global_context->input_file_name, sample_index+1,tabtype);
-	FILE * ofp_bcs = fopen( ofname , "w" );
-	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.GENEtab",global_context->input_file_name, sample_index+1,tabtype);
-	FILE * ofp_genes = fopen( ofname , "w" );
-	SUBreadSprintf(ofname,MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.%s.spmtx",global_context->input_file_name, sample_index+1,tabtype);
-	FILE * ofp_mtx = fopen( ofname , "w" );
-	fprintf(ofp_mtx,"%%%%MatrixMarket matrix coordinate integer general\n");
-
-	HashTable * used_cellnoP1_tab = ArrayListToLookupTable_Int(used_cell_barcodes);
-	HashTable * unique_NZ_geneno1B_table = HashTableCreate(10000);
-	cellP1_to_geneP1_to_umis_tab -> counter1 = 0;
-	cellP1_to_geneP1_to_umis_tab -> appendix1 = unique_NZ_geneno1B_table;
-	cellP1_to_geneP1_to_umis_tab -> appendix2 = used_cellnoP1_tab;
-	HashTableIteration(cellP1_to_geneP1_to_umis_tab, scRNA_merged_write_sparse_unique_genes);
-	srInt_64 total_UMIs = cellP1_to_geneP1_to_umis_tab -> counter1;
-	ArrayList * unique_NZ_genenosP1_list = HashTableKeys(unique_NZ_geneno1B_table);
-	HashTableDestroy(unique_NZ_geneno1B_table);
-	HashTableDestroy(used_cellnoP1_tab);
-	ArrayListSort(unique_NZ_genenosP1_list, NULL);
-
-	#ifdef __MINGW32__
-	fprintf(ofp_mtx, "%" PRId64 " %" PRId64 " %" PRId64 "\n", unique_NZ_genenosP1_list -> numOfElements , used_cell_barcodes -> numOfElements,  total_UMIs );
-	#else
-	fprintf(ofp_mtx, "%lld %lld %lld\n", unique_NZ_genenosP1_list -> numOfElements , used_cell_barcodes -> numOfElements,  total_UMIs );
-	#endif
-
-	for(x2=0; x2 < unique_NZ_genenosP1_list -> numOfElements; x2++){
-		int gene_index_0B = ArrayListGet(unique_NZ_genenosP1_list, x2) - NULL-1;
-		if(global_context->is_gene_level){
-			char* gene_name = (char*)global_context -> gene_name_array [gene_index_0B];
-			fprintf(ofp_genes,"%s\n", gene_name);
-		}else{
-			char exon_name[FEATURE_NAME_LENGTH+60];
-			build_exon_name(global_context, loaded_features, gene_index_0B, exon_name, sorted_order_p1_to_i_p1_tab);
-			fprintf(ofp_genes,"%s\n", exon_name);
-		}
-	}
-
-	for(x1 = 0; x1 < used_cell_barcodes -> numOfElements; x1++){
-		srInt_64 cellno = ArrayListGet(used_cell_barcodes, x1)-NULL;
-		char * cellbc_seq = ArrayListGet(global_context -> scRNA_cell_barcodes_array, cellno);
-		fprintf(ofp_bcs,"%s\n", cellbc_seq);
-	}
-
-	for(x1 = 0; x1 < used_cell_barcodes -> numOfElements; x1++){
-		srInt_64 cellno = ArrayListGet(used_cell_barcodes, x1)-NULL;
-		HashTable * geneno1B_to_UMIs = HashTableGet(cellP1_to_geneP1_to_umis_tab, NULL+1+cellno);
-
-		for(x2=0; x2 < unique_NZ_genenosP1_list -> numOfElements; x2++){
-			int geneno1B = ArrayListGet(unique_NZ_genenosP1_list, x2)-NULL;
-			int this_umis = HashTableGet(geneno1B_to_UMIs, NULL+geneno1B) -NULL;
-			if(this_umis>0)fprintf(ofp_mtx,"%d %d %d\n", x2+1, x1+1, this_umis);
-		}
-	}
-	ArrayListDestroy(unique_NZ_genenosP1_list);
-	fclose(ofp_bcs);
-	fclose(ofp_genes);
-	fclose(ofp_mtx);
-
-	return 0;
-}
-
-void scRNA_merged_45K_to_90K_sum_SUM_Level2(void * GeneNo1B, void * vUMIs, HashTable * m2){
-	HashTable * summed_gene_to_umis = m2 -> appendix1;
-	HashTablePut(summed_gene_to_umis, GeneNo1B, vUMIs + (HashTableGet(summed_gene_to_umis, GeneNo1B)-NULL));
-}
-
-void scRNA_merged_45K_to_90K_sum_SUM(void * keyCellNoP1, void * Vgno_umi_tab, HashTable * me){
-	HashTable * summed_gene_to_umis  = me -> appendix1;
-	HashTable * bcid_look_tab = me -> appendix2;
-	//fc_thread_global_context_t * global_context = me -> appendix3;
-	HashTable * geneno1B_to_UMIs_tab = Vgno_umi_tab;
-	if(!HashTableGet(bcid_look_tab, keyCellNoP1))return;
-	geneno1B_to_UMIs_tab -> appendix1 = summed_gene_to_umis;
-	HashTableIteration(geneno1B_to_UMIs_tab ,scRNA_merged_45K_to_90K_sum_SUM_Level2 );
-}
-
-void scRNA_merged_45K_to_90K_sum_WRT(void * kyGeneID, void * valUMIs, HashTable * me){
-	fc_thread_global_context_t * global_context = me -> appendix1;
-	FILE * ofp = me -> appendix2;
-	void ** vp2 = me->appendix3;
-	fc_feature_info_t * loaded_features = vp2[0];
-	HashTable * sorted_order_p1_to_i_p1_tab = vp2[1];
-
-	if(global_context -> is_gene_level){
-		unsigned char * gene_name = global_context -> gene_name_array[ kyGeneID - NULL-1 ];
-		fprintf(ofp, "%s\t%u\n", gene_name, (unsigned int) (valUMIs-NULL));
-	}else{
-		char exon_name[FEATURE_NAME_LENGTH+60];
-		build_exon_name(global_context, loaded_features, kyGeneID-NULL-1, exon_name, sorted_order_p1_to_i_p1_tab);
-		fprintf(ofp,"%s\t%u\n", exon_name, (unsigned int) (valUMIs-NULL));
-	}
-}
-
-void scRNA_merged_45K_to_90K_sum(fc_thread_global_context_t * global_context, HashTable * cellP1_geneP1_UMIs_tab, ArrayList * bcid_P0_arr, int sample_no, fc_feature_info_t * loaded_features, HashTable * sorted_index_p1_to_i_p1_tab){
-	HashTable * summed_gene_to_umis = HashTableCreate( 3+cellP1_geneP1_UMIs_tab->numOfElements/6 );
-	HashTable * bcid_look_tab = ArrayListToLookupTable_Int(bcid_P0_arr);
-	cellP1_geneP1_UMIs_tab -> appendix1 = summed_gene_to_umis;
-	cellP1_geneP1_UMIs_tab -> appendix2 = bcid_look_tab;
-	cellP1_geneP1_UMIs_tab -> appendix3 = global_context;
-	HashTableIteration( cellP1_geneP1_UMIs_tab, scRNA_merged_45K_to_90K_sum_SUM );
-
-	char ofname[MAX_FILE_NAME_LENGTH + 100];
-	SUBreadSprintf(ofname, MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.AmbSum",global_context->input_file_name, sample_no+1);
-	FILE * write_fp = fopen(ofname,"w");
-	fprintf(write_fp,"GeneID\tUMIs\n");
-	summed_gene_to_umis -> appendix1 = global_context;
-	summed_gene_to_umis -> appendix2 = write_fp;
-	void * vp2[2];
-	vp2[0]=loaded_features;
-	vp2[1]=sorted_index_p1_to_i_p1_tab;
-	summed_gene_to_umis -> appendix3 = vp2;
-	summed_gene_to_umis -> counter1 = sample_no;
-	HashTableIteration( summed_gene_to_umis, scRNA_merged_45K_to_90K_sum_WRT );
-	HashTableDestroy(bcid_look_tab);
-	HashTableDestroy(summed_gene_to_umis);
-	fclose(write_fp);
-}
-
-void scRNA_merged_write_nozero_geneids_WRT(void *k, void *v, HashTable* me){
-	FILE * fp = me->appendix1;
-	fc_thread_global_context_t * global_context = me->appendix2;
-	void ** tv2 = me->appendix3;
-	fc_feature_info_t * loaded_features = tv2[0];
-	HashTable * sorted_order_p1_to_i_p1_tab = tv2[1];
-	if(global_context -> is_gene_level){
-		unsigned char* gene_symbol = global_context -> gene_name_array [k-NULL-1];
-		fprintf(fp, "%s\n", gene_symbol);
-	}else{
-		char exon_name[FEATURE_NAME_LENGTH+60];
-		build_exon_name(global_context, loaded_features, k-NULL-1, exon_name, sorted_order_p1_to_i_p1_tab);
-		fprintf(fp,"%s\n", exon_name);
-	}
-}
-
-void scRNA_merged_write_nozero_geneids(fc_thread_global_context_t * global_context, HashTable * no0genes, int samplenno, fc_feature_info_t * loaded_features, HashTable * sorted_order_p1_to_i_p1_tab){
-	char ofname[MAX_FILE_NAME_LENGTH + 100];
-	SUBreadSprintf(ofname, MAX_FILE_NAME_LENGTH + 100,"%s.scRNA.%03d.no0Genes",global_context->input_file_name, samplenno+1);
-	FILE * fp = fopen( ofname , "w" );
-	no0genes -> appendix1 =fp;
-	void * tv2[2];
-	no0genes -> appendix2 =global_context;
-	tv2[0]=loaded_features;
-	tv2[1]=sorted_order_p1_to_i_p1_tab;
-	no0genes -> appendix3 =tv2;
-	HashTableIteration(no0genes, scRNA_merged_write_nozero_geneids_WRT);
-	fclose(fp);
-}
-
-void scRNA_merged_to_tables_write_build_UMIcount_in(void * ky, void * val, HashTable * tab){
-	tab -> counter1 += (val-NULL);
-}
-
-void scRNA_merged_to_tables_write_build_UMIcounts(void * ky, void * val, HashTable * tab){
-	HashTable * cellbcP1_to_umis_tab = tab -> appendix1;
-	int cell_no = ky-NULL-1;
-	HashTable * geneP1_to_counts_tab = val;
-
-	geneP1_to_counts_tab -> counter1 = 0;
-	HashTableIteration(geneP1_to_counts_tab, scRNA_merged_to_tables_write_build_UMIcount_in);
-	HashTablePut(cellbcP1_to_umis_tab, NULL+1+cell_no, NULL+geneP1_to_counts_tab -> counter1);
-}
-
-// this function writes a single count table.
-// Rows: genes
-// Cols: Cell_Barcode +"."+ SampleName
-void scRNA_merged_to_tables_write( fc_thread_global_context_t * global_context, HashTable ** cellP1_to_geneP1_to_umis, fc_feature_info_t * loaded_features, srInt_64 nexons){
-	char ofname[MAX_FILE_NAME_LENGTH + 20];
-	SUBreadSprintf(ofname, MAX_FILE_NAME_LENGTH + 20,"%s.scRNA.SampleTable",global_context->input_file_name);
-	FILE * sample_tab_fp = fopen( ofname , "w" );
-	int x1;
-
-	fprintf(sample_tab_fp,"SampleName\tUMICutoff\tTotalReads\tMappedReads\tAssignedReads\tIndex\n");
-	for(x1 = 0; x1 < global_context -> scRNA_sample_sheet_table -> numOfElements ; x1++){
-		srInt_64 mapped_reads = 0, all_reads = 0, assigned_reads = 0;
-		int thrid;
-		for(thrid=0; thrid<global_context-> thread_number; thrid++){
-			mapped_reads += global_context -> thread_contexts[thrid].scRNA_mapped_reads_per_sample[x1];
-			assigned_reads += global_context -> thread_contexts[thrid].scRNA_assigned_reads_per_sample[x1];
-			all_reads += global_context -> thread_contexts[thrid].scRNA_reads_per_sample[x1];
-		}
-		ArrayList * high_confid_barcode_index_list = ArrayListCreate(20000);
-		ArrayList * this_sample_ambient_rescure_candi = ArrayListCreate(10000);
-		ArrayList * this_sample_45k_90k_barcode_no_P0 = ArrayListCreate(90000 - 45000 + 100);
-
-		HashTable * cellbcP1_to_umis_tab = HashTableCreate(cellP1_to_geneP1_to_umis[x1] -> numOfElements);
-		cellP1_to_geneP1_to_umis[x1] -> appendix1 = cellbcP1_to_umis_tab;
-		HashTableIteration(cellP1_to_geneP1_to_umis[x1], scRNA_merged_to_tables_write_build_UMIcounts);
-
-		int applied_umi_cut = scRNA_merged_bootstrap_a_sample(global_context, cellP1_to_geneP1_to_umis[x1], cellbcP1_to_umis_tab, high_confid_barcode_index_list);
-		global_context -> scRNA_applied_umi_cut[x1] = applied_umi_cut;
-		scRNA_merged_ambient_rescure(global_context, cellP1_to_geneP1_to_umis[x1], cellbcP1_to_umis_tab, this_sample_45k_90k_barcode_no_P0, this_sample_ambient_rescure_candi, high_confid_barcode_index_list);
-
-		int umi_cutoff = global_context -> scRNA_applied_umi_cut[x1];
-		char * this_sample_name = ArrayListGet(global_context -> scRNA_sample_id_to_name, x1);
-#ifdef __MINGW32__
-		fprintf(sample_tab_fp,"%s\t%d\t%" PRId64 "\t%" PRId64 "\t%" PRId64 "\t%d\n", this_sample_name, umi_cutoff, all_reads, mapped_reads, assigned_reads,x1+1);
-#else
-		fprintf(sample_tab_fp,"%s\t%d\t%lld\t%lld\t%lld\t%d\n", this_sample_name, umi_cutoff, all_reads, mapped_reads, assigned_reads, x1+1);
-#endif
-		srInt_64 xk1;
-		HashTable * sorted_order_p1_to_i_p1_tab = HashTableCreate(nexons/4);
-		for(xk1 = 0; xk1 < nexons ; xk1++){
-			HashTablePut(sorted_order_p1_to_i_p1_tab, NULL+loaded_features[xk1].sorted_order+1 , NULL+xk1+1 );
-		}
-
-		#ifdef DEBUG_FOR_EXACT
-		#warning " ======= Another debug ======"
-		scRNA_merged_write_sparse_matrix(global_context, merged_tables_gene_to_cell_umis[x1], used_cell_barcode_tabs[x1], NULL, x1, "RawMatrix",  loaded_features, sorted_order_p1_to_i_p1_tab);
-		//scRNA_merged_write_sparse_matrix(global_context, merged_tables_gene_to_cell_umis[x1], used_cell_barcode_tabs[x1]  this_sample_45k_90k_barcode_no_P0, x1, "AmbProfCells",  loaded_features, sorted_order_p1_to_i_p1_tab);
-		#endif
-
-		scRNA_merged_write_sparse_matrix(global_context, cellP1_to_geneP1_to_umis[x1], cellbcP1_to_umis_tab, high_confid_barcode_index_list, x1, "HighConf",  loaded_features, sorted_order_p1_to_i_p1_tab);
-		scRNA_merged_write_sparse_matrix(global_context, cellP1_to_geneP1_to_umis[x1], cellbcP1_to_umis_tab, this_sample_ambient_rescure_candi, x1, "RescCand",  loaded_features, sorted_order_p1_to_i_p1_tab);
-		scRNA_merged_45K_to_90K_sum( global_context, cellP1_to_geneP1_to_umis[x1], this_sample_45k_90k_barcode_no_P0, x1 , loaded_features, sorted_order_p1_to_i_p1_tab);
-		HashTable * no0genes = HashTableCreate(10000);
-		cellP1_to_geneP1_to_umis[x1] -> appendix1 = no0genes;
-		cellP1_to_geneP1_to_umis[x1] -> appendix2 = NULL;
-		HashTableIteration(cellP1_to_geneP1_to_umis[x1], scRNA_merged_write_sparse_unique_genes);
-		scRNA_merged_write_nozero_geneids(global_context, no0genes, x1, loaded_features, sorted_order_p1_to_i_p1_tab);
-
-		HashTableDestroy(no0genes);
-		ArrayListDestroy(this_sample_ambient_rescure_candi);
-		ArrayListDestroy(this_sample_45k_90k_barcode_no_P0);
-		ArrayListDestroy(high_confid_barcode_index_list);
-		HashTableDestroy(cellbcP1_to_umis_tab);
-		HashTableDestroy(sorted_order_p1_to_i_p1_tab);
-	}
-
-	fclose(sample_tab_fp);
-}
-
-void scRNA_find_gene_to_umi_do_merger(void * ky_genep1, void * val_arr_bc_umip1, HashTable * tab){
-	HashTable * bc_umi_to_genes_tab = tab -> appendix1;
-	ArrayList * arr_bc_umip1 = val_arr_bc_umip1;
-	int gene_no = ky_genep1-NULL-1;
-	int x1;
-	for(x1=0; x1<arr_bc_umip1 -> numOfElements; x1++){
-		void * bc_umip1 = ArrayListGet(arr_bc_umip1,x1);
-		ArrayList * gene_list = HashTableGet(bc_umi_to_genes_tab, bc_umip1);
-		if(!gene_list){
-			gene_list = ArrayListCreate(1);
-			HashTablePut(bc_umi_to_genes_tab, bc_umip1, gene_list);
-		}
-		ArrayListPush(gene_list, NULL+gene_no);
-	}
-}
-
-int scRNA_find_gene_to_umi_sortCompare(void * L_elem, void * R_elem, ArrayList * me){
-	void ** pnts = me -> appendix1;
-	void * key_bc_umi_p1 = pnts[0];
-	HashTable * geneno_umi_bc_counts = pnts[1];
-	int geneno_L = L_elem-NULL;
-	int geneno_R = R_elem-NULL;
-	int nsupp_L = HashTableGet(HashTableGet(geneno_umi_bc_counts, NULL+1+ geneno_L), key_bc_umi_p1) - NULL;
-	int nsupp_R = HashTableGet(HashTableGet(geneno_umi_bc_counts, NULL+1+ geneno_R), key_bc_umi_p1) - NULL;
-	if(nsupp_L > nsupp_R) return -1;
-	if(nsupp_L < nsupp_R) return  1;
-	return 0;
-}
-
-void scRNA_find_gene_to_umi_sortByReads(void * key_bc_umi_p1, void * val_arr_genes, HashTable * tab){
-	ArrayList * arr_genes = val_arr_genes;
-	if(arr_genes -> numOfElements<2) return;
-
-	HashTable * geneno_umi_bc_counts = tab -> appendix1;
-	void * pnts[2];
-	pnts[0]=key_bc_umi_p1;
-	pnts[1]=geneno_umi_bc_counts;
-	arr_genes -> appendix1 = pnts;
-	ArrayListSort(arr_genes, scRNA_find_gene_to_umi_sortCompare);
-}
-
-void scRNA_find_gene_to_umi_mark_deletee(void * key_bc_umi_p1, void * val_arr_genes_sorted, HashTable * tab){
-	ArrayList * arr_genes = val_arr_genes_sorted;
-	if(arr_genes -> numOfElements<2) return;
-
-	HashTable * gene_bc_umi_to_deleted_genes_tab = tab->appendix1;
-	HashTable * gene_to_bc_umi_p1_to_reads_tab = tab->appendix2;
-	int gene1_no = ArrayListGet(arr_genes, 0)-NULL;
-	int gene2_no = ArrayListGet(arr_genes, 1)-NULL;
-
-		if(0){
-			int x1; 
-			for(x1=0; x1<arr_genes -> numOfElements; x1++){
-				int gene_no = ArrayListGet(arr_genes, x1)-NULL;
-				int nsupp = HashTableGet(HashTableGet(gene_to_bc_umi_p1_to_reads_tab , NULL+gene_no+1), key_bc_umi_p1) - NULL;
-				int cellno = ( key_bc_umi_p1-NULL-1 ) >> 32;
-				SUBREADprintf("TESTING_SORT : %d of %d have %d reads\n", gene_no, cellno, nsupp);
-			}
-		}
-
-
-
-	int supp1 = HashTableGet(HashTableGet(gene_to_bc_umi_p1_to_reads_tab, NULL+gene1_no+1), key_bc_umi_p1)-NULL;
-	int supp2 = HashTableGet(HashTableGet(gene_to_bc_umi_p1_to_reads_tab, NULL+gene2_no+1), key_bc_umi_p1)-NULL;
-
-	ArrayList * to_del_genes = HashTableGet(gene_bc_umi_to_deleted_genes_tab, key_bc_umi_p1);
-	if(NULL==to_del_genes){
-		to_del_genes = ArrayListCreate(3);
-		HashTablePut(gene_bc_umi_to_deleted_genes_tab, key_bc_umi_p1, to_del_genes);
-	}
-	
-	if(supp1 == supp2) ArrayListPush(to_del_genes, NULL+gene1_no);
-	int x1;
-	for(x1=1; x1< arr_genes->numOfElements; x1++) ArrayListPush(to_del_genes, ArrayListGet(arr_genes, x1));
-}
-
-HashTable * scRNA_find_gene_to_umi_merger(fc_thread_global_context_t * global_context, HashTable * gene_to_bc_umi_p1_tab, HashTable * gene_to_bc_umi_p1_to_reads_tab){
-	HashTable * bc_umi_to_genes_tab = HashTableCreate( 1000000);
-	HashTableSetDeallocationFunctions(bc_umi_to_genes_tab, NULL, (void (*) (void *))ArrayListDestroy);
-	gene_to_bc_umi_p1_tab -> appendix1 = bc_umi_to_genes_tab;
-	gene_to_bc_umi_p1_tab -> appendix2 = global_context;
-	
-	HashTableIteration(gene_to_bc_umi_p1_tab, scRNA_find_gene_to_umi_do_merger);
-	bc_umi_to_genes_tab -> appendix1 = gene_to_bc_umi_p1_to_reads_tab;
-	HashTableIteration(bc_umi_to_genes_tab, scRNA_find_gene_to_umi_sortByReads);
-
-	HashTable * gene_bc_umi_to_deleted_genes_tab = HashTableCreate( 1000000); // bc_um1_p1 => ArrayList (deleted_gene_1, deleted_gene_2, ...)
-	bc_umi_to_genes_tab -> appendix1 = gene_bc_umi_to_deleted_genes_tab;
-	bc_umi_to_genes_tab -> appendix2 = gene_to_bc_umi_p1_to_reads_tab;
-	HashTableIteration(bc_umi_to_genes_tab, scRNA_find_gene_to_umi_mark_deletee);
-	HashTableDestroy(bc_umi_to_genes_tab);
-	return gene_bc_umi_to_deleted_genes_tab ;
-}
-
-struct scRNA_merge_batches_worker_task{
-	int sample_id;
-	int inbin_len;
-	srInt_64 block_number;
-	char inbin[MERGER_WORKER_BINSIZE];
-};
-
-struct scRNA_merge_batches_worker_current{
-	struct scRNA_merge_batches_worker_task * task;
-	char outbin[MERGER_WORKER_BINSIZE];
-	int outbin_len;
-	unsigned int crc32;
-
-	z_stream strm;
-};
-
-void * scRNA_merge_batches_worker(void * vp){
-	void **vpp = vp;
-	fc_thread_global_context_t * global_context = vpp[0];
-	worker_master_mutex_t * worker_mut  = vpp[1];
-	int my_worker_id = vpp[2] - NULL;
-	struct scRNA_merge_batches_worker_current * my_current_job = vpp[3];
-	free(vp);
-
-	int Z_DEFAULT_MEM_LEVEL = 8;
-	worker_thread_start(worker_mut, my_worker_id);
-	while(1){
-		if(worker_wait_for_job(worker_mut, my_worker_id)) break;
-		if(!global_context -> is_scRNA_BAM_FQ_out_generated) continue;
-
-		deflateInit2(&my_current_job -> strm , SAMBAM_COMPRESS_LEVEL_NORMAL, Z_DEFLATED, SAMBAM_GZIP_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
-
-		struct scRNA_merge_batches_worker_task * current_input = my_current_job -> task;
-		my_current_job -> strm.avail_in = current_input -> inbin_len;
-		my_current_job -> strm.next_in = (unsigned char*)current_input -> inbin;
-		my_current_job -> strm.avail_out = MERGER_WORKER_BINSIZE;
-		my_current_job -> strm.next_out = (unsigned char*)my_current_job -> outbin;
-
-		deflate(&my_current_job -> strm, Z_FINISH);
-		my_current_job -> outbin_len = MERGER_WORKER_BINSIZE-my_current_job -> strm.avail_out;
-		my_current_job -> crc32 = FC_CRC32(current_input -> inbin, current_input -> inbin_len);
-		deflateEnd(&my_current_job -> strm);
-	}
-	return NULL;
-}
-
-void scRNA_save_BAM_result(fc_thread_global_context_t * global_context, struct scRNA_merge_batches_worker_current * finished_job){
-	if(!finished_job -> task)return;
-	if(global_context -> is_scRNA_BAM_FQ_out_generated){
-		int sample_id = finished_job -> task -> sample_id;
-		void ** fps = HashTableGet(global_context -> scRNA_sample_BAM_writers, NULL+sample_id);
-		simple_bam_writer * wtr = fps[0];
-		int inbin_pos = 0;
-		while(inbin_pos < finished_job -> task -> inbin_len){
-			int binlen = 0;
-			memcpy(&binlen, finished_job -> task -> inbin+inbin_pos, 4);
-			simple_bam_writer_update_index(wtr, finished_job -> task -> inbin+inbin_pos, binlen, finished_job -> task -> block_number, inbin_pos);
-			inbin_pos += 4+binlen;
-		}
-		simple_bam_write_compressed_block(wtr, finished_job -> outbin, finished_job -> outbin_len, finished_job -> task -> inbin_len, finished_job -> crc32, finished_job -> task -> block_number);
-	}
-	finished_job -> task = NULL;
 }
 
 // return the number of RG result sets
 int fc_thread_merge_results(fc_thread_global_context_t * global_context, read_count_type_t * nreads , srInt_64 *nreads_mapped_to_exon, fc_read_counters * my_read_counter, HashTable * junction_global_table, HashTable * splicing_global_table, HashTable * RGmerged_table, fc_feature_info_t * loaded_features, srInt_64 nexons)
 {
-	int xk1, xk2, ret = 0, sample_i;
+	int xk1, xk2, ret = 0;
 
 	srInt_64 total_input_reads = 0 ;
 	(*nreads_mapped_to_exon)=0;
 	SAM_pairer_destroy(&global_context -> read_pairer);
-
-	if(global_context -> do_scRNA_table){
-		int compress_workers = max(1,global_context-> thread_number-1);
-		HashTable * cellnoP1_to_genenoP1_to_UMIs[global_context -> scRNA_sample_sheet_table -> numOfElements];
-		struct scRNA_merge_batches_worker_task * task_buffers = malloc(sizeof(struct scRNA_merge_batches_worker_task) * (1+compress_workers)* global_context->scRNA_sample_sheet_table -> numOfElements);
-		int current_filling_worker_per_sample [global_context->scRNA_sample_sheet_table -> numOfElements];
-		struct scRNA_merge_batches_worker_current * worker_current_jobs = calloc(sizeof(struct scRNA_merge_batches_worker_current), compress_workers);
-
-		ArrayList * file_size_list = ArrayListCreate(global_context-> scRNA_barcode_batched_bin_no +1);
-		for(xk1=0; xk1<global_context-> scRNA_barcode_batched_bin_no +2; xk1++){
-			if(xk1<global_context-> scRNA_barcode_batched_bin_no +1){
-				srInt_64 batchsize = ftello(global_context -> scRNA_barcode_batched_bins[xk1]);
-				ArrayListPush(file_size_list, NULL+( batchsize<<20 | xk1));
-			}
-			fclose(global_context -> scRNA_barcode_batched_bins[xk1]);
-		}
-		ArrayListSort(file_size_list, NULL);
-
-		srInt_64 block_numbers_current [global_context->scRNA_sample_sheet_table -> numOfElements];
-		for(xk1=0; xk1<global_context->scRNA_sample_sheet_table -> numOfElements; xk1++){
-	 		cellnoP1_to_genenoP1_to_UMIs[xk1] = HashTableCreate(10000);
-			HashTableSetDeallocationFunctions(cellnoP1_to_genenoP1_to_UMIs[xk1], NULL,(void (*) (void*))HashTableDestroy);
-			current_filling_worker_per_sample[xk1] = 0;
-			task_buffers[xk1].inbin_len = 0;
-			block_numbers_current[xk1] = 0;
-		}
-
-		pthread_t *threads = malloc(sizeof(pthread_t)*global_context-> thread_number);
-		for(xk1=0; xk1<compress_workers+1; xk1++)for(xk2 = 0; xk2 < global_context->scRNA_sample_sheet_table -> numOfElements; xk2++) task_buffers[xk1*global_context->scRNA_sample_sheet_table -> numOfElements + xk2].sample_id = xk2+1;
-
-		for(xk1=0; xk1<global_context-> thread_number; xk1++){
-			void ** vpp = malloc(sizeof(void*)*3);
-			vpp[0] = global_context;
-			vpp[1] = global_context -> thread_contexts+xk1;
-			vpp[2] = file_size_list;
-			pthread_create(threads + xk1, NULL, scRNA_do_one_batch, vpp);
-		}
-
-		for(xk1=0; xk1<global_context-> thread_number; xk1++)
-			pthread_join(threads[xk1],NULL);
-		ArrayListDestroy(file_size_list);
-
-		worker_master_mutex_t worker_mut;
-		worker_master_mutex_init(&worker_mut, max(1,global_context-> thread_number-1));
-
-		for(xk1=0; xk1<max(1,global_context-> thread_number-1); xk1++){
-			void ** vpp = malloc(sizeof(void*)*4);
-			vpp[0] = global_context;
-			vpp[1] = &worker_mut;
-			vpp[2] = NULL + xk1;
-			vpp[3] = worker_current_jobs + xk1;
-			pthread_create(threads + xk1, NULL, scRNA_merge_batches_worker, vpp);
-		}
-
-		FILE * input_fps[global_context -> scRNA_barcode_batched_bin_no+2];
-		char * last_rbin_buffer[global_context -> scRNA_barcode_batched_bin_no+1];
-		srInt_64 current_sorting_key[global_context -> scRNA_barcode_batched_bin_no+1];
-		
-		for(xk1=0; xk1<global_context -> scRNA_barcode_batched_bin_no+2; xk1++){
-			char tmp_fname[MAX_FILE_NAME_LENGTH+80];
-			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+80, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", global_context -> temp_file_dir, getpid(), xk1);
-			input_fps[xk1] = fopen(tmp_fname,"rb");
-			if(xk1 == global_context -> scRNA_barcode_batched_bin_no+1)break;
-
-			srInt_64 section1_items=0;
-			for(sample_i = 0; sample_i < global_context -> scRNA_sample_sheet_table -> numOfElements; sample_i++){
-				int rrv = fread(&section1_items,1, 8, input_fps[xk1]);
-				for(xk2 = 0; xk2 < section1_items; xk2++){
-					srInt_64 cellbcP0_geneno0B=0, umis=0;
-					rrv = rrv && fread(&cellbcP0_geneno0B,1,8,input_fps[xk1]);
-					rrv = rrv && fread(&umis,1,8,input_fps[xk1]);
-
-					int cellbc_no = cellbcP0_geneno0B>>32;
-					int gene_no0B = (int)(cellbcP0_geneno0B&0xffffffffu);
-					HashTable *gene_tab = HashTableGet(cellnoP1_to_genenoP1_to_UMIs[sample_i], NULL+cellbc_no+1);
-					if(gene_tab==NULL){
-						gene_tab = HashTableCreate(300);
-						HashTablePut(cellnoP1_to_genenoP1_to_UMIs[sample_i], NULL+cellbc_no+1, gene_tab); 
-					}
-					HashTablePut(gene_tab, NULL+gene_no0B+1 , NULL+umis);
-				}
-			}
-			last_rbin_buffer[xk1] = malloc( global_context -> scRNA_barcode_batched_max_genes *8 + global_context -> scRNA_barcode_batched_max_Rbin_len + 4 + MAX_UMI_LEN + 16 + 10000);
-			int rlen = fread(last_rbin_buffer[xk1], 1, 16, input_fps[xk1]);
-			if(rlen >0){
-				int binlen = 0;
-				srInt_64 genes = 0;
-				memcpy(&genes, last_rbin_buffer[xk1]+8, 8);
-				if(genes & (1LLU<<63))genes = genes & 0x7fffffff;
-				else genes= 0;
-				
-				int rrv  = fread(last_rbin_buffer[xk1]+16, 1, 8*genes+ global_context -> scRNA_UMI_length + 4, input_fps[xk1]);
-				memcpy(&binlen, last_rbin_buffer[xk1] +16 +8*genes+ global_context -> scRNA_UMI_length  , 4);
-				rrv = rrv && fread(last_rbin_buffer[xk1] + 16+ 8*genes+ global_context -> scRNA_UMI_length + 4, 1, binlen, input_fps[xk1]);
-
-				srInt_64 sorting_key = *(int*)(last_rbin_buffer[xk1] + 16 +8*genes+global_context -> scRNA_UMI_length +4);
-				sorting_key = sorting_key << 32;
-				sorting_key |= *(int*)(last_rbin_buffer[xk1] + 16+ 8*genes+global_context -> scRNA_UMI_length +8);
-				current_sorting_key[xk1] = sorting_key;
-			}else current_sorting_key[xk1] = 0x7fffffffffffffffLLU;
-		}
-
-		int current_worker = 0;
-		while(1){
-			int selected_fp_no = 0;
-			srInt_64 selected_fp_key = current_sorting_key[0];
-			for(xk1=1; xk1<global_context -> scRNA_barcode_batched_bin_no+1; xk1++){
-				if(current_sorting_key[xk1] < selected_fp_key){
-					selected_fp_key = current_sorting_key[xk1] ;
-					selected_fp_no = xk1;
-				}
-			}
-			if(selected_fp_key == 0x7fffffffffffffffLLU) break;
-
-			int sample_id = 0, binlen = 0;
-			srInt_64 genes = 0;
-			memcpy(&sample_id, last_rbin_buffer[selected_fp_no], 4);
-			memcpy(&genes, last_rbin_buffer[selected_fp_no]+8, 8);
-			if(genes & (1LLU<<63)) genes = genes & 0x7fffffff;
-			else genes = 0;
-			memcpy(&binlen,last_rbin_buffer[selected_fp_no]+16+8*genes+global_context -> scRNA_UMI_length,4);
-
-			struct scRNA_merge_batches_worker_task * tofill = task_buffers+(current_filling_worker_per_sample[sample_id-1] * global_context->scRNA_sample_sheet_table -> numOfElements +sample_id-1);
-			memcpy(tofill->inbin + tofill-> inbin_len, last_rbin_buffer[selected_fp_no]+16+8*genes+global_context -> scRNA_UMI_length, binlen + 4);
-			tofill -> inbin_len += (binlen + 4);
-			//SUBREADprintf("ADDING BLOCKKK = %d  WKR = %d  IT THINK IT'S %d ; GENES=%d\n", tofill -> inbin_len, current_worker, tofill -> sample_id, genes);
-			if(tofill-> inbin_len > 60000){
-				master_wait_for_job_done(&worker_mut, current_worker);
-				struct scRNA_merge_batches_worker_current * my_finished_job = worker_current_jobs+current_worker;
-				scRNA_save_BAM_result(global_context, my_finished_job);
-				my_finished_job -> task = tofill;
-				my_finished_job -> task -> block_number = (block_numbers_current[sample_id-1]++);
-				my_finished_job -> outbin_len = 0;
-				master_notify_worker(&worker_mut, current_worker);
-
-				current_filling_worker_per_sample[sample_id-1] ++;
-				if(current_filling_worker_per_sample[sample_id-1] == compress_workers +1) current_filling_worker_per_sample[sample_id-1] = 0;
-				tofill = task_buffers+(current_filling_worker_per_sample[sample_id-1] * global_context->scRNA_sample_sheet_table -> numOfElements +sample_id-1);
-				tofill -> inbin_len = 0;
-				
-				current_worker ++;
-				if(current_worker == compress_workers) current_worker=0;
-			}
-
-			int rlen = fread(last_rbin_buffer[selected_fp_no], 1, 16, input_fps[selected_fp_no]);
-			if(rlen >0){
-				int binlen = 0;
-				srInt_64 genes = 0;
-				memcpy(&genes, last_rbin_buffer[selected_fp_no]+8, 8);
-				if(genes & (1LLU<<63))genes = genes & 0x7fffffff;
-				else genes= 0;
-				int rrv = fread(last_rbin_buffer[selected_fp_no]+16, 1, 8*genes+ global_context -> scRNA_UMI_length + 4, input_fps[selected_fp_no]);
-				memcpy(&binlen, last_rbin_buffer[selected_fp_no] +16 +8*genes+ global_context -> scRNA_UMI_length  , 4);
-
-				rrv = rrv && fread(last_rbin_buffer[selected_fp_no] + 16+ 8*genes+ global_context -> scRNA_UMI_length + 4, 1, binlen, input_fps[selected_fp_no]);
-				srInt_64 sorting_key = *(int*)(last_rbin_buffer[selected_fp_no] + 16+8*genes +global_context -> scRNA_UMI_length +4);
-				sorting_key = sorting_key << 32;
-				sorting_key |= *(int*)(last_rbin_buffer[selected_fp_no] + 16 +8*genes+global_context -> scRNA_UMI_length +8);
-				current_sorting_key[selected_fp_no] = sorting_key;
-			} else current_sorting_key[selected_fp_no] = 0x7fffffffffffffffLLU;
-		}
-
-		for(xk1=0; xk1<global_context -> scRNA_barcode_batched_bin_no+1; xk1++){
-			fclose(input_fps[xk1]);
-			free(last_rbin_buffer[xk1]);
-		}
-
-		for(xk1=0; xk1<global_context -> scRNA_sample_sheet_table -> numOfElements; xk1++){
-			struct scRNA_merge_batches_worker_task * tofill = task_buffers+(current_filling_worker_per_sample[xk1] * global_context->scRNA_sample_sheet_table -> numOfElements +xk1);
-			if(tofill->inbin_len<1) continue;
-
-			master_wait_for_job_done(&worker_mut, current_worker);
-			struct scRNA_merge_batches_worker_current * my_finished_job = worker_current_jobs+current_worker;
-			scRNA_save_BAM_result(global_context, my_finished_job);
-			my_finished_job -> task = tofill;
-			my_finished_job -> task -> block_number = (block_numbers_current[xk1]++);
-			my_finished_job -> outbin_len = 0;
-			master_notify_worker(&worker_mut, current_worker);
-			current_worker ++;
-			if(current_worker == compress_workers) current_worker=0;
-		}
-		for(xk1=0; xk1<compress_workers; xk1++){
-			struct scRNA_merge_batches_worker_current * my_finished_job = worker_current_jobs+current_worker;
-			if(my_finished_job -> task)master_wait_for_job_done(&worker_mut, current_worker);
-			scRNA_save_BAM_result(global_context, my_finished_job);
-
-			current_worker ++;
-			if(current_worker == compress_workers) current_worker=0;
-		}
-
-		//TODO: add "scRNA_barcode_batched_bin_no+1" bin into "all unmapped"
-
-		for(xk1 = 0; xk1 < 1+compress_workers; xk1++) for(xk2 = 0; xk2 < global_context->scRNA_sample_sheet_table -> numOfElements;xk2++) 
-			task_buffers[ xk1 * global_context->scRNA_sample_sheet_table -> numOfElements  + xk2 ].inbin_len = 0;
-		current_worker = 0;
-		FILE * notmapped_fp = input_fps[global_context -> scRNA_barcode_batched_bin_no+1];
-		while(1){
-			int sample_id = 0, binlen = 0;
-			int rlen = fread(&sample_id, 1, 4, notmapped_fp);
-			if(rlen < 4) break;
-			struct scRNA_merge_batches_worker_task * tofill = task_buffers+(current_filling_worker_per_sample[sample_id -1] * global_context->scRNA_sample_sheet_table -> numOfElements +sample_id-1);
-			int rrv = fread(&binlen, 1, 4, notmapped_fp);
-			memcpy(tofill -> inbin + tofill -> inbin_len, &binlen, 4);
-			tofill -> inbin_len += 4;
-			rrv = rrv && fread(tofill -> inbin + tofill -> inbin_len, 1, binlen, notmapped_fp);
-			tofill -> inbin_len += binlen;
-			if(tofill-> inbin_len > 60000){
-				struct scRNA_merge_batches_worker_current * my_finished_job = worker_current_jobs+current_worker;
-				if(my_finished_job -> task)master_wait_for_job_done(&worker_mut, current_worker);
-				scRNA_save_BAM_result(global_context, my_finished_job);
-				my_finished_job -> task = tofill;
-				my_finished_job -> task -> block_number = (block_numbers_current[sample_id-1]++);
-				my_finished_job -> outbin_len = 0;
-				master_notify_worker(&worker_mut, current_worker);
-
-				current_filling_worker_per_sample[sample_id-1] ++;
-				if(current_filling_worker_per_sample[sample_id-1] == compress_workers +1) current_filling_worker_per_sample[sample_id-1] = 0;
-				tofill = task_buffers+(current_filling_worker_per_sample[sample_id-1] * global_context->scRNA_sample_sheet_table -> numOfElements +sample_id-1);
-				tofill -> inbin_len = 0;
-				
-				current_worker ++;
-				if(current_worker == compress_workers) current_worker=0;
-			}
-		}
-
-		for(xk1=0; xk1<global_context -> scRNA_sample_sheet_table -> numOfElements; xk1++){
-			struct scRNA_merge_batches_worker_task * tofill = task_buffers+(current_filling_worker_per_sample[xk1] * global_context->scRNA_sample_sheet_table -> numOfElements +xk1);
-			if(tofill->inbin_len<1) continue;
-
-			master_wait_for_job_done(&worker_mut, current_worker);
-			struct scRNA_merge_batches_worker_current * my_finished_job = worker_current_jobs+current_worker;
-			scRNA_save_BAM_result(global_context, my_finished_job);
-			my_finished_job -> task = tofill;
-			my_finished_job -> task -> block_number = (block_numbers_current[xk1]++);
-			my_finished_job -> outbin_len = 0;
-			master_notify_worker(&worker_mut, current_worker);
-			current_worker ++;
-			if(current_worker == compress_workers) current_worker=0;
-		}
-
-		for(xk1=0; xk1<compress_workers; xk1++){
-			master_wait_for_job_done(&worker_mut, current_worker);
-			struct scRNA_merge_batches_worker_current * my_finished_job = worker_current_jobs+current_worker;
-			scRNA_save_BAM_result(global_context, my_finished_job);
-
-			current_worker ++;
-			if(current_worker == compress_workers) current_worker=0;
-		}
-
-		fclose(notmapped_fp);
-		terminate_workers(&worker_mut);
-		free(task_buffers);
-		free(worker_current_jobs);
-		
-
-		for(xk1=0; xk1< compress_workers; xk1++){
-			pthread_join(threads[xk1],NULL);
-		}
-
-		worker_master_mutex_destroy(&worker_mut);
-		global_context -> scRNA_applied_umi_cut = calloc(sizeof(int), global_context -> scRNA_sample_sheet_table -> numOfElements);
-		scRNA_merged_to_tables_write(global_context , cellnoP1_to_genenoP1_to_UMIs , loaded_features, nexons);
-
-		for(xk1=0; xk1<global_context -> scRNA_sample_sheet_table -> numOfElements; xk1++)
-			HashTableDestroy(cellnoP1_to_genenoP1_to_UMIs[xk1]);
-
-
-		HashTable ** used_cell_no_tables = malloc(sizeof(HashTable*) * global_context -> scRNA_sample_sheet_table -> numOfElements);
-		for(xk1=0; xk1<global_context -> scRNA_sample_sheet_table -> numOfElements; xk1++){
-			used_cell_no_tables[xk1] = HashTableCreate(30000);
-			used_cell_no_tables[xk1] -> appendix1 = malloc(sizeof(pthread_spinlock_t));
-			pthread_spin_init((pthread_spinlock_t*)used_cell_no_tables[xk1] -> appendix1,1);
-		}
-
-		
-
-		for(xk1=0; xk1<global_context -> scRNA_sample_sheet_table -> numOfElements; xk1++){
-			pthread_spin_destroy((pthread_spinlock_t*)used_cell_no_tables[xk1] -> appendix1);
-			HashTableDestroy(used_cell_no_tables[xk1]);
-		}
-
-		free(used_cell_no_tables);
-	}
 
 	for(xk1=0; xk1<global_context-> thread_number; xk1++)
 	{
@@ -6344,152 +4235,8 @@ void fc_NCfree(void * vv){
 	free(vv);
 }
 
-void scRNA_convert_ss_to_arr( void * key, void * hashed_obj, HashTable * tab ){
-	ArrayList * hashed_arr = hashed_obj ;
-	fc_thread_global_context_t * global_context = tab->appendix1;
-	ArrayListPush(global_context -> scRNA_sample_id_to_name, key);
-	hashed_arr -> appendix1 = NULL+global_context -> scRNA_sample_id_to_name -> numOfElements; // One-based
 
-	srInt_64 xx1;
-	for(xx1 =0; xx1< hashed_arr -> numOfElements; xx1++){
-		char ** push_arr = malloc(sizeof(char*)*4);
-		char ** sbc_lane_sample = ArrayListGet(hashed_arr, xx1);
-		srInt_64 lane_sample_int = sbc_lane_sample[0]-(char*)NULL;
-
-		ArrayListPush(global_context -> scRNA_sample_barcode_list, push_arr);
-		push_arr[0] = NULL + lane_sample_int; 
-		push_arr[1] = NULL + global_context -> scRNA_sample_id_to_name -> numOfElements;
-		push_arr[2] = sbc_lane_sample[1]; // Sample Barcode
-		push_arr[3] = NULL + (sbc_lane_sample[1]!=NULL && strlen(sbc_lane_sample[1])>12);
-
-		int line_no_in_sheet = sbc_lane_sample[2] - (char*)NULL;
-		HashTablePut(global_context -> scRNA_lineno1B_to_sampleno1B_tab , NULL+line_no_in_sheet, NULL + global_context -> scRNA_sample_id_to_name -> numOfElements);
-		//SUBREADprintf("Push_LineNo : %d -> %d\n", line_no_in_sheet, global_context -> scRNA_sample_id_to_name -> numOfElements);
-		//SUBREADprintf("Push Barcode %s in Lane %ld for %s [%d]\n", push_arr[2], (sbc_lane_sample[0]-(char*)NULL), key, global_context -> scRNA_sample_id_to_name -> numOfElements);
-	}
-}
-
-
-void scRNA_cell_barcode_tabel_destroy(void *a){
-	if(((a-NULL) & 0xfffffffff0000000llu ) ==IMPOSSIBLE_MEMORY_SPACE )return;
-	ArrayListDestroy((ArrayList*)a);
-}
-
-void scRNA_make_barcode_HT_table( fc_thread_global_context_t * global_context ){
-	int xx1,xx2;
-	global_context -> scRNA_cell_barcode_head_tail_table = StringTableCreate(600000);
-	HashTableSetDeallocationFunctions( global_context -> scRNA_cell_barcode_head_tail_table, free, scRNA_cell_barcode_tabel_destroy);
-
-	for(xx1=0;xx1 < global_context-> scRNA_cell_barcodes_array -> numOfElements; xx1++){
-		char * bc = ArrayListGet(global_context-> scRNA_cell_barcodes_array, xx1);
-		int bcl =strlen(bc);
-		if(global_context -> known_cell_barcode_length==0) global_context -> known_cell_barcode_length=bcl;
-		if(bcl!=global_context -> known_cell_barcode_length){
-//			SUBREADprintf("The cell barcodes have variable lengths. This may be a new protocol and we don't support it yet.\n");
-			assert(bcl==global_context -> known_cell_barcode_length);
-		}
-		char bctmp[20];
-		HashTablePut(global_context -> scRNA_cell_barcode_head_tail_table, strdup(bc), NULL+xx1+IMPOSSIBLE_MEMORY_SPACE);
-		for(xx2=0; xx2<2; xx2++){
-			bctmp[0] = xx2?'S':'F';
-			int xx3;
-			for(xx3 = 0; xx3< global_context -> known_cell_barcode_length/2; xx3++)
-				bctmp[xx3+1] = bc[ xx3*2+xx2 ];
-			bctmp[bcl/2+1]=0;
-
-			ArrayList * array_of_codes = HashTableGet(global_context -> scRNA_cell_barcode_head_tail_table, bctmp);
-			if(!array_of_codes){
-				array_of_codes = ArrayListCreate(4);
-				HashTablePut(global_context -> scRNA_cell_barcode_head_tail_table, strdup(bctmp), array_of_codes);
-			}
-			ArrayListPush(array_of_codes, NULL+xx1);
-		}
-	}
-}
-
-
-void scRNA_close_sample_SamBam_writers(void *v){
-	void ** vv = v;
-	simple_bam_writer * wtr = vv[0];
-	simple_bam_close(wtr);
-
-	if(vv[1]){
-		parallel_gzip_writer_t* gzfp = vv[1];
-		parallel_gzip_writer_close(gzfp);
-		free(gzfp);
-
-		gzfp = vv[2];
-		parallel_gzip_writer_close(gzfp);
-		free(gzfp);
-
-		gzfp = vv[3]; // I2
-		if(gzfp){
-			parallel_gzip_writer_close(gzfp);
-			free(gzfp);
-		}
-
-		gzfp = vv[4];
-		parallel_gzip_writer_close(gzfp);
-		free(gzfp);
-	}
-
-	pthread_spinlock_t * gz_lock = vv[5];
-	pthread_spin_destroy(gz_lock);
-	free(gz_lock);
-	
-	free(vv);
-}
-
-#define SORT_BAM_FROM_SCRNA 1
-void scRNA_sample_SamBam_writers_new_files(void *k, void *v, HashTable * tab){
-	HashTable * fp_tab = tab -> appendix1;
-	fc_thread_global_context_t * global_context = tab -> appendix2;
-	ArrayList * scRNA_sample_id_to_name = tab -> appendix3;
-
-	char * samplename = k;
-	char fname [MAX_FILE_NAME_LENGTH+20], fnamet[MAX_FILE_NAME_LENGTH+20];
-	SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s.bam", samplename);
-	SUBreadSprintf(fnamet, MAX_FILE_NAME_LENGTH+20, "del4-cC-tmp0-%s.del", samplename);
-	simple_bam_writer * wtr = simple_bam_create(fname);
-	parallel_gzip_writer_t * gzipR1fq=NULL, * gzipI1fq=NULL, * gzipR2fq=NULL, *gzipI2fq =NULL;
-
-	if(global_context -> scRNA_input_mode == GENE_INPUT_BCL || global_context -> scRNA_input_mode == GENE_INPUT_SCRNA_BAM){
-		gzipR1fq = calloc(sizeof(parallel_gzip_writer_t),1);
-		gzipI1fq = calloc(sizeof(parallel_gzip_writer_t),1);
-		if(global_context -> scRNA_dual_index)gzipI2fq = calloc(sizeof(parallel_gzip_writer_t),1);
-		gzipR2fq = calloc(sizeof(parallel_gzip_writer_t),1);
-		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_R1.fastq.gz", samplename);
-		parallel_gzip_writer_init(gzipR1fq, fname, global_context -> thread_number);
-		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_I1.fastq.gz", samplename);
-		parallel_gzip_writer_init(gzipI1fq, fname, global_context -> thread_number);
-		if(gzipI2fq){
-			SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_I2.fastq.gz", samplename);
-			parallel_gzip_writer_init(gzipI2fq, fname, global_context -> thread_number);
-		}
-		SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "%s_R2.fastq.gz", samplename);
-		parallel_gzip_writer_init(gzipR2fq, fname, global_context -> thread_number);
-	}
-
-	pthread_spinlock_t * gzfp_lock = malloc(sizeof(pthread_spinlock_t));
-	pthread_spin_init(gzfp_lock, PTHREAD_PROCESS_PRIVATE);
-	int x1;
-	for(x1=0; x1<scRNA_sample_id_to_name -> numOfElements; x1++){
-		char * sample_name = ArrayListGet( scRNA_sample_id_to_name, x1 );
-		if(strcmp(sample_name, samplename)==0){
-			void ** wtrptr = malloc(sizeof(void*)*6);
-			wtrptr[0]=wtr;
-			wtrptr[1]=gzipR1fq;
-			wtrptr[2]=gzipI1fq;
-			wtrptr[3]=gzipI2fq;
-			wtrptr[4]=gzipR2fq;
-			wtrptr[5]=gzfp_lock;
-			HashTablePut(fp_tab, NULL+x1+1 , wtrptr);
-			break;
-		}
-	}
-}
-
-void fc_thread_init_global_context(fc_thread_global_context_t * global_context, unsigned int buffer_size, unsigned short threads, int line_length, int min_pe_dist, int max_pe_dist, int is_gene_level, int is_overlap_allowed, char * strand_check_mode, char * output_fname, int is_sam_out, int is_both_end_required, int is_chimertc_disallowed, int is_PE_distance_checked, char *feature_name_column, char * gene_id_column, int min_map_qual_score, int is_multi_mapping_allowed, int is_SAM, char * alias_file_name, char * cmd_rebuilt, int is_input_file_resort_needed, int feature_block_size, int isCVersion, int fiveEndExtension,  int threeEndExtension, int minFragmentOverlap, int is_split_or_exonic_only, int reduce_5_3_ends_to_one, char * debug_command, int is_duplicate_ignored, int is_not_sort, int use_fraction_multimapping, int useOverlappingBreakTie, char * pair_orientations, int do_junction_cnt, int max_M, int isRestrictlyNoOvelrapping, float fracOverlap, char * temp_dir, int use_stdin_file, int assign_reads_to_RG, int long_read_minimum_length, int is_verbose, float frac_feature_overlap, int do_detection_call, int max_missing_bases_in_read, int max_missing_bases_in_feature, int is_primary_alignment_only, char * Rpath, char * extra_column_names , char * annotation_file_screen_output, int read_shift_type, int read_shift_size, char * scRNA_sample_sheet, char * scRNA_cell_barcode_list, int is_scRNA_BAM_FQ_out_generated, int scRNA_input_mode, int scRNA_rerun_on_persample_BAM, float scRNA_umi_cutoff, int is_dual_index ) {
+void fc_thread_init_global_context(fc_thread_global_context_t * global_context, unsigned int buffer_size, unsigned short threads, int line_length, int min_pe_dist, int max_pe_dist, int is_gene_level, int is_overlap_allowed, char * strand_check_mode, char * output_fname, int is_sam_out, int is_both_end_required, int is_chimertc_disallowed, int is_PE_distance_checked, char *feature_name_column, char * gene_id_column, char * transcript_id_column, int min_map_qual_score, int is_multi_mapping_allowed, int is_SAM, char * alias_file_name, char * cmd_rebuilt, int is_input_file_resort_needed, int feature_block_size, int isCVersion, int fiveEndExtension,  int threeEndExtension, int minFragmentOverlap, int is_split_or_exonic_only, int reduce_5_3_ends_to_one, char * debug_command, int is_duplicate_ignored, int is_not_sort, int use_fraction_multimapping, int useOverlappingBreakTie, char * pair_orientations, int do_junction_cnt, int max_M, int isRestrictlyNoOvelrapping, float fracOverlap, char * temp_dir, int use_stdin_file, int assign_reads_to_RG, int long_read_minimum_length, int is_verbose, float frac_feature_overlap, int do_detection_call, int max_missing_bases_in_read, int max_missing_bases_in_feature, int is_primary_alignment_only, char * Rpath, char * extra_column_names , char * annotation_file_screen_output, int read_shift_type, int read_shift_size, int is_dual_index ) {
 	int x1;
 	myrand_srand(time(NULL));
 
@@ -6550,44 +4297,6 @@ void fc_thread_init_global_context(fc_thread_global_context_t * global_context, 
 	global_context -> debug_command = debug_command;
 	global_context -> max_M = max_M;
 	global_context -> max_BAM_header_size = buffer_size;
-	if(scRNA_sample_sheet){
-		global_context -> scRNA_umi_cutoff = scRNA_umi_cutoff;
-		global_context -> do_scRNA_table = 1;
-		global_context -> scRNA_sample_id_to_name = ArrayListCreate(64);
-		global_context -> scRNA_lineno1B_to_sampleno1B_tab = HashTableCreate(10);
-		strcpy(global_context->scRNA_sample_sheet,scRNA_sample_sheet);
-		global_context-> scRNA_sample_sheet_table = input_BLC_parse_SampleSheet( global_context->scRNA_sample_sheet );
-		global_context-> scRNA_sample_sheet_table -> appendix1 = global_context;
-		global_context -> scRNA_sample_barcode_list = ArrayListCreate(64);
-		ArrayListSetDeallocationFunction(global_context -> scRNA_sample_barcode_list, free);
-		HashTableIteration(global_context-> scRNA_sample_sheet_table, scRNA_convert_ss_to_arr);
-
-		if(scRNA_cell_barcode_list){
-			strcpy(global_context->scRNA_cell_barcode_list,scRNA_cell_barcode_list);
-			global_context-> scRNA_cell_barcodes_array = input_BLC_parse_CellBarcodes( global_context->scRNA_cell_barcode_list );
-			scRNA_make_barcode_HT_table( global_context );
-			//print_in_box(80,0,0,"Loaded %ld cell barcodes from the list.", global_context-> scRNA_cell_barcodes_array -> numOfElements);
-		}
-		global_context -> is_scRNA_BAM_FQ_out_generated = is_scRNA_BAM_FQ_out_generated;
-		global_context -> scRNA_dual_index = is_dual_index ;
-		global_context -> scRNA_input_mode = scRNA_input_mode;
-		global_context -> scRNA_rerun_on_persample_BAM = scRNA_rerun_on_persample_BAM;
-		global_context -> scRNA_barcode_batched_bin_no = 149;
-		pthread_spin_init(&global_context -> scRNA_do_one_batch_runner_lock, PTHREAD_PROCESS_PRIVATE);
-		global_context -> scRNA_barcode_batched_locks = malloc(sizeof(pthread_spinlock_t)*(global_context -> scRNA_barcode_batched_bin_no+2));
-		global_context -> scRNA_barcode_batched_bins = malloc(sizeof(FILE*)*(global_context -> scRNA_barcode_batched_bin_no+2));
-		for(x1=0; x1<global_context -> scRNA_barcode_batched_bin_no+2; x1++){
-			char tmp_fname[MAX_FILE_NAME_LENGTH+20];
-			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+20, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), x1);
-			//SUBREADprintf("CREATE TEMP FILE %s\n" , tmp_fname);
-			global_context -> scRNA_barcode_batched_bins[x1]=fopen(tmp_fname, "wb");
-			pthread_spin_init(global_context -> scRNA_barcode_batched_locks+x1, PTHREAD_PROCESS_PRIVATE);
-		}
-	}else{
-		global_context -> do_scRNA_table = 0;
-		global_context-> scRNA_cell_barcodes_array = NULL;
-		global_context-> scRNA_sample_sheet_table = NULL;
-	}
 
 	global_context -> read_counters.unassigned_ambiguous=0;
 	global_context -> read_counters.unassigned_nofeatures=0;
@@ -6624,6 +4333,7 @@ void fc_thread_init_global_context(fc_thread_global_context_t * global_context, 
 
 	strcpy(global_context -> feature_name_column,feature_name_column);
 	strcpy(global_context -> gene_id_column,gene_id_column);
+	strcpy(global_context -> transcript_id_column,transcript_id_column);
 	strcpy(global_context -> output_file_name, output_fname);
 	global_context -> output_file_path[0]=0;
 	for( x1 = strlen(output_fname)-1; x1 >= 0; x1 --){
@@ -6648,18 +4358,9 @@ void fc_thread_init_global_context(fc_thread_global_context_t * global_context, 
 }
 
 
-
-int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_exons, int * et_geneid, char ** et_chr, srInt_64 * et_start, srInt_64 * et_stop, unsigned char * et_strand, char * et_anno_chr_2ch, char ** et_anno_chrs, srInt_64 * et_anno_chr_heads, srInt_64 * et_bk_end_index, srInt_64 * et_bk_min_start, srInt_64 * et_bk_max_end, int read_length)
-{
-	int xk1;
-
-	global_context -> read_length = read_length;
-	global_context -> is_unpaired_warning_shown = 0;
-	global_context -> is_stake_warning_shown = 0;
-	global_context -> is_read_too_long_to_SAM_BAM_shown = 0;
-
-	if(global_context -> is_read_details_out)
-	{
+void fc_thread_start_open_report_fp(fc_thread_global_context_t * global_context){
+	if(global_context -> read_details_out_FP) fclose( global_context -> read_details_out_FP );
+	if(global_context -> is_read_details_out){
 		char tmp_fname[MAX_FILE_NAME_LENGTH+20], *modified_fname;
 		int i=0;
 		char * applied_detail_path = global_context -> output_file_path;
@@ -6689,9 +4390,19 @@ int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_
 		}else{
 			SUBREADprintf("Unable to create file '%s'; the read assignment details are not written.\n", tmp_fname);
 		}
-	}
-	else
-		global_context -> read_details_out_FP = NULL;
+	}else global_context -> read_details_out_FP = NULL;
+}
+
+int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_exons, int * et_geneid, char ** et_chr, srInt_64 * et_start, srInt_64 * et_stop, unsigned char * et_strand, char * et_anno_chr_2ch, char ** et_anno_chrs, srInt_64 * et_anno_chr_heads, srInt_64 * et_bk_end_index, srInt_64 * et_bk_min_start, srInt_64 * et_bk_max_end, int read_length)
+{
+	int xk1;
+
+	global_context -> read_length = read_length;
+	global_context -> is_unpaired_warning_shown = 0;
+	global_context -> is_stake_warning_shown = 0;
+	global_context -> is_read_too_long_to_SAM_BAM_shown = 0;
+
+	fc_thread_start_open_report_fp(global_context);
 
 	global_context -> redo = 0;
 	global_context -> exontable_geneid = et_geneid;
@@ -6707,6 +4418,7 @@ int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_
 	global_context -> exontable_block_min_start = et_bk_min_start;
 	global_context -> sambam_chro_table_items = 0;
 	global_context -> sambam_chro_table = NULL;
+
 
 	global_context -> thread_contexts = malloc(sizeof(fc_thread_thread_context_t) * global_context -> thread_number);
 	for(xk1=0; xk1<global_context -> thread_number; xk1++)
@@ -6784,24 +4496,6 @@ int fc_thread_start_threads(fc_thread_global_context_t * global_context, int et_
 			HashTableSetKeyComparisonFunction(global_context -> thread_contexts[xk1].RG_table, fc_strcmp_chro);
 		}
 
-		if(global_context -> do_scRNA_table){
-			global_context -> thread_contexts[xk1].scRNA_reads_per_sample = calloc(sizeof(srInt_64),global_context-> scRNA_sample_sheet_table ->numOfElements);
-			global_context -> thread_contexts[xk1].scRNA_mapped_reads_per_sample = calloc(sizeof(srInt_64),global_context-> scRNA_sample_sheet_table ->numOfElements);
-			global_context -> thread_contexts[xk1].scRNA_assigned_reads_per_sample = calloc(sizeof(srInt_64),global_context-> scRNA_sample_sheet_table ->numOfElements);
-			global_context -> thread_contexts[xk1].scRNA_sample_bc_tables = malloc(sizeof(HashTable*) * global_context -> scRNA_sample_id_to_name -> numOfElements);
-			global_context -> thread_contexts[xk1].scRNA_registered_UMI_table = StringTableCreate(100000);
-			HashTableSetDeallocationFunctions(global_context  -> thread_contexts[xk1].scRNA_registered_UMI_table, free, NULL);
-			int xk2;
-			for(xk2 = 0; xk2 < global_context -> scRNA_sample_id_to_name -> numOfElements; xk2++){
-				HashTable *al = HashTableCreate(2000);
-				HashTableSetDeallocationFunctions(al, NULL, (void (*)(void*))HashTableDestroy);
-				//SUBREADprintf("PUSH ARR for THR %d XK2 %d\n", xk1, xk2);
-				global_context -> thread_contexts[xk1].scRNA_sample_bc_tables[xk2] = al;
-			}
-			global_context -> thread_contexts[xk1].scRNA_pooled_reads=0;
-			global_context -> thread_contexts[xk1].scRNA_has_valid_sample_index  =0;
-			global_context -> thread_contexts[xk1].scRNA_has_valid_cell_barcode  =0;
-		}
 		if(!global_context ->  thread_contexts[xk1].count_table) return 1;
 	}
 
@@ -6873,18 +4567,6 @@ void fc_thread_destroy_thread_context(fc_thread_global_context_t * global_contex
 			free(global_context -> thread_contexts[xk1].bam_compressed_buff);
 		}
 
-		if(global_context -> do_scRNA_table){
-			int xk2;
-			for(xk2=0;xk2< global_context -> scRNA_sample_id_to_name -> numOfElements;xk2++) {
-				HashTableDestroy(global_context -> thread_contexts[xk1].scRNA_sample_bc_tables[xk2]);
-			}
-			//HashTableDestroy(global_context -> scRNA_sample_BAM_writers);
-			free(global_context -> thread_contexts[xk1].scRNA_reads_per_sample);
-			free(global_context -> thread_contexts[xk1].scRNA_mapped_reads_per_sample);
-			free(global_context -> thread_contexts[xk1].scRNA_assigned_reads_per_sample);
-			free(global_context -> thread_contexts[xk1].scRNA_sample_bc_tables);
-			HashTableDestroy(global_context -> thread_contexts[xk1].scRNA_registered_UMI_table);
-		}
 	}
 
 	free(global_context -> thread_contexts);
@@ -7580,11 +5262,6 @@ void print_usage()
 	SUBREADputs("                      removed). By default, intermediate files will be saved to");
 	SUBREADputs("                      the directory specified in '-o' argument.");
 	SUBREADputs("");
-	SUBREADputs("  --maxMOp <int>      Maximum number of 'M' operations allowed in a CIGAR");
-	SUBREADputs("                      string. 10 by default. Both 'X' and '=' are treated as 'M'");
-	SUBREADputs("                      and adjacent 'M' operations are merged in the CIGAR");
-	SUBREADputs("                      string.");
-	SUBREADputs("");
 	SUBREADputs("  --verbose           Output verbose information for debugging, such as un-");
 	SUBREADputs("                      matched chromosome/contig names.");
 	SUBREADputs("");
@@ -7687,12 +5364,264 @@ void junckey_sort_merge(void * inptr, int start, int items1, int items2){
 	free(tmpp);
 }
 
-int junccmp(fc_junction_gene_t * j1, fc_junction_gene_t * j2){
-	if(strcmp( j1 -> gene_name, j2 -> gene_name ) == 0)
-		return 0;
-	return 1;
+
+#define JC_STATUS_NA 0
+#define JC_STATUS_KNOWN 1
+#define JC_STATUS_NOVEL 2
+#define JC_STATUS_NOVEL_FUSION 3
+#define MAX_OVERLAP_EDGE_NUMBER 1000
+#define JC_OUT_GENE_COLUMNS_LENGTH (MAX_OVERLAP_EDGE_NUMBER * (4+CHROMOSOME_NAME_LENGTH)) 
+
+
+void find_nearest_gene_dist(fc_thread_global_context_t * global_context, int side_small, int side_large, char * dist_to_nearest_splice_side_str_SP1,  char * dist_to_nearest_splice_side_str_SP2,
+				int junc_near_LLedge_no, int junc_near_LRedge_no, int junc_near_RLedge_no, int junc_near_RRedge_no,
+				IVT_Interval ** junc_nearest_LLedges, IVT_Interval ** junc_nearest_LRedges, IVT_Interval ** junc_nearest_RLedges, IVT_Interval ** junc_nearest_RRedges, char * my_chro);
+
+int determine_jcount_gene_transcript_report(fc_thread_global_context_t * global_context, int side_small, int side_large, int junc_olay_genebody_left_result_no,int junc_olay_genebody_right_result_no, IVT_Interval ** junc_genebody_olayleft, IVT_Interval ** junc_genebody_olayright, char * gene_ids_str_SP1, char * gene_ids_str_SP2, char * transcript_ids_str_SP1, char * transcript_ids_str_SP2, char * dist_to_nearest_splice_side_str_SP1,  char * dist_to_nearest_splice_side_str_SP2, int strand_learnt_from_FASTA, int junc_near_LLedge_no, int junc_near_LRedge_no, int junc_near_RLedge_no, int junc_near_RRedge_no, IVT_Interval ** junc_nearest_LLedges, IVT_Interval ** junc_nearest_LRedges, IVT_Interval ** junc_nearest_RLedges, IVT_Interval ** junc_nearest_RRedges, char * my_chro){
+	int xk1,xk2, txp_id, retv=0;
+
+	gene_ids_str_SP1[0] = transcript_ids_str_SP1[0] = dist_to_nearest_splice_side_str_SP1[0] =
+	gene_ids_str_SP2[0] = transcript_ids_str_SP2[0] = dist_to_nearest_splice_side_str_SP2[0] = 'N';
+
+	gene_ids_str_SP1[1] = transcript_ids_str_SP1[1] = dist_to_nearest_splice_side_str_SP1[1] =
+	gene_ids_str_SP2[1] = transcript_ids_str_SP2[1] = dist_to_nearest_splice_side_str_SP2[1] = 'A';
+
+	gene_ids_str_SP1[2] = transcript_ids_str_SP1[2] = dist_to_nearest_splice_side_str_SP1[2] =
+	gene_ids_str_SP2[2] = transcript_ids_str_SP2[2] = dist_to_nearest_splice_side_str_SP2[2] = '\0';
+
+	HashTable * match1_txn_table = StringTableCreate(100);
+	HashTable * edge1P1_table = StringTableCreate(100);
+	HashTable * edge2P1_table = StringTableCreate(100);
+
+	HashTable * edge1exonNo_table = StringTableCreate(100);
+	HashTable * edge2exonNo_table = StringTableCreate(100);
+
+	ArrayList * common_txn_list = ArrayListCreate(10);
+	int small_site_exactly = 0;
+	int large_site_exactly = 0;
+	for(xk1=0; xk1<junc_olay_genebody_left_result_no; xk1++){
+		fc_junction_genebody_t * jg_ptr = junc_genebody_olayleft[xk1]->attr;
+		for(txp_id = 0; txp_id < jg_ptr -> transcript_list -> numOfElements; txp_id ++){
+			srInt_64 edge1_dist = 0xffffffffu;
+			fc_junction_transcript_t * txp_ptr = ArrayListGet(jg_ptr -> transcript_list, txp_id);
+			ArrayList * exon_list = txp_ptr -> exons_in_transcript;
+			int exactly_matched_exon_no = -1;
+			for(xk2=0; xk2< exon_list->numOfElements; xk2++){
+				fc_junction_exon_in_transcript_t * jte_ptr = ArrayListGet(exon_list,xk2);
+				if(strand_learnt_from_FASTA >=0 && strand_learnt_from_FASTA !=  jte_ptr -> is_negative) continue;
+				int exon_start_known = jte_ptr -> chro_start;
+				int exon_end_known = jte_ptr -> chro_stop;
+				int dist_to_any_side = min(abs(side_small - exon_end_known),abs(side_small - exon_start_known));
+				if(dist_to_any_side < edge1_dist){
+					edge1_dist = dist_to_any_side;
+					if(0==edge1_dist) exactly_matched_exon_no = xk2;
+				}
+			}
+			if(edge1_dist!=0xffffffffu){
+				HashTablePut(edge1P1_table, txp_ptr -> transcript_id, NULL+1+edge1_dist);
+				if(0==edge1_dist){
+					small_site_exactly++;
+					HashTablePut(edge1exonNo_table, txp_ptr -> transcript_id, NULL+1+exactly_matched_exon_no);
+				}
+			}
+		}
+	}
+	
+	for(xk1=0; xk1<junc_olay_genebody_right_result_no; xk1++){
+		fc_junction_genebody_t * jg_ptr = junc_genebody_olayright[xk1]->attr;
+		for(txp_id = 0; txp_id < jg_ptr -> transcript_list -> numOfElements; txp_id ++){
+			srInt_64 edge2_dist = 0xffffffffu;
+			fc_junction_transcript_t * txp_ptr = ArrayListGet(jg_ptr -> transcript_list, txp_id);
+			ArrayList * exon_list = txp_ptr -> exons_in_transcript;
+			int exactly_matched_exon_no = -1;
+			for(xk2=0; xk2< exon_list->numOfElements; xk2++){
+				fc_junction_exon_in_transcript_t * jte_ptr = ArrayListGet(exon_list,xk2);
+				if(strand_learnt_from_FASTA >=0 && strand_learnt_from_FASTA !=  jte_ptr -> is_negative) continue;
+				int exon_end_known = jte_ptr -> chro_stop; 
+				int exon_start_known = jte_ptr -> chro_start; 
+				int dist_to_any_side = min(abs(side_large - exon_end_known),abs(side_large - exon_start_known));
+				if(dist_to_any_side < edge2_dist){
+					edge2_dist = dist_to_any_side;
+					if(0==edge2_dist) exactly_matched_exon_no = xk2;
+				}
+			}
+			if(edge2_dist!=0xffffffffu){
+				HashTablePut(edge2P1_table, txp_ptr -> transcript_id, NULL+1+edge2_dist);
+				if(0==edge2_dist){
+					large_site_exactly++;
+					HashTablePut(edge2exonNo_table, txp_ptr -> transcript_id, NULL+1+exactly_matched_exon_no);
+				}
+			}
+		}
+	}
+
+	if(small_site_exactly >0 && large_site_exactly >0){
+		ArrayList * edge1_txnids = HashTableKeys(edge1P1_table);
+		for(xk1=0; xk1<edge1_txnids->numOfElements; xk1++){
+			char * edge1_txnid = ArrayListGet(edge1_txnids, xk1);
+			int edge1_ptr = HashTableGet(edge1P1_table, edge1_txnid)-NULL;
+			if(edge1_ptr!=1)continue;
+			int edge2_ptr = HashTableGet(edge2P1_table, edge1_txnid)-NULL;
+			if(edge2_ptr==1){
+				int exonno_1 = HashTableGet(edge1exonNo_table, edge1_txnid)-NULL-1;
+				int exonno_2 = HashTableGet(edge2exonNo_table, edge1_txnid)-NULL-1;
+				if(abs(exonno_1 - exonno_2)==1 || strstr(edge1_txnid, NIL_TXN_PLACEHOLDER))ArrayListPush(common_txn_list , edge1_txnid);
+			}
+		}
+	}
+
+	if(common_txn_list -> numOfElements > 0){
+		HashTable * out_gene_tab = StringTableCreate(10);
+		HashTable * out_txn_tab = StringTableCreate(10);
+		for(xk1=0; xk1<common_txn_list->numOfElements; xk1++){
+			char *common_txn_id = ArrayListGet(common_txn_list,xk1);
+			fc_junction_transcript_t *txnptr = HashTableGet(global_context ->junction_transcript_table, common_txn_id);
+			HashTablePut(out_gene_tab, txnptr -> gene_name, NULL+1);
+			HashTablePut(out_txn_tab, txnptr -> transcript_id, NULL+1);
+		}
+		ArrayList * out_gene_list = HashTableKeys(out_gene_tab);
+		ArrayList * out_txn_list = HashTableKeys(out_txn_tab);
+
+		ArrayListSort(out_gene_list, ArrayListStringComparison);
+		ArrayListSort(out_txn_list, ArrayListStringComparison);
+
+		ArrayListStringJoin(out_gene_list, gene_ids_str_SP1,JC_OUT_GENE_COLUMNS_LENGTH);
+		ArrayListStringJoin(out_txn_list, transcript_ids_str_SP1,JC_OUT_GENE_COLUMNS_LENGTH);
+
+		// when they share the same genes and txns, the lists must be identical for two sides. 
+		ArrayListStringJoin(out_gene_list, gene_ids_str_SP2,JC_OUT_GENE_COLUMNS_LENGTH);
+		//ArrayListStringJoin(out_txn_list, transcript_ids_str_SP2,JC_OUT_GENE_COLUMNS_LENGTH);
+
+		ArrayListDestroy(out_gene_list);
+		ArrayListDestroy(out_txn_list);
+		HashTableDestroy(out_txn_tab);
+		HashTableDestroy(out_gene_tab);
+		retv = JC_STATUS_KNOWN; 
+	}
+	if(retv==0){
+		int side_i;
+		for(side_i=0; side_i<2; side_i++){
+			HashTable * this_side_reported_genes = StringTableCreate(10);
+			int this_side_has_exactly = side_i?large_site_exactly:small_site_exactly;
+			HashTable * this_side_olay_tab = side_i?edge2P1_table:edge1P1_table;
+			ArrayList * edge_txnids = HashTableKeys(this_side_olay_tab);
+
+			for(xk1 = 0; xk1 < edge_txnids -> numOfElements; xk1++){
+				char * this_side_txn_id = ArrayListGet(edge_txnids,xk1);
+				srInt_64 edge_dist = HashTableGet(this_side_olay_tab, this_side_txn_id)-NULL;
+				if( this_side_has_exactly==0 || edge_dist == 1 ){
+					fc_junction_transcript_t * txn_ptr = HashTableGet(global_context -> junction_transcript_table,  this_side_txn_id);
+					HashTablePut(this_side_reported_genes, txn_ptr -> gene_name, NULL+1);
+				}
+			}
+
+			ArrayList * this_side_reported_list = HashTableKeys(this_side_reported_genes);
+			ArrayListSort(this_side_reported_list, ArrayListStringComparison);
+			ArrayListStringJoin(this_side_reported_list, side_i?gene_ids_str_SP2:gene_ids_str_SP1,JC_OUT_GENE_COLUMNS_LENGTH);
+			ArrayListDestroy(this_side_reported_list);
+			HashTableDestroy(this_side_reported_genes);
+		}
+
+		retv = JC_STATUS_NOVEL;
+	}
+
+	ArrayListDestroy(common_txn_list);
+	HashTableDestroy(match1_txn_table);
+	HashTableDestroy(edge1P1_table);
+	HashTableDestroy(edge2P1_table);
+	HashTableDestroy(edge1exonNo_table);
+	HashTableDestroy(edge2exonNo_table);
+
+	find_nearest_gene_dist(global_context, side_small, side_large,
+				dist_to_nearest_splice_side_str_SP1, dist_to_nearest_splice_side_str_SP2,
+				junc_near_LLedge_no, junc_near_LRedge_no, junc_near_RLedge_no, junc_near_RRedge_no,
+				junc_nearest_LLedges,  junc_nearest_LRedges,  junc_nearest_RLedges,  junc_nearest_RRedges, my_chro);
+
+	if(strstr(transcript_ids_str_SP1,NIL_TXN_PLACEHOLDER)) strcpy(transcript_ids_str_SP1,"NA");
+	if(global_context -> ignore_transcript_junction_assignment) retv = JC_STATUS_NA;
+	
+	return retv;
 }
 
+void find_nearest_gene_dist(fc_thread_global_context_t * global_context, int side_small, int side_large, char * dist_to_nearest_splice_side_str_SP1,  char * dist_to_nearest_splice_side_str_SP2,
+				int junc_near_LLedge_no, int junc_near_LRedge_no, int junc_near_RLedge_no, int junc_near_RRedge_no,
+				IVT_Interval ** junc_nearest_LLedges, IVT_Interval ** junc_nearest_LRedges, IVT_Interval ** junc_nearest_RLedges, IVT_Interval ** junc_nearest_RRedges, char * exon_SE_chro){
+	int side_i, xk1;
+	for(side_i=0; side_i<2; side_i++){
+		int Lscan_edge_no = side_i?junc_near_RLedge_no:junc_near_LLedge_no;
+		int Rscan_edge_no = side_i?junc_near_RRedge_no:junc_near_LRedge_no;
+		srInt_64 this_side = side_i?side_large:side_small;
+		int L_scan_dist = -1, L_exon_SE_coord = -1;
+		int R_scan_dist = -1, R_exon_SE_coord = -1;
+		IVT_Interval ** L_scan_res = side_i?junc_nearest_RLedges:junc_nearest_LLedges;
+		IVT_Interval ** R_scan_res = side_i?junc_nearest_RRedges:junc_nearest_LRedges;
+		int show_genes_L = 0;
+		int show_genes_R = 0;
+		if(Lscan_edge_no >0){
+			L_scan_dist = abs( this_side - L_scan_res[0]->start );
+			L_exon_SE_coord = L_scan_res[0]->start;
+		}
+		if(Rscan_edge_no >0){
+			R_scan_dist = abs( this_side - R_scan_res[0]->start );
+			R_exon_SE_coord = R_scan_res[0]->start;
+		}
+
+		int final_dist = -1;
+		if(Lscan_edge_no >0 && Rscan_edge_no<1){
+			show_genes_L = 1;
+			final_dist = L_scan_dist;
+		}else if(Lscan_edge_no <1 && Rscan_edge_no>0){
+			show_genes_R = 1;
+			final_dist = R_scan_dist;
+		}else if(Lscan_edge_no >0 && Rscan_edge_no>0){
+			if(L_scan_dist < R_scan_dist) show_genes_L = 1;
+			else if(L_scan_dist > R_scan_dist) show_genes_R = 1;
+			else{
+				show_genes_L = 1;
+				show_genes_R = 1;
+			}
+			final_dist = min(R_scan_dist, L_scan_dist);
+		}
+		if(final_dist<1) show_genes_R = 0; //L and R search had the same results.
+		if(show_genes_L || show_genes_R){
+			char * outchrs = side_i?dist_to_nearest_splice_side_str_SP2:dist_to_nearest_splice_side_str_SP1;
+			int lri, outchrs_ptr=0;
+			for(lri=0; lri<2; lri++){
+				HashTable * gene_name_tab = StringTableCreate(10);
+				if(lri==0 && !show_genes_L) continue;
+				if(lri==1 && !show_genes_R) continue;
+				int this_scan_dir_items;
+				IVT_Interval ** this_scan_dir_item_ptr;
+				if(side_i){
+					this_scan_dir_items = lri?junc_near_RRedge_no:junc_near_RLedge_no;
+					this_scan_dir_item_ptr = lri?junc_nearest_RRedges:junc_nearest_RLedges;
+				}else{
+					this_scan_dir_items = lri?junc_near_LRedge_no:junc_near_LLedge_no;
+					this_scan_dir_item_ptr = lri?junc_nearest_LRedges:junc_nearest_LLedges;
+				}
+				for(xk1 = 0; xk1 < this_scan_dir_items ; xk1++){
+					char * gene_name = this_scan_dir_item_ptr[xk1] -> attr;
+					HashTablePut(gene_name_tab, gene_name, NULL+1);
+				}
+
+				ArrayList * gene_name_list = HashTableKeys(gene_name_tab);
+				ArrayListSort(gene_name_list, ArrayListStringComparison);
+				int me_exon_SE_coord = lri?R_exon_SE_coord:L_exon_SE_coord;
+				outchrs_ptr += SUBreadSprintf(outchrs+outchrs_ptr, JC_OUT_GENE_COLUMNS_LENGTH - outchrs_ptr,"%s:%d,", exon_SE_chro, me_exon_SE_coord);
+				outchrs_ptr += ArrayListStringJoin(gene_name_list, outchrs+outchrs_ptr, JC_OUT_GENE_COLUMNS_LENGTH - outchrs_ptr-12);
+				ArrayListDestroy(gene_name_list);
+				HashTableDestroy(gene_name_tab);
+
+				char * lrstr = lri?",right":",left";
+				if (final_dist < 1) lrstr = "";
+				outchrs_ptr += SUBreadSprintf(outchrs+outchrs_ptr, JC_OUT_GENE_COLUMNS_LENGTH - outchrs_ptr,",%d%s", final_dist, lrstr);
+				if(outchrs_ptr)outchrs[outchrs_ptr ++]=';';
+			}
+			if(outchrs[outchrs_ptr-1]==';') outchrs_ptr--;
+			outchrs[outchrs_ptr] = 0;
+		}
+	}
+}
 
 void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char * output_file_name, ArrayList * column_names, ArrayList * junction_global_table_list, ArrayList * splicing_global_table_list){
 	int infile_i, disk_is_full = 0;
@@ -7766,19 +5695,14 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 	char outfname[MAX_FILE_NAME_LENGTH];
 	SUBreadSprintf(outfname, MAX_FILE_NAME_LENGTH, "%s.jcounts", output_file_name);
 
-	int max_junction_genes = 3000;
-	char * gene_names = malloc(max_junction_genes * FEATURE_NAME_LENGTH), * gene_name_tail;
-	fc_junction_gene_t ** ret_juncs_small = malloc(sizeof(fc_junction_gene_t *) * max_junction_genes);
-	fc_junction_gene_t ** ret_juncs_large = malloc(sizeof(fc_junction_gene_t *) * max_junction_genes);
-	fc_junction_gene_t ** junction_key_list = malloc(sizeof(fc_junction_gene_t *)* max_junction_genes * 2);
-	unsigned int * junction_support_list = malloc(sizeof(int)* max_junction_genes * 2);
-	unsigned char * junction_source_list = malloc(sizeof(char)* max_junction_genes * 2 );
-
-	int ky_i1, ky_i2;
 	FILE * ofp = fopen(outfname, "w");
 	char * tmpp = NULL;
 
-	fprintf(ofp, "PrimaryGene\tSecondaryGenes\tSite1_chr\tSite1_location\tSite1_strand\tSite2_chr\tSite2_location\tSite2_strand");
+	fprintf(ofp, "Gene_SP1\tGene_SP2\tTranscript\t"
+            "Status\tDonor\tAcceptor\t"
+            "Chr_SP1\tLocation_SP1\tStrand_SP1\tChr_SP2\tLocation_SP2\tStrand_SP2\t"
+            "NearestExonBoundary_SP1\tNearestExonBoundary_SP2" 
+        );
 
 	for(infile_i=0; infile_i < column_names -> numOfElements; infile_i++)
 	{
@@ -7787,11 +5711,13 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 	}
 	fprintf(ofp, "\n");
 
+	IVT_Interval ** junc_genebody_olayleft = malloc(sizeof(void*) * MAX_OVERLAP_EDGE_NUMBER);
+	IVT_Interval ** junc_genebody_olayright = malloc(sizeof(void*) * MAX_OVERLAP_EDGE_NUMBER);
+	IVT_Interval ** junc_nearest_LLedges = malloc(sizeof(void*) * MAX_OVERLAP_EDGE_NUMBER);
+	IVT_Interval ** junc_nearest_RLedges = malloc(sizeof(void*) * MAX_OVERLAP_EDGE_NUMBER);
+	IVT_Interval ** junc_nearest_LRedges = malloc(sizeof(void*) * MAX_OVERLAP_EDGE_NUMBER);
+	IVT_Interval ** junc_nearest_RRedges = malloc(sizeof(void*) * MAX_OVERLAP_EDGE_NUMBER);
 	for(ky_i = 0; ky_i < merged_junction_table -> numOfElements ; ky_i ++){
-
-		//SUBREADprintf("KY=%s\n", key_list[ky_i]);
-
-		int unique_junctions = 0;
 		char * chro_small = strtok_r( key_list[ky_i] , "\t", &tmpp);
 		char * pos_small_str = strtok_r( NULL, "\t", &tmpp);
 		char * chro_large = strtok_r( NULL, "\t", &tmpp);
@@ -7799,9 +5725,6 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 
 		unsigned int pos_small = atoi(pos_small_str);
 		unsigned int pos_large = atoi(pos_large_str);
-
-		int found_features_small = locate_junc_features(global_context, chro_small, pos_small, ret_juncs_small , max_junction_genes); 
-		int found_features_large = locate_junc_features(global_context, chro_large, pos_large, ret_juncs_large , max_junction_genes);
 
 		char * strand = "NA";
 		if(global_context -> fasta_contigs){
@@ -7820,93 +5743,110 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 
 			}
 		}
-
-		//SUBREADprintf("FOUND=%d, %d\n", found_features_small, found_features_large);
-
-		gene_name_tail = gene_names;
-		gene_names[0]=0;
-
-		// rules to choose the primary gene:
-		// (1) if some genes have one support but the other have multiple supporting reads: remove the lowly supported genes
-		// (2) if all genes have only one support but from different ends of the fragment, then remove the genes that are assigned to the end having lower supporting fragments
-		// (3) choose the gene that have the smallest coordinate.
-
-		int max_supp = 0;
-		for(ky_i1 = 0; ky_i1 < found_features_small + found_features_large; ky_i1++){
-			int is_duplicate = 0;
-			fc_junction_gene_t * tested_key = (ky_i1 < found_features_small)?ret_juncs_small[ky_i1] :ret_juncs_large[ky_i1 - found_features_small];
-			for(ky_i2 = 0; ky_i2 < unique_junctions; ky_i2 ++){
-				if(junccmp( tested_key, junction_key_list[ky_i2]  )==0){
-					junction_support_list[ ky_i2 ] ++;
-					junction_source_list[ky_i2] |= ( (ky_i1 < found_features_small)? 1 : 2 );
-					is_duplicate = 1;
-
-					max_supp = max(junction_support_list[ky_i2], max_supp);
-					break;
-				}
-			}
-
-			if(!is_duplicate){
-				junction_key_list[unique_junctions] = tested_key;
-				junction_support_list[unique_junctions] = 1;
-				junction_source_list[unique_junctions] = ( (ky_i1 < found_features_small)? 1 : 2 );
-				max_supp = max(junction_support_list[unique_junctions], max_supp);
-				unique_junctions++;
+		assert(0==strcmp(chro_small, chro_large));
+		// Junction keys retain the BAM reference name.  Resolve that name to the
+		// GTF reference name before querying the GTF-derived junction trees, using
+		// the same order as ordinary read-to-feature assignment: exact, explicit
+		// alias, strip "chr", then add "chr".  The alias CSV is ordered as
+		// GTF/annotation chromosome name in column 1, BAM/read chromosome name
+		// in column 2; the loaded table maps the BAM name back to the GTF name.
+		char junction_anno_chro_buff[CHROMOSOME_NAME_LENGTH + 1];
+		char * junction_anno_chro = chro_small;
+		IVT_IntervalTreeNode * IVT_gbody_root = HashTableGet(global_context -> junction_GenebodyTree_table, junction_anno_chro);
+		if(IVT_gbody_root == NULL && global_context -> BAM_chros_to_anno_table)
+		{
+			char * anno_chro_name = HashTableGet(global_context -> BAM_chros_to_anno_table, chro_small);
+			if(anno_chro_name){
+				junction_anno_chro = anno_chro_name;
+				IVT_gbody_root = HashTableGet(global_context -> junction_GenebodyTree_table, junction_anno_chro);
 			}
 		}
-
-		if(1 == max_supp){
-			if(found_features_small > 0 && found_features_large > 0){
-				char junc_key [FEATURE_NAME_LENGTH + 15]; 
-				SUBreadSprintf(junc_key, FEATURE_NAME_LENGTH+15, "%s\t%u", chro_small, pos_small);
-				unsigned int supp_small = HashTableGet(merged_splicing_table, junc_key) - NULL;
-				SUBreadSprintf(junc_key, FEATURE_NAME_LENGTH+15, "%s\t%u", chro_large, pos_large);
-				unsigned int supp_large = HashTableGet(merged_splicing_table, junc_key) - NULL;
-
-				if(supp_small !=supp_large){
-					for(ky_i2 = 0; ky_i2 < unique_junctions; ky_i2 ++){
-						if(supp_small > supp_large && junction_source_list[ky_i2] == 1) junction_key_list[ky_i2] = NULL;
-						else if(supp_small < supp_large && junction_source_list[ky_i2] == 2) junction_key_list[ky_i2] = NULL;
-					}
-				} 
-			}
+		if(IVT_gbody_root == NULL && memcmp(chro_small, "chr", 3)==0)
+		{
+			junction_anno_chro = chro_small + 3;
+			IVT_gbody_root = HashTableGet(global_context -> junction_GenebodyTree_table, junction_anno_chro);
+		}
+		if(IVT_gbody_root == NULL && strlen(chro_small)<=2)
+		{
+			SUBreadSprintf(junction_anno_chro_buff, CHROMOSOME_NAME_LENGTH + 1, "chr%s", chro_small);
+			junction_anno_chro = junction_anno_chro_buff;
+			IVT_gbody_root = HashTableGet(global_context -> junction_GenebodyTree_table, junction_anno_chro);
 		}
 
-		int smallest_coordinate_gene = 0x7fffffff;
-		fc_junction_gene_t * primary_gene = NULL;
-		
-		for(ky_i2 = 0; ky_i2 < unique_junctions; ky_i2 ++){
-			fc_junction_gene_t * tested_key = junction_key_list[ky_i2];
-			if(tested_key != NULL && junction_support_list[ky_i2] == max_supp && tested_key -> pos_first_base < smallest_coordinate_gene){
-				primary_gene = tested_key;
-				smallest_coordinate_gene = tested_key -> pos_first_base;
-			}
-		}
+		int this_edge_tab_i = 0; // no strand info
+		if(strand[0]=='+') this_edge_tab_i = 1;
+		if(strand[0]=='-') this_edge_tab_i = 2;
+		HashTable * this_edge_tab = global_context -> junction_ExonEdgeTree_table[this_edge_tab_i];
+		IVT_IntervalTreeNode * IVT_edge_root = HashTableGet(this_edge_tab, junction_anno_chro);
 
-		if(primary_gene == NULL){
-			strcpy(gene_names, "NA");
+		char gene_ids_str_SP1[JC_OUT_GENE_COLUMNS_LENGTH], gene_ids_str_SP2[JC_OUT_GENE_COLUMNS_LENGTH],
+		     transcript_ids_str_SP1[JC_OUT_GENE_COLUMNS_LENGTH], transcript_ids_str_SP2[JC_OUT_GENE_COLUMNS_LENGTH],
+		     dist_to_nearest_splice_side_str_SP1[JC_OUT_GENE_COLUMNS_LENGTH], dist_to_nearest_splice_side_str_SP2[JC_OUT_GENE_COLUMNS_LENGTH];
+		strcpy(gene_ids_str_SP1,"NA");
+		strcpy(gene_ids_str_SP2,"NA");
+		strcpy(transcript_ids_str_SP1,"NA");
+		strcpy(transcript_ids_str_SP2,"NA");
+		strcpy(dist_to_nearest_splice_side_str_SP1,"NA");
+		strcpy(dist_to_nearest_splice_side_str_SP2,"NA");
+
+//fprintf(stderr,"IVT_PTR %p  %s\n", IVT_gbody_root, chro_small);
+		char * jc_retv_str = "NA";
+		int jc_gene_status = -1;
+
+		int strand_learned_from_FASTA = -1;
+		if(strand[0]=='+') strand_learned_from_FASTA =0;
+		if(strand[0]=='-') strand_learned_from_FASTA =1;
+		if(IVT_gbody_root){
+			int junc_olay_genebody_left_result_no, junc_olay_genebody_right_result_no, junc_near_LLedge_no, junc_near_LRedge_no, junc_near_RLedge_no, junc_near_RRedge_no;
+			junc_olay_genebody_left_result_no = IVT_query(IVT_gbody_root, pos_small, junc_genebody_olayleft, MAX_OVERLAP_EDGE_NUMBER);
+			junc_olay_genebody_right_result_no = IVT_query(IVT_gbody_root, pos_large, junc_genebody_olayright, MAX_OVERLAP_EDGE_NUMBER);
+
+			junc_near_LLedge_no = IVT_edges_lr(IVT_edge_root,pos_small,junc_nearest_LLedges,MAX_OVERLAP_EDGE_NUMBER,1);
+			junc_near_LRedge_no = IVT_edges_lr(IVT_edge_root,pos_small,junc_nearest_LRedges,MAX_OVERLAP_EDGE_NUMBER,0);
+
+			junc_near_RLedge_no = IVT_edges_lr(IVT_edge_root,pos_large,junc_nearest_RLedges,MAX_OVERLAP_EDGE_NUMBER,1);
+			junc_near_RRedge_no = IVT_edges_lr(IVT_edge_root,pos_large,junc_nearest_RRedges,MAX_OVERLAP_EDGE_NUMBER,0);
+
+
+
+//if(abs(pos_small - 2168686)<=1 && abs(pos_large - 2169791)<=1) fprintf(stderr,"STRAND_I %d  LRquery NOs %d %d  %s %s\n", this_edge_tab_i, junc_near_LLedge_no, junc_near_RRedge_no , junc_near_LLedge_no<1?NULL:(junc_nearest_LLedges[0]->attr), junc_near_RRedge_no<1?NULL:(junc_nearest_RRedges[0]->attr) );
+
+			if(junc_olay_genebody_left_result_no == MAX_OVERLAP_EDGE_NUMBER|| junc_olay_genebody_right_result_no==MAX_OVERLAP_EDGE_NUMBER ||
+                             junc_near_LLedge_no == MAX_OVERLAP_EDGE_NUMBER || junc_near_RLedge_no == MAX_OVERLAP_EDGE_NUMBER||
+                             junc_near_LRedge_no == MAX_OVERLAP_EDGE_NUMBER || junc_near_RRedge_no == MAX_OVERLAP_EDGE_NUMBER
+                           ){
+				SUBREADprintf("WARNING: Your annotation file contains very many exons that start/end at the same location. Consider to increase MAX_OVERLAP_EDGE_NUMBER in readSummary.c to accomodate these exons for junction counting.\n");
+			}
+
+			jc_gene_status = determine_jcount_gene_transcript_report(global_context , pos_small, pos_large, junc_olay_genebody_left_result_no, junc_olay_genebody_right_result_no, junc_genebody_olayleft, junc_genebody_olayright, gene_ids_str_SP1,gene_ids_str_SP2, transcript_ids_str_SP1, transcript_ids_str_SP2, dist_to_nearest_splice_side_str_SP1, dist_to_nearest_splice_side_str_SP2, strand_learned_from_FASTA, junc_near_LLedge_no, junc_near_LRedge_no, junc_near_RLedge_no, junc_near_RRedge_no, junc_nearest_LLedges,junc_nearest_LRedges,junc_nearest_RLedges,junc_nearest_RRedges, chro_small);
+		}
+		if(jc_gene_status == JC_STATUS_KNOWN) jc_retv_str = "KNOWN";
+		if(jc_gene_status == JC_STATUS_NOVEL) jc_retv_str = "NOVEL";
+		if(jc_gene_status == JC_STATUS_NA) jc_retv_str = "NA";
+		char donorside[20], acceptorside[20];
+		if( strand_learned_from_FASTA == -1){
+			strcpy(donorside,"NA");
+			strcpy(acceptorside,"NA");
+		}else if(strand_learned_from_FASTA == 0 ){
+			strcpy(donorside,"SP1");
+			strcpy(acceptorside,"SP2");
 		}else{
-			strcpy(gene_names, primary_gene -> gene_name);
+			strcpy(donorside,"SP2");
+			strcpy(acceptorside,"SP1");
 		}
+
+		fprintf(ofp, "%s\t%s\t%s\t"
+				"%s\t%s\t%s\t"
+				"%s\t%d\t%s\t%s\t%d\t%s\t"
+				"%s\t%s",
+				gene_ids_str_SP1,gene_ids_str_SP2,transcript_ids_str_SP1,
+				jc_retv_str,donorside,acceptorside,
+				chro_small,pos_small,strand,  chro_large,pos_large,strand,
+				dist_to_nearest_splice_side_str_SP1,  dist_to_nearest_splice_side_str_SP2
+		);
 
 		*(pos_small_str-1)='\t';
 		*(pos_large_str-1)='\t';
-
-		fprintf(ofp, "%s", gene_names);
-	
-		gene_name_tail = gene_names;
-		gene_names[0]=0;
-		for(ky_i2 = 0; ky_i2 < unique_junctions; ky_i2 ++){
-			fc_junction_gene_t * tested_key = junction_key_list[ky_i2];
-			if(tested_key && tested_key != primary_gene)
-				gene_name_tail += SUBreadSprintf(gene_name_tail, max_junction_genes * FEATURE_NAME_LENGTH , "%s,", tested_key -> gene_name);
-		}
-		if( gene_names[0] ) gene_name_tail[-1]=0;
-		else strcpy(gene_names, "NA");
-		fprintf(ofp, "\t%s", gene_names);
-
-		fprintf(ofp, "\t%s\t%s\t%s\t%s", chro_small, strand, chro_large, strand);
-
 		chro_large[-1]='\t';
 
 		for(infile_i = 0 ; infile_i < column_names -> numOfElements ; infile_i ++){
@@ -7922,13 +5862,13 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 		if(wlen < 1) disk_is_full = 1;
 	}
 	fclose(ofp);
-	free(junction_key_list);
-	free(gene_names);
-	free(ret_juncs_small);
-	free(ret_juncs_large);
-	free(junction_support_list);
 	free(key_list);
-	free(junction_source_list);
+	free(junc_genebody_olayleft);
+	free(junc_genebody_olayright);
+	free(junc_nearest_LLedges);
+	free(junc_nearest_RLedges);
+	free(junc_nearest_LRedges);
+	free(junc_nearest_RRedges);
 
 	//print_in_box(80,0,PRINT_BOX_CENTER,"Found %llu junctions in all the input files.", merged_junction_table -> numOfElements);
 	//print_in_box(80,0,0,"");
@@ -7939,14 +5879,6 @@ void fc_write_final_junctions(fc_thread_global_context_t * global_context,  char
 		unlink(outfname);
 		SUBREADprintf("ERROR: disk is full; no junction counting table is generated.\n");
 	}
-}
-
-HashTable * scRNA_copy_loaded_features(srInt_64 nexons, fc_feature_info_t* loaded_features){
-	HashTable * ret = HashTableCreate(50000);
-	srInt_64 x1;
-	for(x1 =0; x1<nexons; x1++)
-		HashTablePut(ret , NULL +1 +loaded_features[x1].sorted_order, NULL +1 +x1);
-	return ret;
 }
 
 int readSummary_single_file(fc_thread_global_context_t * global_context, read_count_type_t * column_numbers, srInt_64 nexons,  int * geneid, char ** chr, srInt_64 * start, srInt_64 * stop, unsigned char * sorted_strand, char * anno_chr_2ch, char ** anno_chrs, srInt_64 * anno_chr_head, srInt_64 * block_end_index, srInt_64 * block_min_start , srInt_64 * block_max_end, fc_read_counters * my_read_counter, HashTable * junc_glob_tab, HashTable * splicing_glob_tab, HashTable * merged_RG_table, fc_feature_info_t * loaded_features);
@@ -8040,13 +5972,13 @@ int readSummary(int argc,char *argv[]){
 	55: as.numeric(read_shift_size) : how many bases to shift. Mush be a positive number or zero.
 	 */
 
-	int isCVersion, isChimericDisallowed, isPEDistChecked, minMappingQualityScore=0, isInputFileResortNeeded, feature_block_size = 20, reduce_5_3_ends_to_one, useStdinFile, assignReadsToRG, long_read_minimum_length, is_verbose, do_detectionCall, max_missing_bases_in_feature, max_missing_bases_in_read, is_Primary_Alignment_only, read_shift_size, read_shift_type, scRNA_input_mode;
-	float fracOverlap, fracOverlapFeature, umi_cutoff;
+	int isCVersion, isChimericDisallowed, isPEDistChecked, minMappingQualityScore=0, isInputFileResortNeeded, feature_block_size = 20, reduce_5_3_ends_to_one, useStdinFile, assignReadsToRG, long_read_minimum_length, is_verbose, do_detectionCall, max_missing_bases_in_feature, max_missing_bases_in_read, is_Primary_Alignment_only, read_shift_size, read_shift_type;
+	float fracOverlap, fracOverlapFeature;
 	char **chr;
 	srInt_64 *start, *stop;
 	int *geneid;
 
-	char *nameFeatureTypeColumn, *nameGeneIDColumn,*debug_command, *pair_orientations="fr", *temp_dir, *file_name_ptr =NULL, *strand_check_mode = NULL, *extra_column_names = NULL, *scRNA_sample_sheet = NULL, *scRNA_cell_barcode_list = NULL ;
+	char *nameFeatureTypeColumn, *nameTranscriptIDColumn, *nameGeneIDColumn,*debug_command, *pair_orientations="fr", *temp_dir, *file_name_ptr =NULL, *strand_check_mode = NULL, *extra_column_names = NULL;
 	srInt_64 nexons;
 
 
@@ -8055,10 +5987,10 @@ int readSummary(int argc,char *argv[]){
 	char * fasta_contigs_fname, *annotation_file_screen_output;
 	unsigned char * sorted_strand;
 
-	int minPEDistance, maxPEDistance, isReadSummaryReport, isBothEndRequired, isMultiMappingAllowed, fiveEndExtension, threeEndExtension, minFragmentOverlap, isSplitOrExonicOnly, is_duplicate_ignored, doNotSort, fractionMultiMapping, useOverlappingBreakTie, doJuncCounting, max_M, isRestrictlyNoOvelrapping ,is_scRNA_BAM_FQ_out_generated, scRNA_rerun_on_persample_BAM;
+	int minPEDistance, maxPEDistance, isReadSummaryReport, isBothEndRequired, isMultiMappingAllowed, fiveEndExtension, threeEndExtension, minFragmentOverlap, isSplitOrExonicOnly, is_duplicate_ignored, doNotSort, fractionMultiMapping, useOverlappingBreakTie, doJuncCounting, max_M, isRestrictlyNoOvelrapping;
 	char * isPEassign,  *is_paired_end_reads_expected;
 
-	int  isGTF, n_input_files=0,is_dual_index, scrna_total_BAM_no;
+	int  isGTF, n_input_files=0,is_dual_index;
 	char * alias_file_name = NULL, * cmd_rebuilt = NULL, * Rpath = NULL;
 
 	int isMultiOverlapAllowed, isGeneLevel;
@@ -8208,8 +6140,8 @@ int readSummary(int argc,char *argv[]){
 			fasta_contigs_fname = argv[37];
 
 	if(argc>38)
-		max_M = min(65535, max(1,atoi(argv[38])));
-	else	max_M = 10;
+		max_M = min(65536, max(1,atoi(argv[38])));
+	else	max_M = 65536;
 
 	if(argc>39)
 		isRestrictlyNoOvelrapping = atoi(argv[39]);
@@ -8236,8 +6168,10 @@ int readSummary(int argc,char *argv[]){
 	if(argc>44)
 		long_read_minimum_length = atoi(argv[44])?1:1999999999;
 	else  long_read_minimum_length = 1999999999;
+	if(long_read_minimum_length == 1) max_M = 65536; 
 
 	if(long_read_minimum_length < 2 && isPEassign[0]=='1'){
+		// this is because long read pairser cannot pair PE reads by names.
 		SUBREADputs("ERROR: long read assignment can only be done on single-end mode");
 		return -1;
 	}
@@ -8285,32 +6219,15 @@ int readSummary(int argc,char *argv[]){
 	if(argc>55) read_shift_size = atoi(argv[55]);
 	else read_shift_size = 0;
 
-	if(argc>56 && strlen(argv[56])>0 && argv[56][0]!=' ') scRNA_sample_sheet = argv[56];
-	else scRNA_sample_sheet = NULL;
-
-	if(argc>57 && strlen(argv[57])>0 && argv[57][0]!=' ') scRNA_cell_barcode_list = argv[57];
-	else scRNA_cell_barcode_list = NULL;
-
 	if(argc>58 && strlen(argv[58])>0 && argv[58][0]!=' ') is_paired_end_reads_expected = argv[58];
 	else is_paired_end_reads_expected = "0";
-
-	if(argc>59 && strlen(argv[59])>0 && argv[59][0]!=' ') is_scRNA_BAM_FQ_out_generated = atoi(argv[59]);
-	else is_scRNA_BAM_FQ_out_generated = 1;
-
-	if(argc>60) scRNA_input_mode = (argv[60][0]-'0');
-	else scRNA_input_mode = GENE_INPUT_BCL;
-
-	if(argc>61) scRNA_rerun_on_persample_BAM = (argv[61][0]-'0');
-	else scRNA_rerun_on_persample_BAM = 0;
-
-	if(argc>62) umi_cutoff = atof(argv[62]);
-	else umi_cutoff = -1;
 
 	if(argc>63) is_dual_index = (strcmp(argv[63],"Dual-Index")==0);
 	else is_dual_index =0; 
 
-	if(argc>64) scrna_total_BAM_no = atoi(argv[64]);
-	else scrna_total_BAM_no =0; 
+	if(argc > 65)
+		nameTranscriptIDColumn = argv[65];
+	else	nameTranscriptIDColumn = "transcript_id";
 
 	if(read_shift_size<0){
 		SUBREADprintf("ERROR: why the value for read_shift_size is negative?\n");
@@ -8343,7 +6260,7 @@ int readSummary(int argc,char *argv[]){
 
 	fc_thread_global_context_t global_context;
 
-	fc_thread_init_global_context(& global_context, FEATURECOUNTS_BUFFER_SIZE, thread_number, MAX_LINE_LENGTH, minPEDistance, maxPEDistance,isGeneLevel, isMultiOverlapAllowed, strand_check_mode, (char *)argv[3] , isReadSummaryReport, isBothEndRequired, isChimericDisallowed, isPEDistChecked, nameFeatureTypeColumn, nameGeneIDColumn, minMappingQualityScore,isMultiMappingAllowed, 0, alias_file_name, cmd_rebuilt, isInputFileResortNeeded, feature_block_size, isCVersion, fiveEndExtension, threeEndExtension , minFragmentOverlap, isSplitOrExonicOnly, reduce_5_3_ends_to_one, debug_command, is_duplicate_ignored, doNotSort, fractionMultiMapping, useOverlappingBreakTie, pair_orientations, doJuncCounting, max_M, isRestrictlyNoOvelrapping, fracOverlap, temp_dir, useStdinFile, assignReadsToRG, long_read_minimum_length, is_verbose, fracOverlapFeature, do_detectionCall, max_missing_bases_in_read, max_missing_bases_in_feature, is_Primary_Alignment_only, Rpath, extra_column_names, annotation_file_screen_output, read_shift_type, read_shift_size, scRNA_sample_sheet, scRNA_cell_barcode_list, is_scRNA_BAM_FQ_out_generated, scRNA_input_mode, scRNA_rerun_on_persample_BAM, umi_cutoff,is_dual_index );
+	fc_thread_init_global_context(& global_context, FEATURECOUNTS_BUFFER_SIZE, thread_number, MAX_LINE_LENGTH, minPEDistance, maxPEDistance,isGeneLevel, isMultiOverlapAllowed, strand_check_mode, (char *)argv[3] , isReadSummaryReport, isBothEndRequired, isChimericDisallowed, isPEDistChecked, nameFeatureTypeColumn, nameGeneIDColumn, nameTranscriptIDColumn, minMappingQualityScore,isMultiMappingAllowed, 0, alias_file_name, cmd_rebuilt, isInputFileResortNeeded, feature_block_size, isCVersion, fiveEndExtension, threeEndExtension , minFragmentOverlap, isSplitOrExonicOnly, reduce_5_3_ends_to_one, debug_command, is_duplicate_ignored, doNotSort, fractionMultiMapping, useOverlappingBreakTie, pair_orientations, doJuncCounting, max_M, isRestrictlyNoOvelrapping, fracOverlap, temp_dir, useStdinFile, assignReadsToRG, long_read_minimum_length, is_verbose, fracOverlapFeature, do_detectionCall, max_missing_bases_in_read, max_missing_bases_in_feature, is_Primary_Alignment_only, Rpath, extra_column_names, annotation_file_screen_output, read_shift_type, read_shift_size, is_dual_index );
 
 	fc_thread_init_input_files( & global_context, argv[2], &file_name_ptr );
 
@@ -8360,22 +6277,12 @@ int readSummary(int argc,char *argv[]){
 	}
 
 	sort_feature_info(&global_context, nexons, loaded_features, &chr, &geneid, &start, &stop, &sorted_strand, &anno_chr_2ch, &anno_chrs, &anno_chr_head, & block_end_index, & block_min_start, & block_max_end);
-	if((!global_context.do_scRNA_table) || global_context.is_gene_level) global_context.lineno_2_sortedno_tab = NULL;
-	else global_context.lineno_2_sortedno_tab = scRNA_copy_loaded_features(nexons, loaded_features);
-	if(global_context.do_junction_counting){
-		sort_bucket_table(&global_context);
-	}
+	global_context.lineno_2_sortedno_tab = NULL;
+
 	print_in_box(80,0,0,"   Meta-features : %d", global_context . gene_name_table -> numOfElements);
 	print_in_box(80,0,0,"   Chromosomes/contigs : %d", global_context . exontable_nchrs);
 
 	print_in_box(80,0,0,"");
-
-	if(global_context.do_scRNA_table){
-		print_in_box(80,0,0,"Load scRNA-related files...");
-		print_in_box(80,0,0,"   scRNA samples : %d", global_context.scRNA_sample_sheet_table->numOfElements);
-		print_in_box(80,0,0,"   scRNA cell barcodes : %d", global_context.scRNA_cell_barcodes_array -> numOfElements);
-		print_in_box(80,0,0,"");
-	}
 
 	if(fasta_contigs_fname){
 		print_in_box(80,0,0,"Load FASTA contigs from %s...", get_short_fname(fasta_contigs_fname));
@@ -8490,30 +6397,6 @@ int readSummary(int argc,char *argv[]){
 			assert(global_context.is_strand_checked >=0 && global_context.is_strand_checked <=2);
 		}else global_context.is_strand_checked = one_single_strand_mode;
 		global_context.redo=0;
-		
-		if(global_context.is_scRNA_BAM_FQ_out_generated && global_context.scRNA_sample_sheet_table){
-			global_context.scRNA_sample_BAM_writers = HashTableCreate(global_context.scRNA_sample_sheet_table -> numOfElements);
-			HashTableSetDeallocationFunctions(global_context.scRNA_sample_BAM_writers, NULL, scRNA_close_sample_SamBam_writers);
-			global_context.scRNA_sample_sheet_table ->appendix1 = global_context.scRNA_sample_BAM_writers;
-			global_context.scRNA_sample_sheet_table ->appendix2 = &global_context;
-			global_context.scRNA_sample_sheet_table ->appendix3 = global_context.scRNA_sample_id_to_name;
-			HashTableIteration( global_context.scRNA_sample_sheet_table, scRNA_sample_SamBam_writers_new_files);
-
-			if(global_context.scRNA_input_mode == GENE_INPUT_BCL || global_context.scRNA_input_mode == GENE_INPUT_SCRNA_BAM){
-				int umfpi;
-				for(umfpi=1; umfpi<=4; umfpi++){
-					char fname [MAX_FILE_NAME_LENGTH+20];
-					char * ftype = "R1";
-					if(3==umfpi && ! global_context.scRNA_dual_index) continue;
-					if(2==umfpi) ftype = "I1";
-					if(3==umfpi) ftype = "I2";
-					if(4==umfpi) ftype = "R2";
-					SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+20, "UnassignedReads%03d_%s.fastq.gz", scrna_total_BAM_no, ftype);
-					parallel_gzip_writer_init(global_context.scRNA_fastq_unassigned_writer+(umfpi-1), fname, global_context.thread_number);
-				}
-				pthread_spin_init(&global_context.scRNA_fastq_unassigned_lock, PTHREAD_PROCESS_PRIVATE);
-			}
-		}
 
 		if(global_context.do_junction_counting){
 			junction_global_table = HashTableCreate(156679);
@@ -8667,34 +6550,6 @@ int readSummary(int argc,char *argv[]){
 	if(global_context.read_details_out_FP) fclose(global_context. read_details_out_FP);
 	HashTableDestroy(global_context.gene_name_table);
 	HashTableDestroy(global_context.GCcontent_table);
-	if(global_context.scRNA_sample_sheet_table){
-		HashTableDestroy(global_context.scRNA_sample_sheet_table);
-		ArrayListDestroy(global_context.scRNA_sample_barcode_list);
-		ArrayListDestroy(global_context.scRNA_sample_id_to_name);
-		HashTableDestroy(global_context.scRNA_lineno1B_to_sampleno1B_tab);
-
-		for(x1=0; x1<global_context.scRNA_barcode_batched_bin_no +2; x1++){
-			char tmp_fname[MAX_FILE_NAME_LENGTH+20];
-			SUBreadSprintf(tmp_fname, MAX_FILE_NAME_LENGTH+20, "%s/cellCounts-Splitted-Reads-%05d-%05d.bin", temp_dir, getpid(), x1);
-			unlink(tmp_fname);
-			pthread_spin_destroy(global_context.scRNA_barcode_batched_locks+x1);
-		}
-		pthread_spin_destroy(&global_context.scRNA_do_one_batch_runner_lock);
-
-		if(global_context.is_scRNA_BAM_FQ_out_generated){
-			HashTableDestroy(global_context.scRNA_sample_BAM_writers);
-			pthread_spin_destroy(&global_context.scRNA_fastq_unassigned_lock);
-			int umfpi;
-			if(global_context.scRNA_input_mode == GENE_INPUT_BCL || global_context.scRNA_input_mode == GENE_INPUT_SCRNA_BAM)
-				for(umfpi = 0; umfpi < 4; umfpi++)
-					if(umfpi!=2 || global_context.scRNA_dual_index)
-						parallel_gzip_writer_close(global_context.scRNA_fastq_unassigned_writer+umfpi);
-		}
-	}
-	if(global_context.scRNA_cell_barcodes_array){
-		ArrayListDestroy(global_context.scRNA_cell_barcodes_array);
-		HashTableDestroy(global_context.scRNA_cell_barcode_head_tail_table);
-	}
 	free(global_context.gene_name_array);
 
 	HashTableDestroy(global_context.exontable_chro_table);
@@ -8705,8 +6560,13 @@ int readSummary(int argc,char *argv[]){
 	if(global_context.BAM_chros_to_anno_table)
 		HashTableDestroy(global_context.BAM_chros_to_anno_table);
 	if(global_context.do_junction_counting){
-		HashTableDestroy(global_context.junction_bucket_table);
-		HashTableDestroy(global_context.junction_features_table);
+		HashTableDestroy(global_context.junction_genebody_table);
+		HashTableDestroy(global_context.junction_transcript_table);
+		HashTableDestroy(global_context.junction_GenebodyTree_table);
+		HashTableDestroy(global_context.junction_ExonEdgeTree_table[0]);
+		HashTableDestroy(global_context.junction_ExonEdgeTree_table[1]);
+		HashTableDestroy(global_context.junction_ExonEdgeTree_table[2]);
+		HashTableDestroy(global_context.junction_ExonTree_table);
 	}
 
 
@@ -8733,68 +6593,6 @@ int readSummary(int argc,char *argv[]){
 	free(strand_mode_list);
 
 	return total_written_coulmns?0:-1;
-}
-
-void register_buckets(fc_thread_global_context_t * global_context , HashTable * gene_feature_table, char * chro_name){
-	KeyValuePair * cursor;
-	int bucket;
-	for(bucket=0; bucket < gene_feature_table -> numOfBuckets; bucket++){
-		cursor = gene_feature_table -> bucketArray[bucket];
-		while(1){
-			if (!cursor) break;
-			fc_junction_gene_t * gene = (fc_junction_gene_t *) cursor -> value;
-			unsigned int x1;
-			
-			for(x1 = gene -> pos_first_base - gene -> pos_first_base % JUNCTION_BUCKET_STEP; x1 <= gene -> pos_last_base ; x1 += JUNCTION_BUCKET_STEP){
-				char bucket_key[CHROMOSOME_NAME_LENGTH + 20];
-				SUBreadSprintf(bucket_key, CHROMOSOME_NAME_LENGTH + 20, "%s:%u", chro_name, x1);
-				gene_info_list_t * list = HashTableGet(global_context -> junction_bucket_table, bucket_key);
-				if(list == NULL){
-					list = malloc(sizeof(gene_info_list_t));
-					list -> space = 3;
-					list -> used = 0;
-					list -> genes = malloc(sizeof(void *) * list -> space);
-					char * mem_bucket_key = malloc(strlen(bucket_key) + 1);
-					strcpy(mem_bucket_key , bucket_key);
-					HashTablePut(global_context -> junction_bucket_table, mem_bucket_key , list);
-				}
-
-				if(list -> used  ==  list -> space){
-					list -> space = max(list -> space + 3, list -> space * 1.3);
-					list -> genes = realloc(list -> genes , list -> space * sizeof(void *));
-				}
-				list -> genes[list -> used++] = gene;
-			}
-			cursor = cursor -> next;
-		}
-	}
-}
-
-void sort_bucket_table(fc_thread_global_context_t * global_context){
-	KeyValuePair * cursor;
-	int bucket;
-	for(bucket=0; bucket < global_context -> junction_features_table -> numOfBuckets; bucket++){
-		cursor = global_context -> junction_features_table -> bucketArray[bucket];
-		while(1){
-			if (!cursor) break;
-			HashTable * gene_feature_table = cursor -> value;
-			char * chro_name = (char *)cursor -> key;
-			register_buckets(global_context , gene_feature_table, chro_name);
-			cursor = cursor -> next;
-		}
-	}
-}
-
-
-void scRNA_generate_BAM_FASTQ(fc_thread_global_context_t * global_context){
-	char MAC_or_random[13];
-	mac_or_rand_str(MAC_or_random);
-	char rand_prefix[MAX_FILE_NAME_LENGTH+100];
-	SUBreadSprintf(rand_prefix, MAX_FILE_NAME_LENGTH+100, "%s/temp-core-%06u-%s.sam", global_context -> temp_file_dir, getpid(), MAC_or_random);
-
-	SAM_pairer_create(&global_context -> scRNA_read_pairer, global_context -> thread_number , global_context -> max_BAM_header_size/1024/1024+2, 1 /* is bam */, 0 /* do not drop seq/qual */ , 1 /*single end*/, 0 /*do not sort*/,0 /* no RG*/ ,0, global_context -> input_file_name, NULL, NULL, process_pairer_scRNAr2_output, rand_prefix, global_context,  9999);
-	SAM_pairer_run(&global_context -> scRNA_read_pairer);
-	SAM_pairer_destroy(&global_context -> scRNA_read_pairer);
 }
 
 int readSummary_single_file(fc_thread_global_context_t * global_context, read_count_type_t * column_numbers, srInt_64 nexons,  int * geneid, char ** chr, srInt_64 * start, srInt_64 * stop, unsigned char * sorted_strand, char * anno_chr_2ch, char ** anno_chrs, srInt_64 * anno_chr_head, srInt_64 * block_end_index, srInt_64 * block_min_start , srInt_64 * block_max_end, fc_read_counters * my_read_counter, HashTable * junction_global_table, HashTable * splicing_global_table, HashTable * merged_RG_table, fc_feature_info_t * loaded_features)
@@ -8840,10 +6638,6 @@ int readSummary_single_file(fc_thread_global_context_t * global_context, read_co
 
 	srInt_64 nreads_mapped_to_exon = 0;
 	fc_thread_merge_results(global_context, column_numbers , &nreads_mapped_to_exon, my_read_counter, junction_global_table, splicing_global_table, merged_RG_table, loaded_features, nexons);
-	if(global_context -> do_scRNA_table){
-		scRNA_generate_BAM_FASTQ(global_context);
-		free(global_context -> scRNA_applied_umi_cut);
-	}
 	fc_thread_destroy_thread_context(global_context);
 
 	if(global_context -> sambam_chro_table) free(global_context -> sambam_chro_table);
@@ -8861,21 +6655,20 @@ int main(int argc, char ** argv)
 int feature_count_main(int argc, char ** argv)
 #endif
 {
-	char * Rargv[64];
+	char * Rargv[65];
 	char annot_name[MAX_FILE_NAME_LENGTH];
 	char temp_dir[MAX_FILE_NAME_LENGTH];
 	char * out_name = malloc(MAX_FILE_NAME_LENGTH);
 	char * fasta_contigs_name = malloc(MAX_FILE_NAME_LENGTH);
 	char * alias_file_name = malloc(MAX_FILE_NAME_LENGTH);
 	char * Rpath = malloc(MAX_FILE_NAME_LENGTH);
-	char * scRNA_sample_sheet = malloc(MAX_FILE_NAME_LENGTH);
-	char * scRNA_cell_barcode_list = malloc(MAX_FILE_NAME_LENGTH);
 
 	int cmd_rebuilt_size = 2000;
 	char * cmd_rebuilt = malloc(cmd_rebuilt_size);
 	char max_M_str[8];
 	char nameFeatureTypeColumn[2000];
 	char nameGeneIDColumn[66];
+	char nameTranscriptIDColumn[66];
 	int min_qual_score = 0;
 	int min_dist = 50;
 	int max_dist = 600;
@@ -8924,19 +6717,15 @@ int feature_count_main(int argc, char ** argv)
 	int option_index = 0;
 	int max_missing_bases_in_feature = -1;
 	int max_missing_bases_in_read = -1;
-	int scRNA_input_mode = GENE_INPUT_BCL;
 	int c;
 	int very_long_file_names_size = 200;
 	int fiveEndExtension = 0, threeEndExtension = 0, minFragmentOverlap = 1;
 	float fracOverlap = 0.0, fracOverlapFeature = 0.0;
 	int std_input_output_mode = 0, long_read_mode = 0, is_verbose = 0;
-	int is_scRNA_BAM_FQ_out_generated = 1;
 	char strFiveEndExtension[11], strThreeEndExtension[11], strMinFragmentOverlap[11], fracOverlapStr[20], std_input_output_mode_str[16], long_read_mode_str[16];
 	very_long_file_names = malloc(very_long_file_names_size);
 	very_long_file_names [0] = 0;
 	fasta_contigs_name[0]=0;
-	scRNA_cell_barcode_list[0]=0;
-	scRNA_sample_sheet[0]=0;
 	is_paired_end_reads_expected[0]='0';
 	is_paired_end_reads_expected[1]='\0';
 
@@ -8946,6 +6735,7 @@ int feature_count_main(int argc, char ** argv)
 	strcpy(read_shift_type,"upstream");
 	strcpy(nameFeatureTypeColumn,"exon");
 	strcpy(nameGeneIDColumn,"gene_id");
+	strcpy(nameTranscriptIDColumn,"transcript_id");
 	strcpy(temp_dir, "<use output directory>");
 	annot_name[0]=0;out_name[0]=0;Rpath[0]=0;
 	
@@ -8964,7 +6754,7 @@ int feature_count_main(int argc, char ** argv)
 	optind=0;
 	opterr=1;
 	optopt=63;
-	strcpy(max_M_str, "10");
+	strcpy(max_M_str, "65536");
 	strcpy(Pair_Orientations,"fr");
 
 	while ((c = getopt_long (argc, argv, "G:A:g:t:T:o:a:d:D:LQ:pbF:fs:S:CBJPMOR:v?", long_options, &option_index)) != -1)
@@ -9133,25 +6923,6 @@ int feature_count_main(int argc, char ** argv)
 						STANDALONE_exit(-1);
 					max_missing_bases_in_read = atoi(optarg);
 				}
-
-				if(strcmp("scCellBarcodeFile", long_options[option_index].name)==0)
-				{
-					 strcpy(scRNA_cell_barcode_list,optarg);
-				}
-
-				if(strcmp("scSampleSheet", long_options[option_index].name)==0)
-				{
-					 strcpy(scRNA_sample_sheet,optarg);
-				}
-
-				if(strcmp("scInputMode", long_options[option_index].name)==0)
-				{
-					if(strcmp("FASTQ", optarg)==0)
-						scRNA_input_mode=GENE_INPUT_SCRNA_FASTQ;
-					if(strcmp("BAM", optarg)==0)
-						scRNA_input_mode=GENE_INPUT_SCRNA_BAM;
-				}
-
 
 				if(strcmp("extraAttributes", long_options[option_index].name)==0)
 				{
@@ -9376,21 +7147,19 @@ int feature_count_main(int argc, char ** argv)
 	Rargv[54] = "NA"; // C featureCounts dosn't need the display_annotation_name.
 	Rargv[54] = read_shift_type;
 	Rargv[55] = read_shift_size_str;
-	Rargv[56] = scRNA_sample_sheet;
-	Rargv[57] = scRNA_cell_barcode_list;
+	Rargv[56] = "NA";
+	Rargv[57] = "NA";
 	Rargv[58] = is_paired_end_reads_expected;
-	Rargv[59] = is_scRNA_BAM_FQ_out_generated?"1":"0";
-
+	Rargv[59] = "0";
 	Rargv[60] = "3";
-	if(scRNA_input_mode == GENE_INPUT_SCRNA_FASTQ) Rargv[60] = "4";
-	if(scRNA_input_mode == GENE_INPUT_SCRNA_BAM) Rargv[60] = "5";
 	Rargv[61] = "0";
 	Rargv[62] = "-1";
 	Rargv[63] = "Single-Index";
+	Rargv[64] = nameTranscriptIDColumn;
 
 	int retvalue = -1;
 	if(is_ReadSummary_Report && (std_input_output_mode & 1)==1) SUBREADprintf("ERROR: no detailed assignment results can be written when the input is from STDIN. Please remove the '-R' option.\n");
-	else retvalue = readSummary(64, Rargv);
+	else retvalue = readSummary(65, Rargv);
 
 	free(very_long_file_names);
 	free(out_name);
@@ -9399,8 +7168,6 @@ int feature_count_main(int argc, char ** argv)
 	if(old_zero_smode != Strand_Sensitive_Str)free(Strand_Sensitive_Str);
 	free(cmd_rebuilt);
 	free(Rpath);
-	free(scRNA_sample_sheet);
-	free(scRNA_cell_barcode_list);
 	if(extra_column_names)free(extra_column_names);
 
 	return retvalue;

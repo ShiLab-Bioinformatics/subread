@@ -1504,6 +1504,40 @@ int SNP_calling(char * in_SAM_file, char * out_BED_file, char * in_FASTA_file, c
 	return 0;
 }
 
+void check_exactSNP_input(char * in_SAM_file,struct SNP_Calling_Parameters * parameters, char ** error_message){
+	SamBam_FILE * bfp = SamBam_fopen(in_SAM_file, parameters -> is_BAM_file_input?SAMBAM_FILE_BAM:SAMBAM_FILE_SAM);
+	if(bfp == NULL){
+		*error_message="ERROR: unable to open the input file.";
+		return;
+	}
+	srInt_64 read_no = 0;
+	SUBREADputs("Check the input format ...");
+	char * linebuf = malloc(MAX_READ_LENGTH*2);
+	char old_read_name[MAX_READ_NAME_LEN];
+	char * cigar = malloc(BAM_MAX_CIGAR_LEN);
+	int old_flag = 0;
+	while(!*error_message){
+		linebuf = SamBam_fgets(bfp, linebuf, MAX_READ_LENGTH*2, 0);
+		if(!linebuf)break;
+		if(linebuf[0]=='@')continue;
+		int flags=0, mapq=0, rl=0, repeated=0;
+		unsigned int pos=0, pairdist=0; 
+		char read_name[MAX_READ_NAME_LEN], chro[MAX_CHROMOSOME_NAME_LEN], seq[MAX_READ_LENGTH], qual[MAX_READ_LENGTH];
+		parse_SAM_line(linebuf, read_name, &flags, chro, &pos, cigar, &mapq, &pairdist, seq, qual, &rl, &repeated);
+		if((flags & 1) == 0)break;
+		if(read_no%2 == 1 && (0!=strcmp(old_read_name, read_name)|| (  (flags & 0xC0) + (old_flag & 0xC0))!=0xC0 )){ // 0x40 + 0x80 = 0xC0
+			*error_message="ERROR: the input paired-end read data are not name-sorted or have two reads in a pair not next to each other. "
+				"We suggest to use output from the Subread/Rsubread aligner for SNP calling.";
+		}
+		strncpy(old_read_name, read_name, MAX_READ_NAME_LEN);
+		old_flag = flags;
+		read_no ++;
+	}
+	
+	free(cigar);
+	free(linebuf);
+	SamBam_fclose(bfp);
+}
 
 void print_usage_snp(char * myname)
 {
@@ -1816,6 +1850,12 @@ int main_snp_calling_test(int argc,char ** argv)
 		fclose(tfp);
 	}
 
+	char *err_msg = NULL;
+	check_exactSNP_input(in_SAM_file,&parameters, &err_msg) ;
+	if( err_msg ){
+		SUBREADprintf("%s\n", err_msg);
+		return -1;
+	}
 
 
 	SUBREADputs("");

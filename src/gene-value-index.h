@@ -31,10 +31,9 @@ void gvindex_set (gene_value_index_t * index, gehash_data_t offset, gehash_key_t
 int gvindex_dump(gene_value_index_t * index, const char filename []);
 
 int gvindex_load(gene_value_index_t * index, const char filename []);
+int gvindex_load_largebuffer(gene_value_index_t * index, const char filename [], int create_basevalue_array);
 
 void gvindex_destory(gene_value_index_t * index);
-
-void gvindex_baseno2offset(unsigned int base_number, gene_value_index_t * index, unsigned int * offset_byte, unsigned int * offset_bit);
 
 // returns a 16-bit bitmap showing if each base is matched.
 int gvindex_match(gene_value_index_t * index, gehash_data_t offset, gehash_key_t base_value);
@@ -50,6 +49,7 @@ float match_chro_support(char * read, gene_value_index_t * index, unsigned int p
 int match_chro_maxerror(char * read, gene_value_index_t * index, unsigned int pos, int test_len, int is_negative_strand, int space_type, int maxerror);
 
 void gvindex_get_string(char *buf, gene_value_index_t * index, unsigned int pos, int len, int is_negative_strand);
+int gvindex_get_range(gene_value_index_t * index, gehash_data_t offset, char * base_space, int num_bases);
 
 int match_chro_wronglen(char * read, gene_value_index_t * index, unsigned int pos, int test_len, int space_type, int * left_match_bases, int * right_match_bases);
 

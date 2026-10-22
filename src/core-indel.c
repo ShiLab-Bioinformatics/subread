@@ -439,7 +439,7 @@ int test_redundant_event( global_context_t * global_context, chromosome_event_t*
 
 #define reallocate_to_be_removed_ids		if(to_be_removed_number >= remove_id_size-1){\
 							remove_id_size = remove_id_size*3/2;\
-							to_be_removed_ids = realloc(to_be_removed_ids, remove_id_size);\
+							to_be_removed_ids = realloc(to_be_removed_ids, sizeof(*to_be_removed_ids) * (1 + remove_id_size));\
 						}
 
 #define MIN_EVENT_SUPPORT_NO 2
@@ -572,6 +572,10 @@ void remove_neighbour(global_context_t * global_context)
 
 	for(xk1=0; xk1<to_be_removed_number; xk1++) {
 		int event_no = to_be_removed_ids[xk1];
+		if(event_no < 0 || event_no >= indel_context->total_events) {
+			SUBREADprintf("ERROR: invalid event id %d at removal index %d (event count %d)\n", event_no, xk1, indel_context->total_events);
+			continue;
+		}
 		chromosome_event_t * deleted_event =  &event_space[event_no];
 		
 		for(xk2=0;xk2<2;xk2++){
