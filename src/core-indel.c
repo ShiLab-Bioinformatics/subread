@@ -519,6 +519,7 @@ void remove_neighbour(global_context_t * global_context)
 				int neighbour_range = 11;
 				int indel_range = 4 , delta_small = 0;// max_range = 0;
 				if(event_body -> event_type == CHRO_EVENT_TYPE_INDEL) continue;
+				if(event_body -> event_type == CHRO_EVENT_TYPE_FUSION) continue; // fusion neighbour removal disabled
 				if(event_body -> is_donor_found_or_annotation & 64) continue; // do not remove known events
 				//if(! global_context->config.check_donor_at_junctions )max_range = 10;
 
