@@ -252,6 +252,30 @@ void print_usage_core_subjunc()
 	SUBREADputs("");
 }
 
+static int load_non_informative_subreads(global_context_t * global_context)
+{
+	char fname[MAX_FILE_NAME_LENGTH+30];
+	unsigned int subread_int, repeats;
+	FILE * fp;
+
+	SUBreadSprintf(fname, MAX_FILE_NAME_LENGTH+29, "%s.lowinf", global_context->config.index_prefix);
+	fp = fopen(fname, "rb");
+	if(!fp)
+	{
+		SUBREADprintf("WARNING: unable to open non-informative subread file '%s'.\n", fname);
+		return -1;
+	}
+
+	while(fread(&subread_int, 4, 1, fp)==1 && fread(&repeats, 4, 1, fp)==1)
+	{
+		unsigned long long key = (1ULL<<63) | (unsigned long long)subread_int;
+		HashTablePut(global_context->non_informative_subreads, (void *)key, (void *)(unsigned long long)repeats);
+	}
+
+	fclose(fp);
+	return 0;
+}
+
 int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_context)
 {
 	int c;
@@ -695,7 +719,10 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 	}
 
 	if(global_context->config.write_deeplearning_output)
+	{
 		global_context->non_informative_subreads = HashTableCreate(1003);
+		load_non_informative_subreads(global_context);
+	}
 
 	return 0;
 }
