@@ -219,6 +219,7 @@ typedef struct{
 	int high_quality_base_threshold;
 	int max_insertion_at_junctions;
 	int check_donor_at_junctions;
+	int write_deeplearning_output;
 
 	// subfusion
 	int do_fusion_detection;

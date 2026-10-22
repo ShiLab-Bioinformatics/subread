@@ -72,6 +72,7 @@ static struct option long_options[] =
 	{"multiMapping", no_argument, 0, 0},
 	{"keepReadOrder", no_argument, 0, 0},
 	{"sortReadsByCoordinates", no_argument, 0, 0},
+	{"enable-deep-learning", no_argument, 0, 0},
 	{0, 0, 0, 0}
 };
 
@@ -188,6 +189,8 @@ void print_usage_core_subjunc()
 	SUBREADputs("                    generated for each BAM file so the BAM files can be directly");
 	SUBREADputs("                    loaded into a genome browser.");
 	SUBREADputs("");
+	SUBREADputs("  --enable-deep-learning Write deep-learning output. Disabled by default.");
+	SUBREADputs("");
 	SUBREADputs("# color space reads");
 	SUBREADputs("");
 	SUBREADputs("  -b                Convert color-space read bases to base-space read bases in");
@@ -282,6 +285,7 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 	//#warning " ========================= REMOVE ' + 1 ' FROM THE NEXT LINE !! =========================="
 	global_context->config.limited_tree_scan = 0;
 	global_context->config.use_hamming_distance_in_exon = 0;
+	global_context->config.write_deeplearning_output = 0;
 	//global_context->config.big_margin_record_size = 24;
 
 	if(argc<2)
@@ -647,6 +651,10 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 				else if(strcmp("allJunctions", long_options[option_index].name)==0)
 				{
 					global_context->config.do_fusion_detection = 1;
+				}
+				else if(strcmp("enable-deep-learning", long_options[option_index].name)==0)
+				{
+					global_context->config.write_deeplearning_output = 1;
 				}
 
 				break;
