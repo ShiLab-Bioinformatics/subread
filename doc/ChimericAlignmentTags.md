@@ -11,7 +11,7 @@ the read is described by a set of four auxiliary tags:
 | Tag    | Type | Meaning |
 |--------|------|---------|
 | `CG:Z` | Z    | CIGAR of the chimeric section, written in **read orientation** |
-| `CP:i` | i    | 1-based reference coordinate of the 5' end of the chimeric section |
+| `CP:i` | i    | 1-based coordinate calculated from the stored section position and leading soft clip; it is not reliably the section's 5' base |
 | `CT:Z` | Z    | Strand of the chimeric section (`+` or `-`) |
 | `CC:Z` | Z    | Chromosome of the chimeric section |
 
@@ -45,16 +45,9 @@ Examples:
 
 ## `CP:i` — chimeric position
 
-`CP:i` is the **1-based** reference coordinate of the **5' end of the chimeric
-section**, expressed in the orientation of the chimeric alignment:
-
-* If the chimeric `M` block aligns to the **forward** strand, `CP:i` is the
-  **leftmost** coordinate of the block.
-* If the chimeric `M` block aligns to the **reverse** strand, `CP:i` is the
-  **rightmost** coordinate of the block.
-
-In other words, `CP:i` is the reference base that the **first base of the
-chimeric read segment** (the 5' base of that segment) is aligned to.
+`CP:i` is calculated from the section position stored by `chimeric_cigar_parts()`.
+That position is not consistently the leftmost or rightmost aligned base, so
+`CP:i` must not be interpreted generally as the 5' base of the segment.
 
 ### Formula in the source
 
@@ -83,9 +76,9 @@ chimeric CIGAR (0 if the CIGAR starts with `M`). So:
 CP:i = max(1, chimeric_pos + leading_soft_clip(CG:Z) + 1)
 ```
 
-`chimeric_pos` is the 0-based reference position of the read head in the
-chimeric alignment; adding the leading soft-clip and 1 converts it to the
-1-based coordinate of the first aligned base of the chimeric `M` block.
+`chimeric_pos` is the chromosome offset returned for `out_poses[xk1]` by
+`locate_gene_position_max()`. Adding the leading soft clip does not always
+recover the first aligned base; see the extended CIGAR section below.
 
 ---
 
@@ -93,19 +86,16 @@ chimeric alignment; adding the leading soft-clip and 1 converts it to the
 
 `CT:Z` is the strand of the chimeric section, `+` or `-`.
 
-It is reported in the **orientation of the original sequenced read**, not
-necessarily the reference forward strand. Concretely:
+The writer computes it as follows (`is_second_read` identifies mate 2, not
+the read's strand):
 
 ```
-CT = reference_strand_of_chimeric_M_block  XOR  (read is reverse-strand)
+CT_is_negative = (out_strands[xk1] == '-') XOR is_second_read
 ```
 
-So for a **forward-strand read** (`FLAG & 0x10 == 0`), `CT` equals the reference
-strand of the chimeric block. For a **reverse-strand read** (`FLAG & 0x10 != 0`),
-`CT` is the opposite of the reference strand of the chimeric block.
-
-This is why a chimeric block that matches the reference forward strand can still
-carry `CT:Z:-` when the read itself is reverse-strand (see Example 2).
+Thus mate 1 uses `out_strands` directly and mate 2 inverts it. `FLAG & 0x10`
+is not the operand in this calculation. Interpreting `CT` as a biological
+strand requires accounting for that mate-dependent convention.
 
 ---
 
@@ -137,7 +127,7 @@ toy000006  FLAG=73  RNAME=chr4  POS=870784  CIGAR=64S86M
   matching `chr2:1392274-1392337` on the **reverse** strand.
 * `CP:i:1392337` is the **rightmost** coordinate of the chimeric block
   (reverse-strand block).
-* `CT:Z:-` because the read is forward and the chimeric block is reverse.
+* The recorded `CT:Z:-` is the writer's mate-adjusted `out_strands` value.
 
 ### Example 2 — different chromosome, same strand
 
@@ -152,8 +142,8 @@ toy000005  FLAG=83  RNAME=chr1  POS=1949809  CIGAR=77M73S
   matches `chr2:2539751-2539823` on the **forward** strand.
 * `CP:i:2539751` is the **leftmost** coordinate of the chimeric block
   (forward-strand block).
-* `CT:Z:-` even though the chimeric block is forward, because the read itself is
-  reverse-strand (`FLAG & 0x10`), so `CT` is flipped relative to the reference.
+* The recorded `CT:Z:-` reflects the writer's mate-dependent inversion; the
+  code does not use `FLAG & 0x10` to compute this tag.
 
 ### Example 3 — same chromosome, different strand
 
@@ -168,8 +158,7 @@ toy000001  FLAG=113  RNAME=chr4  POS=2223048  CIGAR=24S46M80S
   matching `chr4:631055-631078` on the **reverse** strand.
 * `CP:i:631078` is the **rightmost** coordinate of the chimeric block
   (reverse-strand block).
-* `CT:Z:+` because the read is reverse-strand and the chimeric block is reverse,
-  so the two cancel out.
+* The recorded `CT:Z:+` is the writer's mate-adjusted `out_strands` value.
 
 ### Example 4 — same chromosome, same strand
 
@@ -183,16 +172,17 @@ toy009797  FLAG=65  RNAME=chr1  POS=2112515  CIGAR=138M12S
   matches `chr1:2680568-2680579` on the **forward** strand.
 * `CP:i:2680568` is the **leftmost** coordinate of the chimeric block
   (forward-strand block).
-* `CT:Z:+` because the read is forward and the chimeric block is forward.
+* The recorded `CT:Z:+` is the writer's mate-adjusted `out_strands` value.
 
 ---
 
 ## Quick reference
 
-| Case | `CG:Z` | `CP:i` points to | `CT:Z` |
-|------|--------|------------------|--------|
-| chimeric block forward | `...S<M>M` | leftmost base of `M` | `+` if read forward, `-` if read reverse |
-| chimeric block reverse | `<M>M...S` | rightmost base of `M` | `-` if read forward, `+` if read reverse |
+| Field | Writer value |
+|-------|--------------|
+| `CG:Z` | selected section's generated CIGAR |
+| `CP:i` | `max(1, chromosome_offset(out_poses) + leading_soft_clip + 1)` |
+| `CT:Z` | `'-'` when `(out_strands == '-') != is_second_read`, otherwise `'+'` |
 
 ---
 
@@ -201,15 +191,11 @@ toy009797  FLAG=65  RNAME=chr1  POS=2112515  CIGAR=138M12S
 1. **`CG:Z` is in read orientation, not reference orientation.** The `M` block
    may be at the start or the end of the string depending on which part of the
    read is chimeric.
-2. **`CP:i` is the 5' end of the chimeric segment**, so it is the leftmost
-   coordinate for a forward block and the rightmost coordinate for a reverse
-   block. Do not assume it is always the leftmost coordinate.
-3. **`CT:Z` is relative to the original read orientation**, not the reference
-   forward strand. For reverse-strand reads it is the opposite of the reference
-   strand of the chimeric block.
+2. **`CP:i` is a computed coordinate**, not a guaranteed 5' or leftmost base.
+3. **`CT:Z` uses mate identity** to invert the stored section strand for mate 2.
 4. **Multiple chimeric sections.** A read spanning more than one fusion carries
-   several `CG`/`CP`/`CT`/`CC` tag sets, in the order the sections appear in the
-   read.
+   several `CG`/`CP`/`CT`/`CC` tag sets. The primary-selection swap can change
+   their order from the original CIGAR walk.
 5. **Primary section.** The primary alignment is in the standard SAM columns and
    is not duplicated in `CG:Z`.
 6. **Known issue (v2.2.0).** For chimeric reads whose primary alignment is the
@@ -256,7 +242,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
                          int read_len, short * perfect_lens, char * read_name)
 ```
 
-The string is walked **left to right in reference order**, while a separate
+The string is walked **left to right in CIGAR-string order**, while a separate
 counter tracks how many read bases have been consumed. The state is:
 
 | Variable | Meaning |
@@ -264,7 +250,7 @@ counter tracks how many read bases have been consumed. The state is:
 | `read_cursor` | number of read bases consumed so far |
 | `current_perfect_cursor` | reference cursor, used when `is_reversed == 0` |
 | `current_perfect_map_start` | reference position of the current section's start |
-| `is_reversed` | 1 = the reference cursor moves right-to-left |
+| `is_reversed` | 1 = `M`/`S`/`D`/unsplit `N` accumulate in `out_poses` instead of `current_perfect_cursor` |
 | `is_negative` | 1 = the section is on the reference **reverse** strand |
 | `tmpi` | the number currently being accumulated |
 
@@ -297,8 +283,8 @@ else
     target = current_perfect_cursor      + (toupper(ncch)=='N' ? +len : -len);
 ```
 
-The `-1` in the `is_reversed` branch is needed because the cursor is already one
-past the last consumed base.
+In the `is_reversed` branch the anchor is the fixed section start minus one;
+`current_perfect_cursor` is not advanced by `M` in that branch.
 
 ### 4. When a jump actually starts a new section
 
@@ -310,8 +296,10 @@ Consequences:
 
 * **Lowercase `n` / `b` always start a new section** (they are fusion jumps).
 * **Uppercase `B` always starts a new section.**
-* **Uppercase `N` starts a new section only if it changes chromosome or is
-  longer than `maximum_intron_length`.** A short intra-chromosomal `N` is an
+* **Uppercase `N` starts a new section only if it changes chromosome or
+  `abs(current_perfect_cursor - target) >= maximum_intron_length`.** This
+  distance need not equal the encoded `N` length when `is_reversed` is true.
+  A shorter intra-chromosomal `N` is an
   ordinary intron: it is handled by the `D`/`N` branch, which advances the
   reference cursor but **not** `read_cursor`, and no new section is created.
 
@@ -373,32 +361,28 @@ else if(ncch == 'I'){
 
 So `out_poses[sec]` means two different things:
 
-* `is_reversed == 1` -> it accumulates over the section and ends at the block's
-  **rightmost** base.
+* `is_reversed == 1` -> it accumulates the lengths of processed `M`, `S`, `D`
+  and unsplit `N`, starting from `map_start - read_cursor_at_entry`. It is not
+  generally the block's rightmost base.
 * `is_reversed == 0` -> it stays at `target - read_cursor`, i.e. the **virtual
   position of read base 0**.
 
 Note that `S` also advances `out_poses[sec]` when `is_reversed == 1`, so a
 trailing soft clip shifts the stored value.
 
-### 6. Recovering the block's leftmost base
+### 6. Position bookkeeping and its limits
 
-Two cases, depending on `is_reversed` **at the start of the section**:
+For a later section, let `entry_read_cursor` be the value when the section
+opens and `map_start` be its adjusted jump target. The code initializes
+`out_poses[sec] = map_start - entry_read_cursor`. If `is_reversed` is false,
+that value remains unchanged. If true, each subsequent `M`, `S`, `D`, and
+unsplit `N` adds its length to `out_poses[sec]`; `I` does not. The initial
+section instead starts at `sel_pos - (is_reversed ? 1 : 0)`.
 
-```
-is_reversed == 1:   leftmost = out_poses[sec] - (mlen - 1)
-is_reversed == 0:   leftmost = out_poses[sec] + read_cursor_at_section_start
-                                - (is_negative ? mlen - 1 : 0)
-```
-
-where
-
-* `read_cursor_at_section_start` is the leading soft clip of the section's
-  CIGAR (`out_cigars[sec]`), and
-* `mlen` is the sum of `M`/`D`/`N` in that section.
-
-The `- (mlen - 1)` term is needed because a reverse-strand block extends
-**backwards** from the jump point.
+These are the actual stored values, not a general formula for the leftmost
+aligned base. In particular, `is_negative` affects `out_strands`, not position
+arithmetic. A caller needs the section's CIGAR, entry state and orientation
+to infer its genomic interval. The tag writer does not perform that recovery.
 
 ### 7. Worked examples
 
@@ -426,10 +410,10 @@ Sections:
 | sec | read interval | `CG` | strand | global ref interval | leftmost |
 |-----|---------------|------|--------|---------------------|----------|
 | 0 | `read[0:80]` | `80M70S` | `+` | 647148 - 647227 | 647148 |
-| 1 | `read[80:150]` | `80S70M` | `-` | 4166302 - 4166371 | 4166302 |
+| 1 | `read[80:150]` | `80S70M` | `-` | 4166371 - 4166440 (cursor walk) | 4166371 |
 
-For section 1: `leftmost = 4166291 + 80 - (70-1) = 4166302`. The 5' base of a
-reverse block is its rightmost base, `4166371`.
+For section 1, `out_poses[1] = 4166291` is a stored bookkeeping value;
+the non-reversed cursor walk starts at `4166371`.
 
 #### Example 2 - `n` (forward jump, strand flip), chimeric block is the 1st section
 
@@ -450,9 +434,10 @@ Sections:
 | sec | read interval | `CG` | strand | global ref interval | leftmost |
 |-----|---------------|------|--------|---------------------|----------|
 | 0 | `read[0:64]` | `64M86S` | `-` | 4395887 - 4395950 | 4395887 |
-| 1 | `read[64:150]` | `64S86M` | `+` | 9879141 - 9879226 | 9879141 |
+| 1 | `read[64:150]` | `64S86M` | `+` | 9879205 - 9879290 | 9879205 |
 
-For section 0: `leftmost = 4395950 - (64-1) = 4395887`.
+For section 0, the stored `out_poses[0]` is `4395950`; the code does not
+convert it to `4395887` when writing the alignment.
 
 #### Example 3 - `B` (backward jump, same strand)
 
@@ -509,8 +494,8 @@ entry: is_reversed = 1, is_negative = 1
 |----------|---------------|--------------------------|-------------|---------------|
 | init | 0 | 8284954 | `[8284953]` | `-` |
 | `75M` | 75 | 8284954 | `[8285028]` | `-` |
-| `3642234n` | 75 | 11927262 | `[8285028, 11927112]` | `-`, `+` |
-| `66M` | 141 | 11927262 | `[8285028, 11927112]` | `-`, `+` |
+| `3642234n` | 75 | 11927187 | `[8285028, 11927112]` | `-`, `+` |
+| `66M` | 141 | 11927253 | `[8285028, 11927112]` | `-`, `+` |
 | `9S` | 150 | 11927262 | `[8285028, 11927112]` | `-`, `+` |
 
 Sections:
@@ -562,7 +547,10 @@ for(xk1 = 0; xk1 < section_count; xk1++)
 if(best_match > 0) { /* swap section 0 and section best_match */ }
 ```
 
-The primary section is therefore the **longest section on the main strand**, and
+Section 0 is the initial choice. A later section replaces it only when that
+section is on `main_piece_strand` and has a strictly greater `M` count than
+the current choice. Therefore the primary is not necessarily the longest
+section on the main strand. After selection,
 the four arrays (`out_poses`, `out_cigars`, `out_strands`, `perfect_lens`) are
 **reordered**. After the swap, `out_poses[0]` / `out_cigars[0]` are no longer the
 first section in reference order, and `out_poses[1]` is no longer necessarily the
@@ -589,14 +577,13 @@ SUBreadSprintf(..., "\tCG:Z:%s\tCP:i:%u\tCT:Z:%c\tCC:Z:%s",
 
 * `CG:Z` is `out_cigars[xk1]`, already in read orientation.
 * `CC:Z` is the chromosome of `out_poses[xk1]`.
-* `CT:Z` is `out_strands[xk1]` XOR the read's own strand (`is_second_read`).
+* `CT:Z` is `out_strands[xk1]` XOR mate identity (`is_second_read`).
 * `CP:i` is `chimeric_pos + leading_soft_clip + 1`, where `chimeric_pos` is the
   chromosome offset of `out_poses[xk1]`.
 
-Because `out_poses[xk1]` is a *virtual read-head* coordinate rather than the
-block's leftmost base (see section 5), `CP:i` is only correct when the section
-happens to satisfy `out_poses[xk1] == leftmost - leading_soft_clip`. This is the
-root cause of the known `CP:i` issue described in the Notes section.
+`out_poses[xk1]` is not generally the block's leftmost base (see section 6),
+so this calculation does not generally yield the first aligned base. The
+chromosome lookup also uses `out_lens[xk1]` as its final argument.
 
 ### 10. Summary of operator effects
 
@@ -609,5 +596,5 @@ root cause of the known `CP:i` issue described in the Notes section.
 | `N` (short, same chr) | unchanged | `+len` if `!is_reversed` | `+len` if `is_reversed` | - | - | no |
 | `N` (chr change or long) | unchanged | `= target` | reset | - | - | **yes** |
 | `B` | unchanged | `= target` | reset | - | - | **yes** |
-| `n` | unchanged | `= target` | reset | **flip** | **flip** | **yes** |
-| `b` | unchanged | `= target` | reset | **flip** | **flip** | **yes** |
+| `n` | unchanged | `= target - 1` if newly reversed, else `target` | reset | **flip** | **flip** | **yes** |
+| `b` | unchanged | `= target - 1` if newly reversed, else `target` | reset | **flip** | **flip** | **yes** |
