@@ -405,15 +405,10 @@ entry: is_reversed = 1, is_negative = 0
 | `3519224n` | 80 | 4166371 | `[647227, 4166291]` | `+`, `-` | target `= 647148 - 1 + 3519224`; flip -> `is_reversed=0`, `is_negative=1`; `out_poses[1] = 4166371 - 80` |
 | `70M` | 150 | 4166441 | `[647227, 4166291]` | `+`, `-` | `is_reversed=0` -> cursor advances, `out_poses[1]` unchanged |
 
-Sections:
-
-| sec | read interval | `CG` | strand | global ref interval | leftmost |
-|-----|---------------|------|--------|---------------------|----------|
-| 0 | `read[0:80]` | `80M70S` | `+` | 647148 - 647227 | 647148 |
-| 1 | `read[80:150]` | `80S70M` | `-` | 4166371 - 4166440 (cursor walk) | 4166371 |
-
-For section 1, `out_poses[1] = 4166291` is a stored bookkeeping value;
-the non-reversed cursor walk starts at `4166371`.
+Before primary selection, the generated CIGARs are `80M70S` and `80S70M`.
+Their stored positions are `647227` and `4166291`; the second section's
+non-reversed cursor walk begins at `4166371`. The section strand flags are
+`+` and `-`. These stored positions are not a general leftmost-base formula.
 
 #### Example 2 - `n` (forward jump, strand flip), chimeric block is the 1st section
 
@@ -429,15 +424,10 @@ entry: is_reversed = 1, is_negative = 1
 | `5483319n` | 64 | 9879205 | `[4395950, 9879141]` | `-`, `+` |
 | `86M` | 150 | 9879291 | `[4395950, 9879141]` | `-`, `+` |
 
-Sections:
-
-| sec | read interval | `CG` | strand | global ref interval | leftmost |
-|-----|---------------|------|--------|---------------------|----------|
-| 0 | `read[0:64]` | `64M86S` | `-` | 4395887 - 4395950 | 4395887 |
-| 1 | `read[64:150]` | `64S86M` | `+` | 9879205 - 9879290 | 9879205 |
-
-For section 0, the stored `out_poses[0]` is `4395950`; the code does not
-convert it to `4395887` when writing the alignment.
+Before primary selection, the generated CIGARs are `64M86S` and `64S86M`.
+The stored positions are `4395950` and `9879141`; the second section's
+non-reversed cursor walk starts at `9879205`. The strand flags are `-` and
+`+`. The code does not convert the first stored position to `4395887`.
 
 #### Example 3 - `B` (backward jump, same strand)
 
@@ -454,15 +444,10 @@ entry: is_reversed = 0, is_negative = 0
 | `52M` | 135 | 6864214 | `[9879241, 6864079]` | `+`, `+` |
 | `15S` | 150 | 6864229 | `[9879241, 6864079]` | `+`, `+` |
 
-Sections:
-
-| sec | read interval | `CG` | strand | global ref interval | leftmost |
-|-----|---------------|------|--------|---------------------|----------|
-| 0 | `read[0:83]` | `83M67S` | `+` | 9879241 - 9879323 | 9879241 |
-| 1 | `read[83:135]` | `83S52M15S` | `+` | 6864162 - 6864213 | 6864162 |
-
-For section 1: `leftmost = 6864079 + 83 - 0 = 6864162`. The trailing `15S` does
-**not** move `out_poses[1]` because `is_reversed == 0`.
+Before primary selection, the generated CIGARs are `83M67S` and
+`83S52M15S`, with stored positions `9879241` and `6864079` and strand flags
+`+` and `+`. The second cursor starts at `6864162`; its trailing `15S` moves
+that cursor but leaves `out_poses[1]` unchanged.
 
 #### Example 4 - `N` (forward jump, same strand, chromosome change)
 
@@ -498,14 +483,10 @@ entry: is_reversed = 1, is_negative = 1
 | `66M` | 141 | 11927253 | `[8285028, 11927112]` | `-`, `+` |
 | `9S` | 150 | 11927262 | `[8285028, 11927112]` | `-`, `+` |
 
-Sections:
-
-| sec | read interval | `CG` | strand | global ref interval | leftmost |
-|-----|---------------|------|--------|---------------------|----------|
-| 0 | `read[0:75]` | `75M75S` | `-` | 8284954 - 8285028 | 8284954 |
-| 1 | `read[75:141]` | `75S66M9S` | `+` | 11927187 - 11927252 | 11927187 |
-
-For section 1: `leftmost = 11927112 + 75 - 0 = 11927187`.
+Before primary selection, the generated CIGARs are `75M75S` and
+`75S66M9S`, with stored positions `8285028` and `11927112` and strand flags
+`-` and `+`. The second cursor starts at `11927187`; `66M9S` advances it to
+`11927262`, while its stored position remains `11927112`.
 
 #### Example 6 - leading soft clip before an `n`
 
@@ -522,15 +503,10 @@ entry: is_reversed = 0, is_negative = 0
 | `526736n` | 113 | 8917792 | `[8390944, 8917679]` | `+`, `-` |
 | `37M` | 150 | 8917792 | `[8390944, 8917716]` | `+`, `-` |
 
-Sections:
-
-| sec | read interval | `CG` | strand | global ref interval | leftmost |
-|-----|---------------|------|--------|---------------------|----------|
-| 0 | `read[1:113]` | `1S112M37S` | `+` | 8390945 - 8391056 | 8390945 |
-| 1 | `read[113:150]` | `113S37M` | `-` | 8917680 - 8917716 | 8917680 |
-
-For section 1, `is_reversed == 1` at section start, so
-`leftmost = out_poses[1] - (37-1) = 8917716 - 36 = 8917680`.
+Before primary selection, the generated CIGARs are `1S112M37S` and
+`113S37M`, with stored positions `8390944` and `8917716` and strand flags
+`+` and `-`. The second section starts with `out_poses[1] = 8917679`;
+because it is reversed, `37M` adds 37 to that stored value.
 
 ### 8. Primary selection and the section swap
 
