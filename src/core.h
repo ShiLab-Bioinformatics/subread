@@ -680,7 +680,7 @@ unsigned short * _global_retrieve_big_margin_ptr(global_context_t * global_conte
 // The first base in the read actually has a larger coordinate than Pos. 
 unsigned int reverse_cigar(unsigned int pos, char * cigar, char * new_cigar);
 
-int chimeric_cigar_parts(global_context_t * global_context , unsigned int sel_pos, int is_first_section_negative_strand, int is_first_section_reversed, char * in_cigar, unsigned int * out_poses, char ** out_cigars, char * out_strands, int read_len, short * out_read_lens, char * read_name);
+int chimeric_cigar_parts(global_context_t * global_context , unsigned int sel_pos, int is_first_section_negative_strand, int is_first_section_reversed, char * in_cigar, unsigned int * out_poses, unsigned int * out_ref_left, unsigned int * out_ref_right, char ** out_cigars, char * out_strands, int read_len, short * out_read_lens, char * read_name);
 
 void warning_file_limit();
 void quick_sort(void * arr,int arr_size, int compare (void * arr, int l, int r), void exchange(void * arr, int l, int r));
