@@ -379,6 +379,15 @@ that value remains unchanged. If true, each subsequent `M`, `S`, `D`, and
 unsplit `N` adds its length to `out_poses[sec]`; `I` does not. The initial
 section instead starts at `sel_pos - (is_reversed ? 1 : 0)`.
 
+For either lowercase jump (`n` or `b`), the code flips `is_reversed` and
+subtracts one from the jump target **only if the new value is true**. The
+likely purpose is an inclusive/exclusive boundary adjustment: the calculated
+target acts as the boundary after the first base of a section traversed in
+reverse, and `target - 1` selects that base. This is an inference from the
+arithmetic, not a coordinate convention explicitly documented by the source.
+The adjustment depends on the new traversal direction, not on whether the
+jump was forward (`n`) or backward (`b`).
+
 These are the actual stored values, not a general formula for the leftmost
 aligned base. In particular, `is_negative` affects `out_strands`, not position
 arithmetic. A caller needs the section's CIGAR, entry state and orientation
