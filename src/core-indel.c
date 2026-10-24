@@ -960,6 +960,7 @@ int conc_sort_compare(void * arr, int l, int r){
 	if(body_l -> event_small_side < body_r -> event_small_side)return -3;
 	if(body_l -> event_large_side > body_r -> event_large_side)return 3;
 	if(body_l -> event_large_side < body_r -> event_large_side)return -3;
+	if(body_l -> event_type != body_r -> event_type) return body_l -> event_type > body_r -> event_type ? 3 : -3; // never merge different event types
 
 	if(abs(body_l -> indel_length) < abs(body_r -> indel_length)) return 2;
 	if(abs(body_l -> indel_length) > abs(body_r -> indel_length)) return -2;
