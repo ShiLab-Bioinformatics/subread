@@ -4624,6 +4624,9 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 	int is_negative = is_first_section_negative_strand;
 	int read_cursor = 0;
 	unsigned int section_ref_cursor = sel_pos;
+	unsigned int section_last_match_left = sel_pos;
+	unsigned int reverse_indel_deletion = 0;
+	int reverse_indel_pending = 0;
 	int out_cigar_writer_ptr = 0;
 	unsigned int tmpi = 0;
 
@@ -4733,6 +4736,9 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 				// Later reversed sections start one base after the stored
 				// jump target, including uppercase backward jumps.
 				section_ref_cursor = current_perfect_map_start + (is_reversed ? 1 : 0);
+				section_last_match_left = section_ref_cursor;
+				reverse_indel_pending = 0;
+				reverse_indel_deletion = 0;
 				out_strands[current_perfect_section_no] = is_negative?'-':'+';
 				out_cigar_writer_ptr = SUBreadSprintf(out_cigars[current_perfect_section_no], 60,"%dS", read_cursor);
 				is_chimeric_section_end  = 1;
@@ -4748,13 +4754,23 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 			if(ncch == 'M'|| ncch == 'S')
 			{
 				if(ncch == 'M'){
-					if(out_ref_left[current_perfect_section_no] == ~0U)
+					// Internal reversed CIGARs anchor each M at its leftmost base.
+					// As in final_CIGAR_quality, the M following a reverse indel
+					// lies before the previous M, not after it in reference order.
+					if(is_reversed && reverse_indel_pending && out_ref_left[current_perfect_section_no] != ~0U)
+						section_ref_cursor = section_last_match_left - reverse_indel_deletion - tmpi;
+					reverse_indel_pending = 0;
+					reverse_indel_deletion = 0;
+					section_last_match_left = section_ref_cursor;
+					if(out_ref_left[current_perfect_section_no] == ~0U || section_ref_cursor < out_ref_left[current_perfect_section_no])
 						out_ref_left[current_perfect_section_no] = section_ref_cursor;
-					out_ref_right[current_perfect_section_no] = section_ref_cursor + tmpi - 1;
+					if(section_ref_cursor + tmpi - 1 > out_ref_right[current_perfect_section_no])
+						out_ref_right[current_perfect_section_no] = section_ref_cursor + tmpi - 1;
 				}
 				if(ncch == 'S' && is_reversed && out_ref_left[current_perfect_section_no] != ~0U){
 					out_ref_left[current_perfect_section_no] += tmpi;
 					out_ref_right[current_perfect_section_no] += tmpi;
+					section_last_match_left += tmpi;
 				}
 				section_ref_cursor += tmpi;
 				read_cursor += tmpi;
@@ -4768,6 +4784,10 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 			}
 			else if(ncch == 'D' || ncch == 'N')
 			{
+				if(is_reversed && ncch == 'D'){
+					reverse_indel_pending = 1;
+					reverse_indel_deletion += tmpi;
+				}
 				section_ref_cursor += tmpi;
 				if(is_reversed)
 					out_poses[current_perfect_section_no] += tmpi;
@@ -4777,6 +4797,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 			}
 			else if(ncch == 'I')
 			{
+				if(is_reversed) reverse_indel_pending = 1;
 				read_cursor += tmpi;
 				tmpi = 0;
 			}

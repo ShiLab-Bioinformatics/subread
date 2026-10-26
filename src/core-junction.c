@@ -1170,8 +1170,12 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 						unsigned int small_half_abs_offset = min(current_vote -> pos[i][j], current_vote -> pos[vote_i][vote_j]);
 						unsigned int large_half_abs_offset = max(current_vote -> pos[i][j], current_vote -> pos[vote_i][vote_j]);
 
+						gene_vote_number_t * small_indel_recorder = current_vote -> pos[vote_i][vote_j] < current_vote -> pos[i][j] ? current_vote -> indel_recorder[vote_i][vote_j] : current_vote -> indel_recorder[i][j];
+						gene_vote_number_t * large_indel_recorder = current_vote -> pos[vote_i][vote_j] < current_vote -> pos[i][j] ? current_vote -> indel_recorder[i][j] : current_vote -> indel_recorder[vote_i][vote_j];
+						int small_indel_offset = 0, large_indel_offset = 0;
+
 						// curr_read_text is the 'reversed' form of the read. I.e., the reversed FASTQ form for read_A and the raw FASTQ form for read_B.
-						replace_minor = donor_jumped_score(global_context, thread_context, small_half_abs_offset, large_half_abs_offset,
+						replace_minor = donor_jumped_score(global_context, thread_context, small_half_abs_offset, large_half_abs_offset, small_indel_recorder, large_indel_recorder, &small_indel_offset, &large_indel_offset,
 									max(0, guess_start_as_reversed) , min( guess_end_as_reversed, curr_read_len),  curr_read_text,
 									curr_read_len, is_small_half_negative, is_large_half_negative, is_small_half_on_left_as_reversed,
 									& final_split_point, & is_GT_AG_donors, & is_donor_found_or_annotation, &small_side_increasing_coordinate, &large_side_increasing_coordinate, read_name);
@@ -1184,7 +1188,11 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 
 						// Now "final_split_point" is the read offset on the 'reversed' form of the read. It needs to be changed to (read_len - final_split_point) if the major half is on negative strand. 
 
-						if(replace_minor>0) replace_minor += current_vote -> votes[i][j] * 100000;
+						if(replace_minor>0){
+							major_indels = current_vote -> pos[vote_i][vote_j] < current_vote -> pos[i][j] ? small_indel_offset : large_indel_offset;
+							minor_indel_offset = current_vote -> pos[vote_i][vote_j] < current_vote -> pos[i][j] ? large_indel_offset : small_indel_offset;
+							replace_minor += current_vote -> votes[i][j] * 100000;
+						}
 
 					}
 					else
@@ -1289,7 +1297,8 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 					junc_res -> minor_coverage_start = current_vote -> coverage_start[i][j];
 					junc_res -> minor_coverage_end   = current_vote -> coverage_end  [i][j];
 
-					junc_res -> double_indel_offset = (minor_indel_offset & 0xf)|((major_indels & 0xf)<<4);
+					junc_res -> major_indel_offset = major_indels;
+					junc_res -> minor_indel_offset = minor_indel_offset;
 					junc_res -> split_point = final_split_point;
 
 					
@@ -3594,7 +3603,55 @@ int is_ambiguous_voting(global_context_t * global_context, subread_read_number_t
 
 // Note that the read_text is on reversed mode. The guess points are on reversed mode too.
 // "Left" and "Right" means the left/right half in the "reversed" read.
-int donor_jumped_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int small_virtualHead_abs_offset, unsigned int large_virtualHead_abs_offset, int guess_start, int guess_end,  char * read_text, int read_len, int is_small_half_negative, int is_large_half_negative, int small_half_on_left_reversed, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found_or_annotation, int * small_side_increasing_coordinate, int * large_side_increasing_coordinate, char * read_name)
+
+/* Vote offsets are cumulative reference-minus-query displacements. Resolve
+ * each change between its flanking exact seeds, in reference-ascending read
+ * orientation. An insertion is marked separately from mapped query bases. */
+static int jumped_indel_map(global_context_t * global_context, gene_value_index_t * value_index, unsigned int head, char * read, int read_len, gene_vote_number_t * recorder, int * offsets)
+{
+	int k, q, old_offset = recorder && recorder[0] ? recorder[2] : 0;
+	for(q = 0; q < read_len; q++) offsets[q] = old_offset;
+	if(!recorder) return 1;
+	for(k = 1; k < MAX_INDEL_SECTIONS && recorder[k*3]; k++)
+	{
+		int new_offset = recorder[k*3+2];
+		if(new_offset == old_offset) continue;
+		int lo = find_subread_end(read_len, global_context->config.total_subreads, recorder[(k-1)*3+1]-1) + 1;
+		int hi = find_subread_end(read_len, global_context->config.total_subreads, recorder[k*3]-1) - 15;
+		int inserted = max(0, old_offset - new_offset);
+		lo = max(0, lo);
+		hi = min(read_len, hi);
+		if(lo + inserted > hi) return 0;
+		int b, best = -1, best_boundary = lo;
+		for(b = lo; b + inserted <= hi; b++)
+		{
+			int score = 0;
+			if(b > lo) score += match_chro(read + lo, value_index, head + lo + old_offset, b-lo, 0, global_context->config.space_type);
+			if(hi > b + inserted) score += match_chro(read + b + inserted, value_index, head + b + inserted + new_offset, hi-b-inserted, 0, global_context->config.space_type);
+			if(score > best) { best = score; best_boundary = b; }
+		}
+		for(q = best_boundary; q < best_boundary + inserted; q++) offsets[q] = -MAX_READ_LENGTH;
+		for(q = best_boundary + inserted; q < read_len; q++) offsets[q] = new_offset;
+		old_offset = new_offset;
+	}
+	return 1;
+}
+
+static int jumped_window_matches(global_context_t * global_context, gene_value_index_t * value_index, unsigned int head, char * read, int start, int * offsets)
+{
+	int q, matches = 0;
+	for(q = start; q < start + JUNCTION_CONFIRM_WINDOW; )
+	{
+		if(offsets[q] == -MAX_READ_LENGTH) { matches++; q++; continue; }
+		int end = q + 1;
+		while(end < start + JUNCTION_CONFIRM_WINDOW && offsets[end] == offsets[q]) end++;
+		matches += match_chro(read + q, value_index, head + q + offsets[q], end-q, 0, global_context->config.space_type);
+		q = end;
+	}
+	return matches;
+}
+
+int donor_jumped_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int small_virtualHead_abs_offset, unsigned int large_virtualHead_abs_offset, gene_vote_number_t * small_indel_recorder, gene_vote_number_t * large_indel_recorder, int * small_indel_offset, int * large_indel_offset, int guess_start, int guess_end,  char * read_text, int read_len, int is_small_half_negative, int is_large_half_negative, int small_half_on_left_reversed, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found_or_annotation, int * small_side_increasing_coordinate, int * large_side_increasing_coordinate, char * read_name)
 {
 	gene_value_index_t * value_index = thread_context?thread_context->current_value_index:global_context->current_value_index ;
 	// guess_end is the index of the first UNWANTED BASE.
@@ -3611,6 +3668,12 @@ int donor_jumped_score(global_context_t * global_context, thread_context_t * thr
 	char positive_read[MAX_READ_LENGTH+1];
 	strcpy(positive_read, read_text) ;
 	reverse_read(positive_read, read_len, global_context->config.space_type);
+	int small_offsets[MAX_READ_LENGTH], large_offsets[MAX_READ_LENGTH];
+	char * small_read = is_small_half_negative ? read_text : positive_read;
+	char * large_read = is_large_half_negative ? read_text : positive_read;
+	if(!jumped_indel_map(global_context, value_index, small_virtualHead_abs_offset, small_read, read_len, small_indel_recorder, small_offsets) ||
+	   !jumped_indel_map(global_context, value_index, large_virtualHead_abs_offset, large_read, read_len, large_indel_recorder, large_offsets)) return 0;
+
 
 	//printf("TEST_JUMPED: %u - %u\n", small_virtualHead_abs_offset, large_virtualHead_abs_offset);
 	
@@ -3631,40 +3694,15 @@ int donor_jumped_score(global_context_t * global_context, thread_context_t * thr
 
 		int is_donor_test_ok=0;
 
-		if(small_half_on_left_reversed)
-		{
-			unsigned int small_pos_test_begin = small_virtualHead_abs_offset + (is_small_half_negative?real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW:(read_len - real_split_point_as_reversed)); 
-			char * small_pos_read_begin = (is_small_half_negative?read_text:positive_read) + (is_small_half_negative?
-						(real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW)           :
-						(read_len - real_split_point_as_reversed)
-  						);
-
-			unsigned int large_pos_test_begin = large_virtualHead_abs_offset + (is_large_half_negative?real_split_point_as_reversed:(read_len - real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW));
-			char * large_pos_read_begin = (is_large_half_negative?read_text:positive_read) + (is_large_half_negative?
-						(real_split_point_as_reversed)     :
-						(read_len - real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW));
-
-			left_should_match = match_chro(small_pos_read_begin , value_index , small_pos_test_begin , JUNCTION_CONFIRM_WINDOW , 0, global_context -> config.space_type);
-			right_should_match = match_chro(large_pos_read_begin , value_index , large_pos_test_begin , JUNCTION_CONFIRM_WINDOW , 0, global_context -> config.space_type);
-			left_should_not_match = right_should_not_match = 0;
-		//match_chro(read_text + real_split_point - JUNCTION_CONFIRM_WINDOW, value_index, small_virtualHead_abs_offset + real_split_point - JUNCTION_CONFIRM_WINDOW , JUNCTION_CONFIRM_WINDOW , 0, global_context -> config.space_type);
-
-		}
-		else
-		{
-			unsigned int small_pos_test_begin = small_virtualHead_abs_offset + (is_small_half_negative?real_split_point_as_reversed:(read_len - real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW)); 
-			char * small_pos_read_begin = (is_small_half_negative?read_text:positive_read) + (is_small_half_negative?
-							(real_split_point_as_reversed):(read_len - real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW));
-
-			unsigned int large_pos_test_begin = large_virtualHead_abs_offset + (is_large_half_negative?(real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW):(read_len - real_split_point_as_reversed));
-			char * large_pos_read_begin = (is_large_half_negative?read_text:positive_read) + (is_large_half_negative?
-							  (real_split_point_as_reversed - JUNCTION_CONFIRM_WINDOW):(read_len - real_split_point_as_reversed));
-
-			left_should_match = match_chro(small_pos_read_begin , value_index , small_pos_test_begin , JUNCTION_CONFIRM_WINDOW , 0, global_context -> config.space_type);
-			right_should_match = match_chro(large_pos_read_begin , value_index , large_pos_test_begin , JUNCTION_CONFIRM_WINDOW , 0, global_context -> config.space_type);
-			left_should_not_match = right_should_not_match = 0;
-
-		}
+		int small_start = is_small_half_negative ? real_split_point_as_reversed - (small_half_on_left_reversed ? JUNCTION_CONFIRM_WINDOW : 0) : read_len - real_split_point_as_reversed - (small_half_on_left_reversed ? 0 : JUNCTION_CONFIRM_WINDOW);
+		int large_start = is_large_half_negative ? real_split_point_as_reversed - (small_half_on_left_reversed ? 0 : JUNCTION_CONFIRM_WINDOW) : read_len - real_split_point_as_reversed - (small_half_on_left_reversed ? JUNCTION_CONFIRM_WINDOW : 0);
+		int small_edge = small_start + ((small_half_on_left_reversed == is_small_half_negative) ? JUNCTION_CONFIRM_WINDOW-1 : 0);
+		int large_edge = large_start + ((small_half_on_left_reversed != is_large_half_negative) ? JUNCTION_CONFIRM_WINDOW-1 : 0);
+		/* Do not place the junction within a known insertion. */
+		if(small_offsets[small_edge] == -MAX_READ_LENGTH || large_offsets[large_edge] == -MAX_READ_LENGTH) continue;
+		left_should_match = jumped_window_matches(global_context, value_index, small_virtualHead_abs_offset, small_read, small_start, small_offsets);
+		right_should_match = jumped_window_matches(global_context, value_index, large_virtualHead_abs_offset, large_read, large_start, large_offsets);
+		left_should_not_match = right_should_not_match = 0;
 
 		//#warning "============ REMOVE THE TWO '+ 1' FROM THE NEXT LINE ================="
 		//#warning "============ ADD THE TWO '+ 1's IN THE BLANKETS FOR SVs GRANT APP ================="
@@ -3676,6 +3714,8 @@ int donor_jumped_score(global_context_t * global_context, thread_context_t * thr
 			if(test_score > best_score)
 			{
 				selected_real_split_point = real_split_point_as_reversed;
+				*small_indel_offset = small_offsets[small_edge];
+				*large_indel_offset = large_offsets[large_edge];
 				best_score = test_score;
 			}
 		}
@@ -3928,8 +3968,8 @@ void find_new_junctions(global_context_t * global_context, thread_context_t * th
 
 			}else{
 				unsigned int major_half_smallest_coordinate, minor_half_smallest_coordinate;
-				major_half_smallest_coordinate = result -> selected_position + selected_real_split_point;
-				minor_half_smallest_coordinate = subjunc_result->minor_position + read_len - selected_real_split_point;
+				major_half_smallest_coordinate = result -> selected_position + selected_real_split_point + subjunc_result->major_indel_offset;
+				minor_half_smallest_coordinate = subjunc_result->minor_position + read_len - selected_real_split_point + subjunc_result->minor_indel_offset;
 				left_edge_wanted = min(major_half_smallest_coordinate, minor_half_smallest_coordinate);
 				right_edge_wanted = max(major_half_smallest_coordinate, minor_half_smallest_coordinate);
 				int is_abnormal_as_reversed = (subjunc_result->minor_coverage_start > result->confident_coverage_start) + (minor_half_smallest_coordinate > major_half_smallest_coordinate) == 1;
@@ -3953,9 +3993,8 @@ void find_new_junctions(global_context_t * global_context, thread_context_t * th
 
 
 			
-			int minor_indel_offset = (subjunc_result->double_indel_offset & 0xf);
-			int major_indel_offset = (subjunc_result->double_indel_offset >> 4) & 0xf;
-			if(major_indel_offset>=8)major_indel_offset=-(16-major_indel_offset);
+			int minor_indel_offset = subjunc_result->minor_indel_offset;
+			int major_indel_offset = subjunc_result->major_indel_offset;
 			//assert(minor_indel_offset==0);
 			//assert(major_indel_offset==0);
 

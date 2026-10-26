@@ -399,7 +399,8 @@ typedef struct
 {
 	short split_point;
 	gene_vote_number_t minor_votes;
-	char  double_indel_offset;
+	short major_indel_offset;
+	short minor_indel_offset;
 	char indel_at_junction;
 	char small_side_increasing_coordinate;
 	char large_side_increasing_coordinate;

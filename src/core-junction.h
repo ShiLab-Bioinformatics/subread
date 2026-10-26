@@ -145,7 +145,7 @@ void find_new_junctions(global_context_t * global_context, thread_context_t * th
 
 int donor_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int left_virtualHead_abs_offset, unsigned int right_virtualHead_abs_offset, int left_indels, int right_indels, int normally_arranged, int guess_start, int guess_end,  char * read_text, int read_len, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found, int * inserted_bases, int * small_side_inc_coor, int * large_side_inc_coor, char *read_name);
 
-int donor_jumped_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int left_virtualHead_abs_offset, unsigned int right_virtualHead_abs_offset, int guess_start, int guess_end,  char * read_text, int read_len, int is_left_half_negative, int is_right_half_negative, int is_left_part_on_left_as_reversed, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found, int * small_side_inc_coor, int * large_side_inc_coor, char * read_name);
+int donor_jumped_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int left_virtualHead_abs_offset, unsigned int right_virtualHead_abs_offset, gene_vote_number_t * small_indel_recorder, gene_vote_number_t * large_indel_recorder, int * small_indel_offset, int * large_indel_offset, int guess_start, int guess_end,  char * read_text, int read_len, int is_left_half_negative, int is_right_half_negative, int is_left_part_on_left_as_reversed, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found, int * small_side_inc_coor, int * large_side_inc_coor, char * read_name);
 
 int write_fusion_final_results(global_context_t * global_context);
 
