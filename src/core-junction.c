@@ -179,8 +179,7 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 			int site_events_no = search_event(global_context, event_table , event_space , potential_event_pos, event_search_method , search_types , site_events);
 
 
-			if(0 && FIXLENstrcmp("R010442852", explain_context -> read_name) == 0)
-			{
+			if(0 && FIXLENstrcmp("R010442852", explain_context -> read_name) == 0) {
 				SUBREADprintf("FOUND THE EVENT FRONT:%d at %u\n", site_events_no, potential_event_pos);
 				if(site_events_no)
 					SUBREADprintf("EVENT0_type = %d\n", site_events[0]->event_type);
@@ -204,8 +203,8 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 
 			int this_round_junction_scanned = 0;
 
-			if(0 && FIXLENstrcmp("R010442852", explain_context -> read_name) == 0)
-				SUBREADprintf("F_JUMP?  match=%d / tested=%d\n", matched_bases_to_site , tested_read_pos);
+			if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0)
+				SUBREADprintf("F_JUMP  %s ?  match=%d / tested=%d\n", explain_context -> read_name, matched_bases_to_site , tested_read_pos);
 
 			//#warning "========= remove - 2000 from next line ============="
 			if(explain_context -> total_tries < REALIGN_TOTAL_TRIES && tested_read_pos >0 && ( matched_bases_to_site*10000/tested_read_pos > 9000 - 2000 || global_context->config.maximise_sensitivity_indel) )
@@ -218,10 +217,10 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 						continue;
 					}
 					//if(explain_context -> pair_number == 23)
-					if(0 && FIXLENstrcmp("R00000001230", explain_context -> read_name) ==0){
+					if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0){
 						char outpos1[100];
 						absoffset_to_posstr(global_context, read_head_abs_offset , outpos1);
-						SUBREADprintf("F_JUMP?%d > %d    %s (%u) ; SEARCH_TAG=%u\n", (1+matched_bases_to_site)*10000 / tested_read_pos , 9000, read_text, tested_chro_begin, potential_event_pos);
+						SUBREADprintf("F_JUMP?%d > %d    %s (%u) ; SEARCH_TAG=%u   STRAND %s\n", (1+matched_bases_to_site)*10000 / tested_read_pos , 9000, read_text, tested_chro_begin, potential_event_pos, explain_context ->current_is_strand_jumped?"XXX" : "===");
 						debug_show_event(global_context, tested_event);
 
 					}
@@ -282,6 +281,7 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 						explain_context -> tmp_search_sections ++;
 
 						explain_context -> total_tries ++;
+					if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0)SUBREADprintf("TOY3 : go deeper %s\n",  explain_context -> read_name);
 						search_events_to_front(global_context, thread_context, explain_context, read_text + tested_event -> indel_at_junction + tested_read_pos -  min(0, tested_event->indel_length), qual_text + tested_read_pos -  min(0, tested_event->indel_length), new_read_head_abs_offset, new_remainder_len, sofar_matched + matched_bases_to_site - jump_penalty, tested_event -> connected_next_event_distance, 0);
 						explain_context -> tmp_search_sections --;
 
@@ -302,6 +302,8 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 	//assert( remainder_len< 102 );
 	int whole_section_matched = match_chro(read_text , value_index, explain_context -> current_is_strand_jumped?read_head_abs_offset - remainder_len +1:read_head_abs_offset, remainder_len , explain_context -> current_is_strand_jumped, global_context -> config.space_type);
  
+if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADprintf ("F_MATCH %d + %d => total match %d\n", whole_section_matched , sofar_matched , explain_context -> tmp_total_matched_bases);
+
 	explain_context -> tmp_total_matched_bases = whole_section_matched + sofar_matched ;	
 
 	new_explain_try_replace(global_context, thread_context, explain_context, remainder_len, 0);
@@ -311,9 +313,7 @@ void new_explain_try_replace(global_context_t* global_context, thread_context_t 
 {
 	int is_better_result = 0, is_same_best = 0;
 
-	if(0 && FIXLENstrcmp("simulated.11420793", explain_context->read_name)==0){
-		SUBREADprintf("TRY_REPLACE : %s has best=%d, b_evn=%d, tscore=%d, t_evn=%d\n", explain_context->read_name, explain_context -> best_matching_bases ,  explain_context -> best_is_complex , explain_context-> tmp_total_matched_bases,  explain_context -> tmp_search_sections );
-	}
+if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADprintf("TRY_REPLACE : %s has best=%d, b_evn=%d, tscore=%d, t_evn=%d\n", explain_context->read_name, explain_context -> best_matching_bases ,  explain_context -> best_is_complex , explain_context-> tmp_total_matched_bases,  explain_context -> tmp_search_sections );
 
 	if(explain_context -> best_matching_bases - explain_context -> best_indel_penalty < explain_context-> tmp_total_matched_bases - explain_context -> tmp_indel_penalty)
 	{
@@ -616,9 +616,6 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 		int move_start = read_tail_pos - (do_not_jump?0:global_context -> config.realignment_minimum_variant_distance);
 		if(suggested_movement) move_start = read_tail_pos - suggested_movement + 1;
 	
-	//#warning ">>>>>>>>>>>>>> COMMENT THIS <<<<<<<<<<<<<<<<<<<<<"
-	//printf("OCT27-STEP-BKIN : %s , STT=%d, %u, %d\n", explain_context -> read_name, move_start, read_tail_abs_offset, read_tail_pos);
-
 		if(MAX_EVENTS_IN_READ - 1> explain_context -> tmp_search_sections)
 		for(tested_read_pos =  move_start; tested_read_pos >=0;tested_read_pos --)
 		{
@@ -656,9 +653,6 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 
 			int this_round_junction_scanned = 0;
 
-			//#warning ">>>>>>>>>>>>>>>> REMOVE IT <<<<<<<<<<<<<<<<<<<<<<"
-			//printf("OCT27-STEPSB-JB-%s: test %u = %d events; TEST=%d > 7000 : MA=%d; %s ; %u = %u - (%d - %d) ; LEV=%d\n", explain_context -> read_name, potential_event_pos, site_events_no, (read_tail_pos<=tested_read_pos)?(-1234):( matched_bases_to_site*10000/(read_tail_pos - tested_read_pos)) , matched_bases_to_site, read_text + tested_read_pos, potential_event_pos, read_tail_abs_offset, read_tail_pos, tested_read_pos, explain_context -> tmp_search_sections);
-			//#warning "========= remove - 2000 from next line ============="
 			if(explain_context -> total_tries < REALIGN_TOTAL_TRIES && (read_tail_pos>tested_read_pos) && ( matched_bases_to_site*10000/(read_tail_pos - tested_read_pos) > 9000 - 2000 || global_context->config.maximise_sensitivity_indel) )
 				for(xk1 = 0; xk1 < site_events_no ; xk1++)
 				{
@@ -682,8 +676,8 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 					}
 
 
-					if(0 && FIXLENstrcmp("R00000001230", explain_context -> read_name) == 0)
-						SUBREADprintf("B_JUMP?%d  LOC %u   LEN %d EVT %p\n", (1+matched_bases_to_site)*10000 / (read_tail_pos - tested_read_pos) ,  tested_event-> event_large_side, tested_event-> indel_length, tested_event);
+					if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0)
+						SUBREADprintf("B_JUMP  %s ?  %d  LOC %u   LEN %d EVT %p\n", explain_context -> read_name, (1+matched_bases_to_site)*10000 / (read_tail_pos - tested_read_pos) ,  tested_event-> event_large_side, tested_event-> indel_length, tested_event);
 					// note that read_tail_pos is the first unwanted base.
 					int new_read_tail_pos = tested_read_pos;
 					if(tested_event->event_type == CHRO_EVENT_TYPE_INDEL) new_read_tail_pos +=  min(0, tested_event -> indel_length);
@@ -728,6 +722,7 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 						explain_context -> tmp_search_sections ++;
 						explain_context -> total_tries ++;
 
+//if(1 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0)SUBREADprintf("B_DEEPER\n");
 						search_events_to_back(global_context, thread_context, explain_context, read_text , qual_text, new_read_tail_abs_offset , new_read_tail_pos, sofar_matched + matched_bases_to_site - jump_penalty, tested_event -> connected_previous_event_distance, 0);
 
 						explain_context -> tmp_search_sections --;
@@ -744,6 +739,7 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 	}
 	int whole_section_matched = match_chro(read_text , value_index, read_tail_abs_offset - (explain_context -> current_is_strand_jumped?-1:read_tail_pos), read_tail_pos , explain_context -> current_is_strand_jumped, global_context -> config.space_type);
  
+if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADprintf ("B_MATCH %d + %d => total match %d\n", whole_section_matched , sofar_matched , explain_context -> tmp_total_matched_bases);
 	explain_context -> tmp_total_matched_bases = whole_section_matched + sofar_matched ;	
 
 	new_explain_try_replace(global_context, thread_context, explain_context, 0, 1);
@@ -1123,6 +1119,8 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 							junc_res, abs32uint(current_vote -> pos[vote_i][vote_j] - junc_res -> minor_position), current_vote -> votes[i][j], current_vote -> coverage_end[i][j] - current_vote -> coverage_start[i][j],
 							abs32uint(current_vote -> pos[vote_i][vote_j] - current_vote -> pos[i][j]));
 
+				//SUBREADprintf("TOY3_P01 %s BB %d  JMP %d\n", read_name, is_better, is_strand_jumpped);
+
 				int replace_minor = 0, minor_indel_offset = 0, inserted_bases = 0, is_GT_AG_donors = 0, is_donor_found_or_annotation = 0, final_split_point = 0, major_indels = 0, small_side_increasing_coordinate = 0, large_side_increasing_coordinate = 0;
 
 				if(0 && FIXLENstrcmp("R002403247", read_name) == 0) 
@@ -1153,6 +1151,7 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 						else
 							overlapped = main_cover_end_as_reversed - minor_cover_start_as_reversed;
 
+//						SUBREADprintf("TOY3_P02 %s\n", read_name);
 						if(overlapped > 14) continue;
 
 
@@ -1175,12 +1174,11 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 						replace_minor = donor_jumped_score(global_context, thread_context, small_half_abs_offset, large_half_abs_offset,
 									max(0, guess_start_as_reversed) , min( guess_end_as_reversed, curr_read_len),  curr_read_text,
 									curr_read_len, is_small_half_negative, is_large_half_negative, is_small_half_on_left_as_reversed,
-									& final_split_point, & is_GT_AG_donors, & is_donor_found_or_annotation, &small_side_increasing_coordinate, &large_side_increasing_coordinate);
+									& final_split_point, & is_GT_AG_donors, & is_donor_found_or_annotation, &small_side_increasing_coordinate, &large_side_increasing_coordinate, read_name);
 
-						if( 0 && 1018082 == pair_number)
-						{
+						if(0 && FIXLENstrcmp("toy3_061656", read_name) == 0) {
 							print_votes(current_vote, global_context -> config.index_prefix);
-							SUBREADprintf("JUMP_001018082  NORMAL=%d  SMALL_NEG=%d  LARGE_NEG=%d,  SMALL_ABS=%u  LARGE_ABS=%u,  REPLACE=%d,   INCS=%d %d\n" ,  is_small_half_on_left_as_reversed, is_small_half_negative, is_large_half_negative, small_half_abs_offset, large_half_abs_offset, replace_minor, small_side_increasing_coordinate, large_side_increasing_coordinate);
+							SUBREADprintf("TOY3  NORMAL=%d  SMALL_NEG=%d  LARGE_NEG=%d,  SMALL_ABS=%u  LARGE_ABS=%u,  REPLACE=%d,   INCS=%d %d\n" ,  is_small_half_on_left_as_reversed, is_small_half_negative, is_large_half_negative, small_half_abs_offset, large_half_abs_offset, replace_minor, small_side_increasing_coordinate, large_side_increasing_coordinate);
 						}
 
 
@@ -1268,8 +1266,9 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 
 						if(replace_minor>0) replace_minor += current_vote -> votes[i][j] * 100000;
 
-						if(0 && ( FIXLENstrcmp("R006232475", read_name) == 0 ) )
+						if(0 && FIXLENstrcmp("toy3_061656", read_name) == 0) {
 							SUBREADprintf("NOJUMP_DONORs=%d   LOC=%u\n", replace_minor , current_vote -> pos[i][j]);
+						}
 						if((global_context ->  config.do_fusion_detection || global_context ->  config.do_long_del_detection) && !(current_vote -> masks[vote_i][vote_j] & IS_NEGATIVE_STRAND))
 							// changed back.
 							reverse_read(curr_read_text, curr_read_len, global_context -> config.space_type);
@@ -3595,7 +3594,7 @@ int is_ambiguous_voting(global_context_t * global_context, subread_read_number_t
 
 // Note that the read_text is on reversed mode. The guess points are on reversed mode too.
 // "Left" and "Right" means the left/right half in the "reversed" read.
-int donor_jumped_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int small_virtualHead_abs_offset, unsigned int large_virtualHead_abs_offset, int guess_start, int guess_end,  char * read_text, int read_len, int is_small_half_negative, int is_large_half_negative, int small_half_on_left_reversed, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found_or_annotation, int * small_side_increasing_coordinate, int * large_side_increasing_coordinate)
+int donor_jumped_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int small_virtualHead_abs_offset, unsigned int large_virtualHead_abs_offset, int guess_start, int guess_end,  char * read_text, int read_len, int is_small_half_negative, int is_large_half_negative, int small_half_on_left_reversed, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found_or_annotation, int * small_side_increasing_coordinate, int * large_side_increasing_coordinate, char * read_name)
 {
 	gene_value_index_t * value_index = thread_context?thread_context->current_value_index:global_context->current_value_index ;
 	// guess_end is the index of the first UNWANTED BASE.
@@ -3682,6 +3681,7 @@ int donor_jumped_score(global_context_t * global_context, thread_context_t * thr
 		}
 	}
 
+if(0 && FIXLENstrcmp("toy3_061656", read_name) == 0) SUBREADprintf("TOY3 %s INNTERTEST BSCORE %d\n", read_name, best_score);
 	if(best_score>0)
 	{
 		//printf("TEST_JUMPED: BSCORE=%d  SPLT=%d\n", best_score , selected_real_split_point);
