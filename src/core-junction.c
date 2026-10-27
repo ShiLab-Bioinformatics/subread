@@ -3784,8 +3784,7 @@ int donor_jumped_score(global_context_t * global_context, thread_context_t * thr
 			left_should_not_match <= JUNCTION_CONFIRM_WINDOW -3 && right_should_not_match <= JUNCTION_CONFIRM_WINDOW -3)
 		{
 			int test_score = is_donor_test_ok*500+left_should_match + right_should_match - left_should_not_match - right_should_not_match;
-			if(test_score > best_score)
-			{
+			if(test_score > best_score || ( test_score == best_score && real_split_point_as_reversed < selected_real_split_point)) { // must be global_context ->  config.do_fusion_detection here.
 				selected_real_split_point = real_split_point_as_reversed;
 				*small_indel_offset = small_offsets[small_edge];
 				*large_indel_offset = large_offsets[large_edge];
@@ -3908,7 +3907,7 @@ int donor_score(global_context_t * global_context, thread_context_t * thread_con
 								else
 									test_score = 100*(is_donor_test_ok*3000+left_should_match + right_should_match - left_should_not_match - right_should_not_match);
 
-								if(test_score > best_score)
+								if(test_score > best_score || ( test_score == best_score && real_split_point < selected_real_split_point && global_context ->  config.do_fusion_detection ))
 								{
 									//if(left_virtualHead_abs_offset > 2729745284 - 200 && left_virtualHead_abs_offset< 2729745284 + 200)
 									//	SUBREADprintf("INS=%d; BSS=%d; TSC=%d\n%s\n\n", inserted_bases , best_score, test_score, read_text);
@@ -3943,7 +3942,7 @@ int donor_score(global_context_t * global_context, thread_context_t * thread_con
 					int test_score;
 
 					test_score = 100*(is_donor_test_ok*3000+left_should_match + right_should_match - left_should_not_match - right_should_not_match);
-					if(test_score > best_score)
+					if(test_score > best_score || (test_score == best_score && real_split_point < selected_real_split_point && global_context ->  config.do_fusion_detection) )
 					{
 						selected_junction_strand = (donor_left[0]=='G' || donor_right[1]=='G');
 						selected_real_split_point = real_split_point;	
