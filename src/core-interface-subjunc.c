@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
@@ -62,6 +64,7 @@ static struct option long_options[] =
 	{"relaxMismatchedBases",  no_argument, 0, 0},
 	{"reportPairedMultiBest",  no_argument, 0, 0},
 	{"maxMismatches",  required_argument, 0, 'M'},
+	{"maxMismatchesBeforeSoftClipping", required_argument, 0, 0},
 	{"exonicSubreadFrac",  required_argument, 0, 0},
 	{"SVdetection", no_argument, 0, 0},
 	{"maxVoteSimples",  required_argument, 0, 0},
@@ -132,6 +135,9 @@ void print_usage_core_subjunc()
 	SUBREADputs("  -M <int>          Maximum number of mis-matched bases allowed in each reported");
 	SUBREADputs("                    alignment. 3 by default. Mis-matched bases found in soft-");
 	SUBREADputs("                    clipped bases are not counted.");
+	SUBREADputs("");
+	SUBREADputs("  --maxMismatchesBeforeSoftClipping <int> Maximum mismatches before soft");
+	SUBREADputs("                    clipping. 999999 by default (effectively unlimited).");
 	SUBREADputs("");
 	SUBREADputs("# unique mapping and multi-mapping");
 	SUBREADputs("");
@@ -519,7 +525,19 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 				break;
 				
 			case 0:
-				if(strcmp("multiMapping", long_options[option_index].name)==0)
+				if(strcmp("maxMismatchesBeforeSoftClipping", long_options[option_index].name)==0)
+				{
+					char *end = NULL;
+					errno = 0;
+					long limit = strtol(optarg, &end, 10);
+					if(!optarg[0] || end == optarg || *end || optarg[0] == '-' || errno == ERANGE || limit < 0 || limit > INT_MAX)
+					{
+						SUBREADprintf("ERROR: --maxMismatchesBeforeSoftClipping requires a non-negative integer up to %d.\n", INT_MAX);
+						return -1;
+					}
+					global_context->config.max_preclip_mismatches = (int)limit;
+				}
+				else if(strcmp("multiMapping", long_options[option_index].name)==0)
 				{
 					global_context->config.report_multi_mapping_reads = 1;
 				}
