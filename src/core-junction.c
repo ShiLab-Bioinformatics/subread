@@ -121,6 +121,54 @@ int get_offset_maximum_chro_pos(global_context_t * global_context, thread_contex
 }
 
 
+// Fusion realignment also penalises bases that did not match the reference.
+static int realignment_section_score(int matches, int length, int fusion_detection)
+{
+    return matches; // old way: no "mismatching penalty".
+
+    return matches - (fusion_detection ? 2 * (length - matches) : 0);
+}
+
+// Temporary read-specific diagnostic.
+static int trace_956_read(const char *name)
+{
+	return 0;
+	return name && strcmp(name, "SRR10080547-GSM4065621-PDAC_154.956") == 0;
+}
+
+static void trace_956_site(global_context_t *g, explain_context_t *e, const char *dir,
+	unsigned int site, int read_pos, int length, int matches, int sofar,
+	chromosome_event_t **events, int count)
+{
+	if(!trace_956_read(e->read_name)) return;
+	int gate = e->total_tries < REALIGN_TOTAL_TRIES && length > 0 &&
+		(matches * 10000 / length > 7000 || g->config.maximise_sensitivity_indel);
+	int i;
+	for(i = 0; i < count; i++){
+		chromosome_event_t *ev = events[i];
+		int fully_covered_skip = e->is_fully_covered && ev->event_type == CHRO_EVENT_TYPE_FUSION && ev->event_large_side - ev->event_small_side > MAX_DELETION_LENGTH;
+		int wrong_indel_side = 0;
+		if((g->config.do_fusion_detection || g->config.do_long_del_detection) && ev->event_type == CHRO_EVENT_TYPE_INDEL){
+			if(dir[0] == 'F') wrong_indel_side = site == (e->current_is_strand_jumped ? ev->event_small_side : ev->event_large_side);
+			else wrong_indel_side = site == (e->current_is_strand_jumped ? ev->event_large_side : ev->event_small_side);
+		}
+		SUBREADprintf("TRACE956 SITE name=%s mate=%d anchor=%d dir=%s depth=%d site=%u read_pos=%d event=%p type=%d small=%u large=%u indel_len=%d junction_ins=%d strand_jump=%d support=%d anti=%d matches=%d length=%d mismatches=%d section_score=%d score_before=%d gate=%d fully_covered_skip=%d wrong_indel_side=%d tries=%d\n",
+			e->read_name, e->is_second_read+1, e->best_read_id, dir, e->tmp_search_sections, site, read_pos, (void *)ev, ev->event_type, ev->event_small_side, ev->event_large_side, ev->indel_length, ev->indel_at_junction, ev->is_strand_jumped, ev->supporting_reads, ev->anti_supporting_reads, matches, length, length-matches, realignment_section_score(matches, length, g->config.do_fusion_detection), sofar, gate, fully_covered_skip, wrong_indel_side, e->total_tries);
+	}
+}
+
+static void trace_956_path(global_context_t *g, explain_context_t *e, const char *dir,
+	int matches, int length, int sofar, int back)
+{
+	if(!trace_956_read(e->read_name)) return;
+	int i, score = sofar + realignment_section_score(matches, length, g->config.do_fusion_detection);
+	SUBREADprintf("TRACE956 PATH name=%s mate=%d anchor=%d dir=%s events=%d terminal_matches=%d terminal_length=%d terminal_mismatches=%d terminal_score=%d prior_score=%d score_before_indel=%d indel_penalty=%d score=%d best_score=%d\n", e->read_name, e->is_second_read+1, e->best_read_id, dir, e->tmp_search_sections, matches, length, length-matches, realignment_section_score(matches, length, g->config.do_fusion_detection), sofar, score, e->tmp_indel_penalty, score-e->tmp_indel_penalty, e->best_matching_bases-e->best_indel_penalty);
+	for(i = 0; i < e->tmp_search_sections; i++){
+		chromosome_event_t *ev = e->tmp_search_junctions[i + (back ? 1 : 0)].event_after_section;
+		if(ev) SUBREADprintf("TRACE956 PATH_EVENT name=%s mate=%d anchor=%d dir=%s path_index=%d event=%p type=%d small=%u large=%u indel_len=%d junction_ins=%d strand_jump=%d\n", e->read_name, e->is_second_read+1, e->best_read_id, dir, i, (void *)ev, ev->event_type, ev->event_small_side, ev->event_large_side, ev->indel_length, ev->indel_at_junction, ev->is_strand_jumped);
+	}
+}
+
 // read_head_abs_pos is the offset of the FIRST WANTED base.
 void search_events_to_front(global_context_t * global_context, thread_context_t * thread_context, explain_context_t * explain_context, char * read_text , char * qual_text, unsigned int read_head_abs_offset, short remainder_len, short sofar_matched, int suggested_movement, int do_not_jump)
 {
@@ -194,6 +242,7 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 				tested_chro_begin = read_head_abs_offset;
 
 			matched_bases_to_site = match_chro(read_text, value_index, tested_chro_begin, tested_read_pos, explain_context -> current_is_strand_jumped, global_context -> config.space_type);
+			trace_956_site(global_context, explain_context, "FRONT", potential_event_pos, tested_read_pos, tested_read_pos, matched_bases_to_site, sofar_matched, site_events, site_events_no);
 
 			/*
 			#warning "========= COMMENT TWO LINES ===================="
@@ -282,7 +331,8 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 
 						explain_context -> total_tries ++;
 					if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0)SUBREADprintf("TOY3 : go deeper %s\n",  explain_context -> read_name);
-						search_events_to_front(global_context, thread_context, explain_context, read_text + tested_event -> indel_at_junction + tested_read_pos -  min(0, tested_event->indel_length), qual_text + tested_read_pos -  min(0, tested_event->indel_length), new_read_head_abs_offset, new_remainder_len, sofar_matched + matched_bases_to_site - jump_penalty, tested_event -> connected_next_event_distance, 0);
+						if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 STEP name=%s mate=%d anchor=%d dir=FRONT depth=%d event=%p segment_score=%d jump_penalty=%d indel_penalty=%d accumulated=%d next_ref=%u next_len=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, explain_context->tmp_search_sections, (void *)tested_event, realignment_section_score(matched_bases_to_site, tested_read_pos, global_context->config.do_fusion_detection), jump_penalty, explain_context->tmp_indel_penalty, sofar_matched + realignment_section_score(matched_bases_to_site, tested_read_pos, global_context->config.do_fusion_detection) - jump_penalty, new_read_head_abs_offset, new_remainder_len);
+						search_events_to_front(global_context, thread_context, explain_context, read_text + tested_event -> indel_at_junction + tested_read_pos -  min(0, tested_event->indel_length), qual_text + tested_read_pos -  min(0, tested_event->indel_length), new_read_head_abs_offset, new_remainder_len, sofar_matched + realignment_section_score(matched_bases_to_site, tested_read_pos, global_context -> config.do_fusion_detection) - jump_penalty, tested_event -> connected_next_event_distance, 0);
 						explain_context -> tmp_search_sections --;
 
 						explain_context -> current_is_strand_jumped = current_is_jumped;
@@ -304,8 +354,9 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
  
 if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADprintf ("F_MATCH %d + %d => total match %d\n", whole_section_matched , sofar_matched , explain_context -> tmp_total_matched_bases);
 
-	explain_context -> tmp_total_matched_bases = whole_section_matched + sofar_matched ;	
+	explain_context -> tmp_total_matched_bases = realignment_section_score(whole_section_matched, remainder_len, global_context -> config.do_fusion_detection) + sofar_matched ;	
 
+	trace_956_path(global_context, explain_context, "FRONT", whole_section_matched, remainder_len, sofar_matched, 0);
 	new_explain_try_replace(global_context, thread_context, explain_context, remainder_len, 0);
 }
 
@@ -389,7 +440,11 @@ if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADp
 				}
 		}
 	}
-	else return;
+	else {
+		if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 DECISION name=%s mate=%d anchor=%d dir=%s result=lower_score\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, search_to_back?"BACK":"FRONT");
+		return;
+	}
+	if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 DECISION name=%s mate=%d anchor=%d dir=%s better=%d same=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, search_to_back?"BACK":"FRONT", is_better_result, is_same_best);
 
 	if(is_better_result || is_same_best){
 		if(search_to_back){
@@ -650,6 +705,7 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 				tested_chro_begin = read_tail_abs_offset - (read_tail_pos - tested_read_pos);
 
 			matched_bases_to_site = match_chro(read_text + tested_read_pos, value_index, tested_chro_begin , read_tail_pos - tested_read_pos, explain_context -> current_is_strand_jumped, global_context -> config.space_type);
+			trace_956_site(global_context, explain_context, "BACK", potential_event_pos, tested_read_pos, read_tail_pos-tested_read_pos, matched_bases_to_site, sofar_matched, site_events, site_events_no);
 
 			int this_round_junction_scanned = 0;
 
@@ -723,7 +779,8 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 						explain_context -> total_tries ++;
 
 //if(1 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0)SUBREADprintf("B_DEEPER\n");
-						search_events_to_back(global_context, thread_context, explain_context, read_text , qual_text, new_read_tail_abs_offset , new_read_tail_pos, sofar_matched + matched_bases_to_site - jump_penalty, tested_event -> connected_previous_event_distance, 0);
+						if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 STEP name=%s mate=%d anchor=%d dir=BACK depth=%d event=%p segment_score=%d jump_penalty=%d indel_penalty=%d accumulated=%d next_ref=%u next_len=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, explain_context->tmp_search_sections, (void *)tested_event, realignment_section_score(matched_bases_to_site, read_tail_pos-tested_read_pos, global_context->config.do_fusion_detection), jump_penalty, explain_context->tmp_indel_penalty, sofar_matched + realignment_section_score(matched_bases_to_site, read_tail_pos-tested_read_pos, global_context->config.do_fusion_detection) - jump_penalty, new_read_tail_abs_offset, new_read_tail_pos);
+						search_events_to_back(global_context, thread_context, explain_context, read_text , qual_text, new_read_tail_abs_offset , new_read_tail_pos, sofar_matched + realignment_section_score(matched_bases_to_site, read_tail_pos - tested_read_pos, global_context -> config.do_fusion_detection) - jump_penalty, tested_event -> connected_previous_event_distance, 0);
 
 						explain_context -> tmp_search_sections --;
 						explain_context -> tmp_indel_penalty -= ( tested_event -> event_type == CHRO_EVENT_TYPE_INDEL );
@@ -740,8 +797,9 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 	int whole_section_matched = match_chro(read_text , value_index, read_tail_abs_offset - (explain_context -> current_is_strand_jumped?-1:read_tail_pos), read_tail_pos , explain_context -> current_is_strand_jumped, global_context -> config.space_type);
  
 if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADprintf ("B_MATCH %d + %d => total match %d\n", whole_section_matched , sofar_matched , explain_context -> tmp_total_matched_bases);
-	explain_context -> tmp_total_matched_bases = whole_section_matched + sofar_matched ;	
+	explain_context -> tmp_total_matched_bases = realignment_section_score(whole_section_matched, read_tail_pos, global_context -> config.do_fusion_detection) + sofar_matched ;	
 
+	trace_956_path(global_context, explain_context, "BACK", whole_section_matched, read_tail_pos, sofar_matched, 1);
 	new_explain_try_replace(global_context, thread_context, explain_context, 0, 1);
 }
 
@@ -2692,6 +2750,7 @@ unsigned int explain_read(global_context_t * global_context, thread_context_t * 
 	}
 
 	search_events_to_back(global_context, thread_context, &explain_context, read_text , qual_text, back_search_tail_position , back_search_read_tail, 0, 0, 1);
+	if(trace_956_read(read_name)) SUBREADprintf("TRACE956 BEST name=%s mate=%d anchor=%d dir=BACK score=%d indel_penalty=%d paths=%d\n", read_name, is_second_read+1, best_read_id, explain_context.best_matching_bases, explain_context.best_indel_penalty, explain_context.all_back_alignments);
 	int back_penalty = explain_context.best_indel_penalty;
 
 	//int is_backsearch_tie = explain_context.is_currently_tie;
@@ -2772,6 +2831,7 @@ unsigned int explain_read(global_context_t * global_context, thread_context_t * 
 	if(0 && FIXLENstrcmp("R_chr901_932716_91M1D9M",explain_context.read_name ) == 0)
 		 SUBREADprintf("F_SEARCH has found %d result sets\n", explain_context.all_front_alignments);
 
+	if(trace_956_read(read_name)) SUBREADprintf("TRACE956 BEST name=%s mate=%d anchor=%d dir=FRONT score=%d indel_penalty=%d paths=%d\n", read_name, is_second_read+1, best_read_id, explain_context.best_matching_bases, explain_context.best_indel_penalty, explain_context.all_front_alignments);
 	explain_context.best_indel_penalty += back_penalty;
 	//int is_frontsearch_tie = explain_context.is_currently_tie;
 
@@ -3381,6 +3441,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 			if(is_exonic_read_fraction_OK)
 			{
 			if(0 && FIXLENstrcmp("R00000001230", explain_context -> read_name) ==0) SUBREADprintf("TSOFT_COVSTART %d\n",  result -> confident_coverage_start);
+				if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 COMBINATION_RAW name=%s mate=%d anchor=%d back=%d front=%d position=%u cigar=%s fusions=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, back_i, front_i, final_position, tmp_cigar, fusions_in_read);
 				final_qual  = final_CIGAR_quality(global_context, thread_context, explain_context -> full_read_text, explain_context -> full_qual_text, explain_context -> full_read_len , tmp_cigar, final_position, is_first_section_negative != ((result->result_flags & CORE_IS_NEGATIVE_STRAND)?1:0), &mismatch_bases, result -> confident_coverage_start, result -> confident_coverage_end,  explain_context -> read_name, &non_clipped_length, &total_indel_length, & final_MATCH, & chromosomal_length, & full_section_clipped);
 				//#warning ">>>>>>> COMMENT THIS <<<<<<<"
 				//printf("OCT27-STEP2-%s:%d-POS%u-VOT%d-CIG-%s [ %d ]-INDELs=%llu; M/MM=%d,%d\n", explain_context -> read_name, explain_context  -> is_second_read + 1,  result -> selected_position, result -> selected_votes, tmp_cigar, is_cigar_overflow, ((indel_thread_context_t *)thread_context -> module_thread_contexts[MODULE_INDEL_ID]) -> event_entry_table -> numOfElements, final_MATCH, mismatch_bases);
@@ -3395,7 +3456,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 
 
 			//#warning " ========== COMMENT THIS LINE !! ========="
-			if(0 && FIXLENstrcmp("R00000001122", explain_context -> read_name) ==0){
+			if(0 && FIXLENstrcmp("SRR9624992-GSM3914621-N_009.290181", explain_context -> read_name) ==0){
 				char outpos1[100];
 				absoffset_to_posstr(global_context, final_position, outpos1);
 				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?  MASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, global_context -> config.minimum_exonic_subread_fraction,result-> used_subreads_in_vote, result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);
@@ -3403,6 +3464,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 			}
 
 
+			if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 COMBINATION_FINAL name=%s mate=%d anchor=%d back=%d front=%d position=%u cigar=%s matches=%d mismatches=%d mismatch_limit=%d non_clipped=%d indel_length=%d quality=%d full_section_clipped=%d exonic_ok=%d fusions=%d accepted=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, back_i, front_i, final_position, tmp_cigar, final_MATCH, mismatch_bases, applied_mismatch, non_clipped_length, total_indel_length, final_qual, full_section_clipped, is_exonic_read_fraction_OK, fusions_in_read, mismatch_bases <= applied_mismatch && is_exonic_read_fraction_OK && fusions_in_read < 2);
 			if(mismatch_bases <= applied_mismatch && is_exonic_read_fraction_OK && fusions_in_read < 2 ){// && (0 == full_section_clipped || 0 == global_context -> config.do_breakpoint_detection)) {
 				realignment_result_t * realign_res = final_realignments+final_alignment_number;
 				final_alignment_number ++;

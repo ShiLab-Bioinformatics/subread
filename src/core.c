@@ -1423,51 +1423,18 @@ int add_head_tail_cut_softclipping(global_context_t * global_context, unsigned i
 }
 
 
-static int chimeric_query_span(const char *cigar, int read_len, int *start, int *end)
+// All parser sections use the realignment anchor's query order. Convert
+// each section to the selected primary's BAM SEQ frame using the same
+// decision, regardless of the individual section's reference strand.
+static int orient_chimeric_cigar(char *cigar, int anchor_negative, int primary_negative)
 {
-	int q = 0, found = 0;
-	*start = *end = 0;
-	while(*cigar){
-		unsigned int length = 0;
-		char op;
-		if(!isdigit((unsigned char)*cigar)) return 0;
-		while(isdigit((unsigned char)*cigar)){
-			length = length * 10 + (*cigar - '0');
-			cigar++;
-		}
-		if(!*cigar || !length) return 0;
-		op = *cigar++;
-		if(op == 'M' || op == '=' || op == 'X'){
-			if(!found) *start = q;
-			q += length;
-			*end = q;
-			found = 1;
-		}else if(op == 'S' || op == 'I') q += length;
-		else if(op != 'D' && op != 'N' && op != 'H' && op != 'P') return 0;
-		if(q > read_len) return 0;
-	}
-	return found;
-}
-
-static int orient_chimeric_cigar(char *cigar, const char *primary, int read_len)
-{
-	int p_start, p_end, c_start, c_end, r_start, r_end;
 	int lengths[64], n = 0, i, written = 0;
 	char ops[64], mirrored[128];
 	const char *walk = cigar;
-	if(!chimeric_query_span(primary, read_len, &p_start, &p_end) ||
-	   !chimeric_query_span(cigar, read_len, &c_start, &c_end)) return 0;
-	r_start = read_len - c_end;
-	r_end = read_len - c_start;
-	if(!(r_end <= p_start || r_start >= p_end)) return 0;
-	if(c_end <= p_start || c_start >= p_end){
-		int raw_gap = c_end <= p_start ? p_start - c_end : c_start - p_end;
-		int reversed_gap = r_end <= p_start ? p_start - r_end : r_start - p_end;
-		if(reversed_gap >= raw_gap) return 0;
-	}
+	if(anchor_negative == primary_negative) return 1;
 	while(*walk){
 		unsigned int length = 0;
-		if(n >= 64) return 0;
+		if(n >= 64 || !isdigit((unsigned char)*walk)) return 0;
 		while(isdigit((unsigned char)*walk)){
 			length = length * 10 + (*walk - '0');
 			walk++;
@@ -1476,6 +1443,7 @@ static int orient_chimeric_cigar(char *cigar, const char *primary, int read_len)
 		lengths[n] = length;
 		ops[n++] = *walk++;
 	}
+	if(!n) return 0;
 	for(i = n - 1; i >= 0; i--){
 		int size = SUBreadSprintf(mirrored + written, sizeof(mirrored) - written,
 			"%d%c", lengths[i], ops[i]);
@@ -1489,14 +1457,13 @@ static int orient_chimeric_cigar(char *cigar, const char *primary, int read_len)
 
 int convert_read_to_tmp(global_context_t * global_context , subread_output_context_t * output_context, int read_number, int is_second_read, int read_len, char * read_text, char * qual_text, realignment_result_t * current_result, subread_output_tmp_t * r, char * read_name)
 {
-
 	int is_r_OK;
 	r -> raw_result = current_result -> mapping_result;
 	r -> additional_information[0]=0;
 
 	is_r_OK = (current_result -> mapping_result -> result_flags & CORE_IS_FULLY_EXPLAINED) > 0;
 
-	if(0 && FIXLENstrcmp("V0112_0155:7:1101:5279:29143#ATCACG", read_name) == 0)
+	if(0 && FIXLENstrcmp("SRR9624992-GSM3914621-N_009.290181", read_name) ==0)
 		SUBREADprintf("%s  R_%d CPOINT1 : is_OK=%d\n", read_name , is_second_read + 1 , is_r_OK);
 
 	if(is_r_OK) {
@@ -1534,41 +1501,26 @@ int convert_read_to_tmp(global_context_t * global_context , subread_output_conte
 				int xk1;
 				r->chimeric_sections = chimeric_sections;
 				strcpy(r->out_cigars[0], output_context->out_cigar_buffer[0]);
-				// FIX1: when the read's 5' section is not the first section in
-				// reference order, chimeric_cigar_parts emits the primary CIGAR
-				// with the soft clips on the wrong side and out_poses holding the
-				// block's rightmost base. Mirror the CIGAR and move the position
-				// back to the block's leftmost base.
-				if(is_first_section_jumped && r->out_cigars[0][0] && isdigit((unsigned char)r->out_cigars[0][0])){
-					int f1_ops[64], f1_lens[64], f1_n = 0, f1_i, f1_mlen = 0;
-					char f1_chr[64];
-					char * f1_p = r->out_cigars[0];
-					while(*f1_p && f1_n < 64){
-						int f1_v = 0;
-						while(isdigit((unsigned char)*f1_p)){ f1_v = f1_v*10 + (*f1_p - '0'); f1_p++; }
-						if(!*f1_p) break;
-						f1_lens[f1_n] = f1_v; f1_chr[f1_n] = *f1_p; f1_n++; f1_p++;
-					}
-					if(f1_n >= 2 && f1_chr[f1_n-1] == 'S' && f1_chr[0] != 'S'){
-						char f1_buf[128];
-						int f1_w = 0;
-						for(f1_i = f1_n-1; f1_i >= 0; f1_i--){
-							f1_w += SUBreadSprintf(f1_buf + f1_w, 128 - f1_w, "%d%c", f1_lens[f1_i], f1_chr[f1_i]);
-							if(f1_chr[f1_i] == 'M' || f1_chr[f1_i] == 'D' || f1_chr[f1_i] == 'N' || f1_chr[f1_i] == '=' || f1_chr[f1_i] == 'X')
-								f1_mlen += f1_lens[f1_i];
-						}
-						if(f1_mlen > 0){
-							int f1_lead = (f1_chr[f1_n-1] == 'S') ? f1_lens[f1_n-1] : 0;
-							strcpy(r->out_cigars[0], f1_buf);
-							r->out_poses[0] -= (f1_mlen - 1 + f1_lead);
-						}
-					}
+				// The parser wrote every section in the anchor's read frame.
+				// If primary selection changed the SEQ frame, reflect the main
+				// CIGAR too. out_poses is a virtual read-head position: the
+				// output code adds the leading soft clip to get the SAM POS.
+				if(current_strand != (r->out_strands[0] == '-')){
+					if(!orient_chimeric_cigar(r->out_cigars[0], current_strand, r->out_strands[0] == '-') ||
+					   r->out_ref_left[0] == ~0U ||
+					   r->out_ref_left[0] < (unsigned int)get_soft_clipping_length(r->out_cigars[0]))
+						is_r_OK = 0;
+					else
+						r->out_poses[0] = r->out_ref_left[0] - get_soft_clipping_length(r->out_cigars[0]);
 				}
-				for(xk1=1; xk1<chimeric_sections; xk1++)
-				{
+				for(xk1=1; is_r_OK && xk1<chimeric_sections; xk1++) {
 					strcpy(r->out_cigars[xk1], output_context->out_cigar_buffer[xk1]);
-				orient_chimeric_cigar(r->out_cigars[xk1], r->out_cigars[0], read_len);
+					if(!orient_chimeric_cigar(r->out_cigars[xk1], current_strand, r->out_strands[0] == '-')){
+						is_r_OK = 0;
+						break;
+					}
 
+					if(0 && FIXLENstrcmp("SRR10080547-GSM4065621-PDAC_154.956", read_name) ==0) SUBREADprintf("CHIMPART %d : %s  REV=%d\n", xk1, r->out_cigars[xk1], r->out_strands[xk1] == '-');
 					// The parser records the aligned reference interval before soft
 					// clips or section swaps can alter the virtual read-head position.
 					if(r->out_ref_left[xk1] == ~0U){ is_r_OK = 0; break; }
@@ -1580,7 +1532,8 @@ int convert_read_to_tmp(global_context_t * global_context , subread_output_conte
 					if(0 == locate_gene_position_max(r->out_ref_left[xk1], &global_context->chromosome_table,
 						&chimaric_chr, &chimeric_pos, NULL, NULL, 1) &&
 					   0 == locate_gene_position_max(cp_global, &global_context->chromosome_table,
-						&cp_chr, &cp_offset, NULL, NULL, 1) && cp_chr == chimaric_chr){
+						&cp_chr, &cp_offset, NULL, NULL, 1) && cp_chr == chimaric_chr
+					){
 						char strand_xor = (r->out_strands[xk1] == '-') != is_second_read;
 						SUBreadSprintf(r->additional_information + strlen(r->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen(r->additional_information), "\tCG:Z:%s\tCP:i:%u\tCT:Z:%c\tCC:Z:%s", r->out_cigars[xk1], (unsigned int)(cp_offset + 1), strand_xor?'-':'+', chimaric_chr);
 					}else is_r_OK = 0;
