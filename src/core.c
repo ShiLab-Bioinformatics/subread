@@ -2080,12 +2080,12 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 	if(global_context -> config.space_type == GENE_SPACE_BASE){ 
 		if(is_R1_OK) {// && !strstr(rec1->additional_information, "\tNM:i:")){
 			short rec1_edit = calc_edit_dist(global_context, rec1->raw_result, rec1->cigar , rec1->linear_position, read_text_1, raw_r1 -> final_mismatched_bases);
-			SUBreadSprintf(rec1->additional_information + strlen( rec1->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec1->additional_information), "\tNM:i:%d", rec1_edit );
+			SUBreadSprintf(rec1->additional_information + strlen( rec1->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec1->additional_information), "\tNM:i:%d\tXM:i:%d", rec1_edit, raw_r1 -> final_mismatched_bases );
 		}
 		if(global_context->input_reads.is_paired_end_reads && is_R2_OK) //&& !strstr(rec2->additional_information, "\tNM:i:"))
 		{
 			short rec2_edit = calc_edit_dist(global_context, rec2->raw_result, rec2->cigar , rec2->linear_position, read_text_2, raw_r2 -> final_mismatched_bases);
-			SUBreadSprintf(rec2->additional_information + strlen( rec2->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec2->additional_information), "\tNM:i:%d", rec2_edit );
+			SUBreadSprintf(rec2->additional_information + strlen( rec2->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec2->additional_information), "\tNM:i:%d\tXM:i:%d", rec2_edit, raw_r2 -> final_mismatched_bases );
 		}
 	}
 
