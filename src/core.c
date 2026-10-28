@@ -2530,19 +2530,24 @@ static uint64_t repeated_fusion_part_hash(uint64_t ref_min,
  * their linear-reference positions, raw-read positions and strands define the
  * alignment independently of its selected primary part.
  */
-static uint64_t repeated_fusion_alignment_hash(realignment_result_t *res)
+
+static uint64_t repeated_fusion_alignment_hash(global_context_t *global_context,
+	realignment_result_t *res, char * read_name)
 {
 	uint64_t part_hashes[CORE_MAX_CIGAR_STR_LEN + 1];
 	uint64_t ref_cursor = res->first_base_position;
+	uint64_t current_perfect_cursor = res->first_base_position;
+	uint64_t current_perfect_map_start = res->first_base_position;
 	uint64_t number = 0;
 	uint32_t read_cursor = 0, read_length = 0;
 	unsigned int part_count = 0;
 	int main_negative = !!(res->mapping_result->result_flags & CORE_IS_NEGATIVE_STRAND);
 	int section_negative = !!(res->first_base_is_jumpped ^ main_negative);
 	int reference_reversed = !!res->first_base_is_jumpped;
-	int cigar_walks_reverse_raw = !!res->first_base_is_jumpped;
+	int cigar_walks_reverse_raw = !!section_negative;
 	const char *cigar = res->cigar_string;
 	int cigar_i;
+
 
 	for (cigar_i = 0; cigar[cigar_i]; cigar_i++) {
 		if (isdigit((unsigned char)cigar[cigar_i])) {
@@ -2565,37 +2570,59 @@ static uint64_t repeated_fusion_alignment_hash(realignment_result_t *res)
 		if (number == 0 || part_count >= CORE_MAX_CIGAR_STR_LEN)
 			return 0;
 		if (op == 'M' || op == '=' || op == 'X') {
-			uint64_t ref_min = reference_reversed ? ref_cursor - number + 1 : ref_cursor;
+			uint64_t ref_min = (0&&reference_reversed) ? ref_cursor - number + 1 : ref_cursor;
 			uint32_t raw_read_start = cigar_walks_reverse_raw ?
 				read_length - read_cursor - (uint32_t)number : read_cursor;
-			part_hashes[part_count++] = repeated_fusion_part_hash(ref_min,
-				raw_read_start, (uint32_t)number, section_negative, 1);
+
+
+			uint64_t hashval = repeated_fusion_part_hash(ref_min, raw_read_start, (uint32_t)number, section_negative, 1);
+if(0 && FIXLENstrcmp("toy3_299958", read_name) ==0)fprintf(stderr,"INNERHASH %s with CIGAR %s at %llu  HASH %llu   INF %llu %u %u %d   REV=%d    FBR %d  MAINR %d\n", read_name, cigar, res->first_base_position,
+          hashval,  ref_min, raw_read_start, number, section_negative, reference_reversed, res->first_base_is_jumpped , main_negative);
+
+			part_hashes[part_count++] = hashval;
 			read_cursor += (uint32_t)number;
-			if (reference_reversed) ref_cursor -= number;
-			else ref_cursor += number;
+			if (reference_reversed)
+				ref_cursor -= number;
+			else {
+				ref_cursor += number;
+				current_perfect_cursor += number;
+			}
 		} else if (op == 'I') {
-			uint32_t raw_read_start = cigar_walks_reverse_raw ?
-				read_length - read_cursor - (uint32_t)number : read_cursor;
-			part_hashes[part_count++] = repeated_fusion_part_hash(ref_cursor,
-				raw_read_start, (uint32_t)number, section_negative, 2);
 			read_cursor += (uint32_t)number;
 		} else if (op == 'D') {
-			uint64_t ref_min = reference_reversed ? ref_cursor - number + 1 : ref_cursor;
-			uint32_t raw_read_start = cigar_walks_reverse_raw ?
-				read_length - read_cursor : read_cursor;
-			part_hashes[part_count++] = repeated_fusion_part_hash(ref_min,
-				raw_read_start, (uint32_t)number, section_negative, 3);
-			if (reference_reversed) ref_cursor -= number;
-			else ref_cursor += number;
+			if (reference_reversed)
+				ref_cursor -= number;
+			else {
+				ref_cursor += number;
+				current_perfect_cursor += number;
+			}
 		} else if (op == 'S') {
 			read_cursor += (uint32_t)number;
+			if (!reference_reversed)
+				current_perfect_cursor += number;
 		} else if (op == 'N' || op == 'n' || op == 'B' || op == 'b') {
-			if (op == 'N' || op == 'n') ref_cursor += number;
-			else ref_cursor -= number;
+			uint64_t jump_target;
+
+			if (reference_reversed) {
+				jump_target = current_perfect_map_start - 1;
+				if (op == 'N' || op == 'n') jump_target += number;
+				else jump_target -= number;
+			} else {
+				jump_target = current_perfect_cursor;
+				if (op == 'N' || op == 'n') jump_target += number;
+				else jump_target -= number;
+			}
+
 			if (op == 'n' || op == 'b') {
 				section_negative = !section_negative;
 				reference_reversed = !reference_reversed;
+				/* Destination-reversed lowercase sections use target - 1. */
+				if (0&&reference_reversed)
+					jump_target--;
 			}
+			current_perfect_map_start = jump_target;
+			current_perfect_cursor = jump_target;
+			ref_cursor = jump_target;
 		} else if (op != 'H' && op != 'P') {
 			return 0;
 		}
@@ -2617,10 +2644,10 @@ static uint64_t repeated_fusion_alignment_hash(realignment_result_t *res)
 
 static int add_repeated_buffer_fusion(global_context_t *global_context,
 	uint64_t *repeated_buffer_position, char **repeated_buffer_cigar,
-	int *repeated_count, realignment_result_t *res1, realignment_result_t *res2)
+	int *repeated_count, realignment_result_t *res1, realignment_result_t *res2, char * read_name)
 {
-	uint64_t r1_hash = res1 ? repeated_fusion_alignment_hash(res1) : 0;
-	uint64_t r2_hash = res2 ? repeated_fusion_alignment_hash(res2) : 0;
+	uint64_t r1_hash = res1 ? repeated_fusion_alignment_hash(global_context, res1, read_name) : 0;
+	uint64_t r2_hash = res2 ? repeated_fusion_alignment_hash(global_context, res2, read_name) : 0;
 	int x1;
 
 	(void)repeated_buffer_cigar;
@@ -2644,9 +2671,9 @@ static int add_repeated_buffer_normal(global_context_t *global_context,
 	int *repeated_count, realignment_result_t *res1, realignment_result_t *res2);
 
 
-int add_repeated_buffer(global_context_t * global_context, uint64_t * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count, realignment_result_t * res1, realignment_result_t * res2){
+int add_repeated_buffer(global_context_t * global_context, uint64_t * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count, realignment_result_t * res1, realignment_result_t * res2, char * read_name){
 	if(global_context ->  config.do_fusion_detection)
-		return add_repeated_buffer_fusion(global_context, repeated_buffer_position, repeated_buffer_cigar, repeated_count, res1, res2);
+		return add_repeated_buffer_fusion(global_context, repeated_buffer_position, repeated_buffer_cigar, repeated_count, res1, res2, read_name);
 	else
 		return add_repeated_buffer_normal(global_context, repeated_buffer_position, repeated_buffer_cigar, repeated_count, res1, res2);
 }
@@ -2955,7 +2982,7 @@ if(0 && FIXLENstrcmp("toy3_221990", read_name_1) ==0) fprintf(stderr,"TOY3-ONE-M
 						if( scores_array[read_record_i] >= best_score_highest && (current_realignment_result -> realign_flags & CORE_TOO_MANY_MISMATCHES)==0) {
 							int is_repeated = 0;
 
-							is_repeated = add_repeated_buffer(global_context, repeated_buffer_pos, repeated_buffer_cigars, &repeated_count, is_second_read?NULL:current_realignment_result , is_second_read?current_realignment_result:NULL);
+							is_repeated = add_repeated_buffer(global_context, repeated_buffer_pos, repeated_buffer_cigars, &repeated_count, is_second_read?NULL:current_realignment_result , is_second_read?current_realignment_result:NULL, read_name_1);
 							if(is_repeated)
 								scores_array[read_record_i] = 0;
 							else
@@ -3100,12 +3127,12 @@ if(0 && FIXLENstrcmp("toy3_221990", read_name_1) ==0)
 						highest_score = final_SCORE;
 						//SUBREADprintf("29NOV2016-FIRSTBEST %s [%d : score %llu] LOC = %d,%d\n", read_name_1, highest_score_occurence, final_SCORE, r1_best_id, r2_best_id);
 						clear_repeated_buffer(global_context, repeated_buffer_pos, repeated_buffer_cigars, &repeated_count);
-						add_repeated_buffer(global_context, repeated_buffer_pos, repeated_buffer_cigars, &repeated_count, realignment_result_R1, realignment_result_R2);
+						add_repeated_buffer(global_context, repeated_buffer_pos, repeated_buffer_cigars, &repeated_count, realignment_result_R1, realignment_result_R2, read_name_1);
 					} else if(final_SCORE == highest_score) {
 						int is_repeat = 0;
 
 						if(global_context -> config.reported_multi_best_reads)
-							is_repeat = add_repeated_buffer(global_context, repeated_buffer_pos, repeated_buffer_cigars, &repeated_count, realignment_result_R1, realignment_result_R2);
+							is_repeat = add_repeated_buffer(global_context, repeated_buffer_pos, repeated_buffer_cigars, &repeated_count, realignment_result_R1, realignment_result_R2, read_name_1);
 
 						if(is_repeat)
 							final_SCORE_buffer[r1_best_id * global_context -> config.multi_best_reads * MAX_ALIGNMENT_PER_ANCHOR + r2_best_id] = 0;
@@ -4816,11 +4843,11 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 				if(abs(dist) >= global_context -> config.maximum_intron_length)
 					is_long_jump = 1;
 
-			//#warning ">>>>>> COMMENT WHEN RELEASE <<<<<<"
-			if(0 && FIXLENstrcmp("R000000007", read_name)==0)
-				SUBREADprintf("dist=%lld, abs=%lld, %u, %u\n",dist,abs(dist), current_perfect_cursor, jummped_location);
-				// A long jump is the jump longer than 2^27.
-				// Picard does not like it!!
+				//#warning ">>>>>> COMMENT WHEN RELEASE <<<<<<"
+				if(0 && FIXLENstrcmp("R000000007", read_name)==0)
+					SUBREADprintf("dist=%lld, abs=%lld, %u, %u\n",dist,abs(dist), current_perfect_cursor, jummped_location);
+					// A long jump is the jump longer than 2^27.
+					// Picard does not like it!!
 			}
 
 			// is_long_jump is true only if the two sections are on different chromosomes.
