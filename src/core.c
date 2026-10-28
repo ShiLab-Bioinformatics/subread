@@ -2490,7 +2490,161 @@ void clear_repeated_buffer(global_context_t * global_context, uint64_t * repeate
 	(*repeated_count) = 0;
 }
 
-int add_repeated_buffer(lobal_context_t * global_context, uint64_t * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count, realignment_result_t * res1, realignment_result_t * res2){
+// The fusion path keys complete parsed alignments; the normal path preserves
+// the historical primary-position/CIGAR comparison.
+static uint64_t repeated_fusion_mix64(uint64_t x)
+{
+	x += 0x9e3779b97f4a7c15ULL;
+	x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+	x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+	return x ^ (x >> 31);
+}
+
+static uint64_t repeated_fusion_rotl64(uint64_t x, unsigned int n)
+{
+	return n ? ((x << n) | (x >> (64 - n))) : x;
+}
+
+static int repeated_fusion_cmp_u64(const void *a, const void *b)
+{
+	uint64_t aa = *(const uint64_t *)a;
+	uint64_t bb = *(const uint64_t *)b;
+	return (aa > bb) - (aa < bb);
+}
+
+static uint64_t repeated_fusion_part_hash(uint64_t ref_min,
+	uint32_t raw_read_start, uint32_t length,
+	unsigned int strand_negative, unsigned int operation_class)
+{
+	uint64_t h = repeated_fusion_mix64(ref_min);
+	h ^= repeated_fusion_rotl64(repeated_fusion_mix64(raw_read_start), 11);
+	h ^= repeated_fusion_rotl64(repeated_fusion_mix64(length), 23);
+	h ^= repeated_fusion_rotl64(repeated_fusion_mix64(strand_negative), 37);
+	h ^= repeated_fusion_rotl64(repeated_fusion_mix64(operation_class), 49);
+	return repeated_fusion_mix64(h);
+}
+
+/*
+ * Produce an order-independent key for a fusion alignment.  N/n/B/b change
+ * the parser state but are not themselves tokens: the mapped CIGAR parts,
+ * their linear-reference positions, raw-read positions and strands define the
+ * alignment independently of its selected primary part.
+ */
+static uint64_t repeated_fusion_alignment_hash(realignment_result_t *res)
+{
+	uint64_t part_hashes[CORE_MAX_CIGAR_STR_LEN + 1];
+	uint64_t ref_cursor = res->first_base_position;
+	uint64_t number = 0;
+	uint32_t read_cursor = 0, read_length = 0;
+	unsigned int part_count = 0;
+	int main_negative = !!(res->mapping_result->result_flags & CORE_IS_NEGATIVE_STRAND);
+	int section_negative = !!(res->first_base_is_jumpped ^ main_negative);
+	int reference_reversed = !!res->first_base_is_jumpped;
+	int cigar_walks_reverse_raw = !!res->first_base_is_jumpped;
+	const char *cigar = res->cigar_string;
+	int cigar_i;
+
+	for (cigar_i = 0; cigar[cigar_i]; cigar_i++) {
+		if (isdigit((unsigned char)cigar[cigar_i])) {
+			number = number * 10 + cigar[cigar_i] - '0';
+			continue;
+		}
+		if (cigar[cigar_i] == 'M' || cigar[cigar_i] == '=' ||
+			cigar[cigar_i] == 'X' || cigar[cigar_i] == 'I' ||
+			cigar[cigar_i] == 'S')
+			read_length += (uint32_t)number;
+		number = 0;
+	}
+
+	for (cigar_i = 0; cigar[cigar_i]; cigar_i++) {
+		char op = cigar[cigar_i];
+		if (isdigit((unsigned char)op)) {
+			number = number * 10 + op - '0';
+			continue;
+		}
+		if (number == 0 || part_count >= CORE_MAX_CIGAR_STR_LEN)
+			return 0;
+		if (op == 'M' || op == '=' || op == 'X') {
+			uint64_t ref_min = reference_reversed ? ref_cursor - number + 1 : ref_cursor;
+			uint32_t raw_read_start = cigar_walks_reverse_raw ?
+				read_length - read_cursor - (uint32_t)number : read_cursor;
+			part_hashes[part_count++] = repeated_fusion_part_hash(ref_min,
+				raw_read_start, (uint32_t)number, section_negative, 1);
+			read_cursor += (uint32_t)number;
+			if (reference_reversed) ref_cursor -= number;
+			else ref_cursor += number;
+		} else if (op == 'I') {
+			uint32_t raw_read_start = cigar_walks_reverse_raw ?
+				read_length - read_cursor - (uint32_t)number : read_cursor;
+			part_hashes[part_count++] = repeated_fusion_part_hash(ref_cursor,
+				raw_read_start, (uint32_t)number, section_negative, 2);
+			read_cursor += (uint32_t)number;
+		} else if (op == 'D') {
+			uint64_t ref_min = reference_reversed ? ref_cursor - number + 1 : ref_cursor;
+			uint32_t raw_read_start = cigar_walks_reverse_raw ?
+				read_length - read_cursor : read_cursor;
+			part_hashes[part_count++] = repeated_fusion_part_hash(ref_min,
+				raw_read_start, (uint32_t)number, section_negative, 3);
+			if (reference_reversed) ref_cursor -= number;
+			else ref_cursor += number;
+		} else if (op == 'S') {
+			read_cursor += (uint32_t)number;
+		} else if (op == 'N' || op == 'n' || op == 'B' || op == 'b') {
+			if (op == 'N' || op == 'n') ref_cursor += number;
+			else ref_cursor -= number;
+			if (op == 'n' || op == 'b') {
+				section_negative = !section_negative;
+				reference_reversed = !reference_reversed;
+			}
+		} else if (op != 'H' && op != 'P') {
+			return 0;
+		}
+		number = 0;
+	}
+
+	if (number != 0 || read_cursor != read_length)
+		return 0;
+
+	qsort(part_hashes, part_count, sizeof(uint64_t), repeated_fusion_cmp_u64);
+	{
+		uint64_t whole_hash = repeated_fusion_mix64(part_count);
+		unsigned int part_i;
+		for (part_i = 0; part_i < part_count; part_i++)
+			whole_hash ^= repeated_fusion_rotl64(part_hashes[part_i], (part_i & 7U) * 8U);
+		return repeated_fusion_mix64(whole_hash);
+	}
+}
+
+static int add_repeated_buffer_fusion(global_context_t *global_context,
+	uint64_t *repeated_buffer_position, char **repeated_buffer_cigar,
+	int *repeated_count, realignment_result_t *res1, realignment_result_t *res2)
+{
+	uint64_t r1_hash = res1 ? repeated_fusion_alignment_hash(res1) : 0;
+	uint64_t r2_hash = res2 ? repeated_fusion_alignment_hash(res2) : 0;
+	int x1;
+
+	(void)repeated_buffer_cigar;
+
+	for (x1 = 0; x1 < *repeated_count; x1 += 2)
+		if (repeated_buffer_position[x1] == r1_hash &&
+			repeated_buffer_position[x1 + 1] == r2_hash)
+			return 1;
+
+	if (*repeated_count < MAX_ALIGNMENT_PER_ANCHOR * 2 *
+		global_context->config.reported_multi_best_reads) {
+		repeated_buffer_position[*repeated_count] = r1_hash;
+		repeated_buffer_position[*repeated_count + 1] = r2_hash;
+		*repeated_count += 2;
+	}
+	return 0;
+}
+
+static int add_repeated_buffer_normal(global_context_t *global_context,
+	uint64_t *repeated_buffer_position, char **repeated_buffer_cigar,
+	int *repeated_count, realignment_result_t *res1, realignment_result_t *res2);
+
+
+int add_repeated_buffer(global_context_t * global_context, uint64_t * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count, realignment_result_t * res1, realignment_result_t * res2){
 	if(global_context ->  config.do_fusion_detection)
 		return add_repeated_buffer_fusion(global_context, repeated_buffer_position, repeated_buffer_cigar, repeated_count, res1, res2);
 	else
