@@ -382,6 +382,7 @@ typedef struct{
 	
 	char first_base_is_jumpped;
 	short final_mismatched_bases;
+	short preclip_mismatched_bases;
 	short final_matched_bases;
 	short best_second_diff_bases;
 	short realign_flags;

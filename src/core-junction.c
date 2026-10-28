@@ -3541,6 +3541,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 				realign_res -> first_base_position = final_position;
 				realign_res -> final_quality = final_qual;
 				realign_res -> final_mismatched_bases = mismatch_bases;
+				realign_res -> preclip_mismatched_bases = preclip_mismatched_bases;
 				realign_res -> final_matched_bases = (unsigned short)final_MATCH;
 				realign_res -> best_second_diff_bases = (9<explain_context -> best_second_match_diff)?-1:explain_context -> best_second_match_diff; 
 
