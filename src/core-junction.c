@@ -1219,7 +1219,7 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 						int guess_end_as_reversed = (main_cover_start_as_reversed > minor_cover_start_as_reversed)?
 									 (main_cover_start_as_reversed + 15): (minor_cover_start_as_reversed + 15);
 
-						int is_small_half_negative = 0 != ((current_vote -> pos[vote_i][vote_j]>current_vote -> pos[i][j]?current_vote -> masks[i][j]:current_vote -> masks[vote_i][vote_j])&IS_NEGATIVE_STRAND); 
+						int is_small_half_negative = (0 != ((current_vote -> pos[vote_i][vote_j]>current_vote -> pos[i][j]?current_vote -> masks[i][j]:current_vote -> masks[vote_i][vote_j])&IS_NEGATIVE_STRAND)); 
 						int is_large_half_negative = !is_small_half_negative;
 
 						int is_small_half_on_left_as_reversed = (main_cover_start_as_reversed > minor_cover_start_as_reversed) + (current_vote -> pos[vote_i][vote_j]> current_vote -> pos[i][j]) !=1;
@@ -3784,7 +3784,9 @@ int donor_jumped_score(global_context_t * global_context, thread_context_t * thr
 			left_should_not_match <= JUNCTION_CONFIRM_WINDOW -3 && right_should_not_match <= JUNCTION_CONFIRM_WINDOW -3)
 		{
 			int test_score = is_donor_test_ok*500+left_should_match + right_should_match - left_should_not_match - right_should_not_match;
-			if(test_score > best_score || ( test_score == best_score && real_split_point_as_reversed < selected_real_split_point)) { // must be global_context ->  config.do_fusion_detection here.
+
+			// real_split_point_as_reversed : closer or fairer to the small-coordinate is decided by is_small_half_negative
+			if(test_score > best_score || ( test_score == best_score && (real_split_point_as_reversed < selected_real_split_point) == (1==is_small_half_negative))) { // must be global_context ->  config.do_fusion_detection here.
 				selected_real_split_point = real_split_point_as_reversed;
 				*small_indel_offset = small_offsets[small_edge];
 				*large_indel_offset = large_offsets[large_edge];
@@ -3806,6 +3808,7 @@ if(0 && FIXLENstrcmp("toy3_061656", read_name) == 0) SUBREADprintf("TOY3 %s INNT
 }
 
 
+// left_virtualHead_abs_offset MUST < right_virtualHead_abs_offset
 int donor_score(global_context_t * global_context, thread_context_t * thread_context, unsigned int left_virtualHead_abs_offset, unsigned int right_virtualHead_abs_offset, int left_indel_offset, int right_indel_offset, int normally_arranged, int guess_start, int guess_end,  char * read_text, int read_len, int * final_split_point, int * is_GT_AG_strand, int * is_donor_found_or_annotation, int * final_inserted_bases, int * small_side_increasing_coordinate, int * large_side_increasing_coordinate, char * read_name)
 {
 
@@ -3907,6 +3910,7 @@ int donor_score(global_context_t * global_context, thread_context_t * thread_con
 								else
 									test_score = 100*(is_donor_test_ok*3000+left_should_match + right_should_match - left_should_not_match - right_should_not_match);
 
+								// real_split_point is measured from smaller-coordinate.
 								if(test_score > best_score || ( test_score == best_score && real_split_point < selected_real_split_point && global_context ->  config.do_fusion_detection ))
 								{
 									//if(left_virtualHead_abs_offset > 2729745284 - 200 && left_virtualHead_abs_offset< 2729745284 + 200)
