@@ -3020,8 +3020,7 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 				char * reversed_first_section_text = NULL;
 
 				/* Count the full aligned section before soft clipping. */
-				if(nch == 'M')
-				{
+				if( (global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999) && nch == 'M'){
 					int preclip_high_quality_mismatches = 0;
 					if(global_context -> config.space_type == GENE_SPACE_COLOR)
 						match_base_quality_cs(current_value_index, read_text+read_cursor, current_perfect_section_abs, qual_text_cur, tmp_int, global_context->config.phred_score_format, &preclip_high_quality_mismatches, preclip_mismatched_bases, global_context->config.high_quality_base_threshold, 0, 0);
