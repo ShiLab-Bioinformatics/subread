@@ -1238,8 +1238,8 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 									curr_read_len, is_small_half_negative, is_large_half_negative, is_small_half_on_left_as_reversed,
 									& final_split_point, & is_GT_AG_donors, & is_donor_found_or_annotation, &small_side_increasing_coordinate, &large_side_increasing_coordinate, read_name);
 
-						if(0 && FIXLENstrcmp("toy3_061656", read_name) == 0) {
-							print_votes(current_vote, global_context -> config.index_prefix);
+						if(1 && FIXLENstrcmp("toy3_139177", read_name) == 0) {
+						//	print_votes(current_vote, global_context -> config.index_prefix);
 							SUBREADprintf("TOY3  NORMAL=%d  SMALL_NEG=%d  LARGE_NEG=%d,  SMALL_ABS=%u  LARGE_ABS=%u,  REPLACE=%d,   INCS=%d %d\n" ,  is_small_half_on_left_as_reversed, is_small_half_negative, is_large_half_negative, small_half_abs_offset, large_half_abs_offset, replace_minor, small_side_increasing_coordinate, large_side_increasing_coordinate);
 						}
 
@@ -1332,8 +1332,8 @@ void copy_vote_to_alignment_res(global_context_t * global_context, thread_contex
 
 						if(replace_minor>0) replace_minor += current_vote -> votes[i][j] * 100000;
 
-						if(0 && FIXLENstrcmp("toy3_061656", read_name) == 0) {
-							SUBREADprintf("NOJUMP_DONORs=%d   LOC=%u\n", replace_minor , current_vote -> pos[i][j]);
+						if(1 && FIXLENstrcmp("toy3_139177", read_name) == 0) {
+							SUBREADprintf("TOY3  NOJUMP_DONORs=%d   LOC=%u\n", replace_minor , current_vote -> pos[i][j]);
 						}
 						if((global_context ->  config.do_fusion_detection || global_context ->  config.do_long_del_detection) && !(current_vote -> masks[vote_i][vote_j] & IS_NEGATIVE_STRAND))
 							// changed back.

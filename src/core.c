@@ -2486,10 +2486,18 @@ void write_realignments_for_fragment(global_context_t * global_context, thread_c
 }
 
 
-void clear_repeated_buffer(global_context_t * global_context, unsigned int * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count){
+void clear_repeated_buffer(global_context_t * global_context, uint64_t * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count){
 	(*repeated_count) = 0;
 }
-int add_repeated_buffer(global_context_t * global_context, unsigned int * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count, realignment_result_t * res1, realignment_result_t * res2){
+
+int add_repeated_buffer(lobal_context_t * global_context, uint64_t * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count, realignment_result_t * res1, realignment_result_t * res2){
+	if(global_context ->  config.do_fusion_detection)
+		return add_repeated_buffer_fusion(global_context, repeated_buffer_position, repeated_buffer_cigar, repeated_count, res1, res2);
+	else
+		return add_repeated_buffer_normal(global_context, repeated_buffer_position, repeated_buffer_cigar, repeated_count, res1, res2);
+}
+
+int add_repeated_buffer_normal(global_context_t * global_context, uint64_t * repeated_buffer_position, char ** repeated_buffer_cigar, int * repeated_count, realignment_result_t * res1, realignment_result_t * res2){
 	int x1, is_repeated = 0;
 	char * r1_cigar = "*";
 	unsigned int r1_pos = 0;
@@ -2543,7 +2551,7 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 	char raw_qual_text_1[MAX_READ_LENGTH+1], raw_qual_text_2[MAX_READ_LENGTH+1];
 	char read_name_1[MAX_READ_NAME_LEN+1], read_name_2[MAX_READ_NAME_LEN+1];
 	char * repeated_buffer_cigars[MAX_ALIGNMENT_PER_ANCHOR *  2 * global_context -> config.reported_multi_best_reads];
-	unsigned int repeated_buffer_pos[MAX_ALIGNMENT_PER_ANCHOR *  2 * global_context -> config.reported_multi_best_reads];
+	uint64_t repeated_buffer_pos[MAX_ALIGNMENT_PER_ANCHOR *  2 * global_context -> config.reported_multi_best_reads];
 	int repeated_count;
 	int read_len_1=0, read_len_2=0;
 	int sqr_interval, sqr_read_number=0;
@@ -2732,8 +2740,6 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 
 					if((current_result -> result_flags & CORE_IS_FULLY_EXPLAINED) && final_MATCH>0) {
 						int final_MISMATCH = final_realignments[realign_index].final_mismatched_bases;
-						//#warning ">>>>>>>>>>>>>>>>>>>>>>>>>>>>> REMOVE THIS <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
-						//printf("OCT27-STEPMSM-MMM %s M=%d MM=%d\n", read_name_1, final_MATCH ,final_MISMATCH);
 
 						current_PENALTY_buffer[*current_candidate_locations] = final_PENALTY;
 						current_MATCH_buffer[*current_candidate_locations] = final_MATCH;
@@ -2742,8 +2748,6 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 						(*current_candidate_locations) ++;
 					}
 				}
-				//#warning ">>>>>>> COMMENT THIS <<<<<<<"
-				//printf("OCT27-FI-%s:%d-ALN%02d-THRE %d\n", current_read_name, is_second_read + 1, best_read_id, thread_context -> thread_id);
 			}
 		}
 
@@ -2774,6 +2778,8 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 						unsigned int this_MISMATCH = current_MISMATCH_buffer[read_record_i];
 						unsigned int this_PENALTY = current_PENALTY_buffer[read_record_i];
 						unsigned long long this_SCORE;
+
+if(0 && FIXLENstrcmp("toy3_221990", read_name_1) ==0) fprintf(stderr,"TOY3-ONE-MMM %s [R%d] aln_%d M=%d MM=%d   CIGAR=%s\n", read_name_1, 1+is_second_read, read_record_i, this_MATCH, this_MISMATCH, current_realignment_result -> cigar_string);
 
 						if(global_context -> config.experiment_type == CORE_EXPERIMENT_DNASEQ){
 							this_SCORE = this_MATCH * 100000llu + (10000 - this_MISMATCH);
@@ -2860,6 +2866,14 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 					unsigned long long final_SCORE = 0;
 
 					test_PE_and_same_chro_align(global_context , realignment_result_R1 , realignment_result_R2, &is_exonic_regions, &is_PE, &is_same_chro , read_len_1, read_len_2, read_name_1, &tlen);
+
+if(0 && FIXLENstrcmp("toy3_221990", read_name_1) ==0)
+    fprintf(stderr,"TOY3-ONE-MMM_PP %s aln_%d_%d M: %d %d MM: %d %d  CIGAR: %s %s\n",
+       read_name_1, r1_best_id, r2_best_id,
+       final_MATCH_buffer1[r1_best_id] , final_MATCH_buffer2[r2_best_id] ,
+       final_MISMATCH_buffer1[r1_best_id]  , final_MISMATCH_buffer2[r2_best_id] ,
+       realignment_result_R1 -> cigar_string, realignment_result_R2 -> cigar_string);
+
 
 					unsigned long long TLEN_exp_score = 0;
 					if(is_PE && global_context -> config.no_TLEN_preference == 0 && global_context -> config.reported_multi_best_reads<2){
@@ -3002,7 +3016,6 @@ int do_iteration_two(global_context_t * global_context, thread_context_t * threa
 								r1_realign -> MAPQ_adjustment = r1_step2_locations + final_MISMATCH_buffer1[r1_best_id];
 								r2_realign -> MAPQ_adjustment = r2_step2_locations + final_MISMATCH_buffer2[r2_best_id];
 
-//		SUBREADprintf("THREAD_OPT2_write %s\n", read_name_1);
 								write_realignments_for_fragment(global_context, thread_context, &out_context, current_read_number, r1_realign, r2_realign, read_name_1, read_name_2, read_text_1, read_text_2, qual_text_1, qual_text_2, read_len_1, read_len_2, highest_score_occurence, output_cursor,  non_informative_subreads_r1, non_informative_subreads_r2);
 								output_cursor ++;
 						}
