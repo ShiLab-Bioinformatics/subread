@@ -4861,6 +4861,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 			if(is_chro_jump || islower(ncch) || ncch == 'B' || is_long_jump)
 			{
 				current_perfect_cursor = jummped_location;
+				section_ref_cursor = current_perfect_cursor;
 
 				if(islower(ncch)){
 					is_reversed = !is_reversed;
@@ -4886,7 +4887,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 				out_ref_right[current_perfect_section_no] = 0;
 				// Later reversed sections start one base after the stored
 				// jump target, including uppercase backward jumps.
-				section_ref_cursor = current_perfect_map_start + (is_reversed ? 1 : 0);
+				// section_ref_cursor = current_perfect_map_start + (is_reversed ? 1 : 0);
 				section_last_match_left = section_ref_cursor;
 				reverse_indel_pending = 0;
 				reverse_indel_deletion = 0;
