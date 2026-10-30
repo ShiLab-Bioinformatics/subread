@@ -4791,6 +4791,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 	out_strands[0] = is_negative?'-':'+';
 	char main_piece_strand = (is_first_section_negative_strand == is_first_section_reversed)?'+':'-';
 
+if(1 && FIXLENstrcmp("toy3_027587", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  AT %u   F_S_NEG %d  F_S_OPPO %d\n", in_cigar, sel_pos, is_first_section_negative_strand, is_first_section_reversed);
 	for(cigar_cursor=0;;cigar_cursor++)
 	{
 		char ncch = in_cigar[cigar_cursor];
@@ -4844,14 +4845,11 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 
 				long long int dist = (long long int)current_perfect_cursor;
 				dist -= (long long int)jummped_location;
+
+				// A long jump is the jump longer than 2^27.
+				// Picard does not like it!!
 				if(abs(dist) >= global_context -> config.maximum_intron_length)
 					is_long_jump = 1;
-
-				//#warning ">>>>>> COMMENT WHEN RELEASE <<<<<<"
-				if(0 && FIXLENstrcmp("R000000007", read_name)==0)
-					SUBREADprintf("dist=%lld, abs=%lld, %u, %u\n",dist,abs(dist), current_perfect_cursor, jummped_location);
-					// A long jump is the jump longer than 2^27.
-					// Picard does not like it!!
 			}
 
 			// is_long_jump is true only if the two sections are on different chromosomes.
@@ -4860,6 +4858,16 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 				SUBREADprintf("CHR_JMP=%d, NCCH=%c, LONG_JMP=%d\n", is_chro_jump, ncch, is_long_jump);
 			if(is_chro_jump || islower(ncch) || ncch == 'B' || is_long_jump)
 			{
+
+
+if(1 && FIXLENstrcmp("toy3_027587", read_name)==0){
+char * fm_chr=NULL;int fm_offset=0;
+locate_gene_position_max(current_perfect_cursor, &global_context -> chromosome_table, & fm_chr, & fm_offset, NULL, NULL, 1);
+char * db_chr=NULL;int db_offset=0;
+locate_gene_position_max(jummped_location, &global_context -> chromosome_table, & db_chr, & db_offset, NULL, NULL, 1);
+fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, db_chr, db_offset +1 /*0-based*/, ncch);
+}
+
 				current_perfect_cursor = jummped_location;
 				section_ref_cursor = current_perfect_cursor;
 

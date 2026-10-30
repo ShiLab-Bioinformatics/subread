@@ -2967,7 +2967,7 @@ int find_soft_clipping(global_context_t * global_context,  thread_context_t * th
 
 // read_head_abs_offset is the first WANTED base in read.
 // If the first section in read is reversed, read_head_abs_offset is the LAST WANTED bases in this section. (the abs offset of the first base in the section is actually larger than read_head_abs_offset)
-int final_CIGAR_quality(global_context_t * global_context, thread_context_t * thread_context, char * read_text, char * qual_text, int read_len, char * cigar_string, unsigned long read_head_abs_offset, int is_read_head_reversed, int * mismatched_bases, int covered_start, int covered_end, char * read_name, int * non_clipped_length, int *total_indel_length, int * matched_bases, int * chromosomal_length, int * full_section_clipped, int * preclip_mismatched_bases)
+int final_CIGAR_quality(global_context_t * global_context, thread_context_t * thread_context, char * read_text, char * qual_text, int read_len, char * cigar_string, unsigned long read_head_abs_offset, int is_read_head_reversed, int * mismatched_bases, int covered_start, int covered_end, char * read_name, int * non_clipped_length, int * matched_bases, int * chromosomal_length, int * full_section_clipped, int * preclip_mismatched_bases)
 {
 	int cigar_cursor = 0;
 	int read_cursor = 0;
@@ -3142,12 +3142,10 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 				read_cursor += tmp_int;
 
 				all_matched_bases += tmp_int;
-				total_indel_length += tmp_int;
 				total_insertion_length += tmp_int;
 			}
 			else if(nch == 'D')
 			{
-				total_indel_length ++;
 				if(current_reversed)
 				{
 					reverse_indel_pending = 1;
@@ -3158,13 +3156,11 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 			}
 			else if(tolower(nch) == 'n')
 			{
-				total_indel_length ++;
 				current_perfect_section_abs += tmp_int;
 				if(nch == 'n') current_reversed = !current_reversed;
 			}
 			else if(tolower(nch) == 'b')
 			{
-				total_indel_length ++;
 				current_perfect_section_abs -= tmp_int;
 				if(nch == 'b') current_reversed = !current_reversed;
 			}
@@ -3446,13 +3442,13 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 
 
 
-			int final_qual = 0, applied_mismatch = 0, non_clipped_length = 0, total_indel_length = 0, final_MATCH = 0, chromosomal_length = 0, full_section_clipped = 0;
+			int final_qual = 0, applied_mismatch = 0, non_clipped_length = 0, final_MATCH = 0, chromosomal_length = 0, full_section_clipped = 0;
 
 			if(is_exonic_read_fraction_OK)
 			{
 			if(0 && FIXLENstrcmp("R00000001230", explain_context -> read_name) ==0) SUBREADprintf("TSOFT_COVSTART %d\n",  result -> confident_coverage_start);
 				if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 COMBINATION_RAW name=%s mate=%d anchor=%d back=%d front=%d position=%u cigar=%s fusions=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, back_i, front_i, final_position, tmp_cigar, fusions_in_read);
-				final_qual  = final_CIGAR_quality(global_context, thread_context, explain_context -> full_read_text, explain_context -> full_qual_text, explain_context -> full_read_len , tmp_cigar, final_position, is_first_section_negative != ((result->result_flags & CORE_IS_NEGATIVE_STRAND)?1:0), &mismatch_bases, result -> confident_coverage_start, result -> confident_coverage_end,  explain_context -> read_name, &non_clipped_length, &total_indel_length, & final_MATCH, & chromosomal_length, & full_section_clipped, &preclip_mismatched_bases);
+				final_qual  = final_CIGAR_quality(global_context, thread_context, explain_context -> full_read_text, explain_context -> full_qual_text, explain_context -> full_read_len , tmp_cigar, final_position, is_first_section_negative != ((result->result_flags & CORE_IS_NEGATIVE_STRAND)?1:0), &mismatch_bases, result -> confident_coverage_start, result -> confident_coverage_end,  explain_context -> read_name, &non_clipped_length, & final_MATCH, & chromosomal_length, & full_section_clipped, &preclip_mismatched_bases);
 				//#warning ">>>>>>> COMMENT THIS <<<<<<<"
 				//printf("OCT27-STEP2-%s:%d-POS%u-VOT%d-CIG-%s [ %d ]-INDELs=%llu; M/MM=%d,%d\n", explain_context -> read_name, explain_context  -> is_second_read + 1,  result -> selected_position, result -> selected_votes, tmp_cigar, is_cigar_overflow, ((indel_thread_context_t *)thread_context -> module_thread_contexts[MODULE_INDEL_ID]) -> event_entry_table -> numOfElements, final_MATCH, mismatch_bases);
 
@@ -3466,7 +3462,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 
 
 			//#warning " ========== COMMENT THIS LINE !! ========="
-			if(0 && FIXLENstrcmp("SRR9624992-GSM3914621-N_009.290181", explain_context -> read_name) ==0){
+			if(0 && (FIXLENstrcmp("toy3_097950", explain_context -> read_name) ==0 ||  FIXLENstrcmp("toy3_229763", explain_context -> read_name) ==0 )){
 				char outpos1[100];
 				absoffset_to_posstr(global_context, final_position, outpos1);
 				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?  MASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, global_context -> config.minimum_exonic_subread_fraction,result-> used_subreads_in_vote, result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);
@@ -3474,7 +3470,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 			}
 
 
-			if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 COMBINATION_FINAL name=%s mate=%d anchor=%d back=%d front=%d position=%u cigar=%s matches=%d mismatches=%d mismatch_limit=%d non_clipped=%d indel_length=%d quality=%d full_section_clipped=%d exonic_ok=%d fusions=%d accepted=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, back_i, front_i, final_position, tmp_cigar, final_MATCH, mismatch_bases, applied_mismatch, non_clipped_length, total_indel_length, final_qual, full_section_clipped, is_exonic_read_fraction_OK, fusions_in_read, mismatch_bases <= applied_mismatch && preclip_mismatched_bases <= global_context->config.max_preclip_mismatches && is_exonic_read_fraction_OK && fusions_in_read < 2);
+			if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 COMBINATION_FINAL name=%s mate=%d anchor=%d back=%d front=%d position=%u cigar=%s matches=%d mismatches=%d mismatch_limit=%d non_clipped=%d indel_length=%d quality=%d full_section_clipped=%d exonic_ok=%d fusions=%d accepted=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, back_i, front_i, final_position, tmp_cigar, final_MATCH, mismatch_bases, applied_mismatch, non_clipped_length, final_qual, full_section_clipped, is_exonic_read_fraction_OK, fusions_in_read, mismatch_bases <= applied_mismatch && preclip_mismatched_bases <= global_context->config.max_preclip_mismatches && is_exonic_read_fraction_OK && fusions_in_read < 2);
 			if(mismatch_bases <= applied_mismatch && preclip_mismatched_bases <= global_context->config.max_preclip_mismatches && is_exonic_read_fraction_OK && fusions_in_read < 2 ){// && (0 == full_section_clipped || 0 == global_context -> config.do_breakpoint_detection)) {
 				realignment_result_t * realign_res = final_realignments+final_alignment_number;
 				final_alignment_number ++;
