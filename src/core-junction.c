@@ -3119,7 +3119,7 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 
 
 
-if(1 && FIXLENstrcmp("toy3_367546/1",read_name)==0){
+if(0 && FIXLENstrcmp("toy3_367546/1",read_name)==0){
 
 char * src_chr;
 int src_pos;
@@ -3477,7 +3477,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 
 
 			//#warning " ========== COMMENT THIS LINE !! ========="
-			if(1 && (FIXLENstrcmp("toy3_367546", explain_context -> read_name) ==0)){
+			if(0 && (FIXLENstrcmp("toy3_367546", explain_context -> read_name) ==0)){
 				char outpos1[100];
 				absoffset_to_posstr(global_context, final_position, outpos1);
 				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?  MASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, global_context -> config.minimum_exonic_subread_fraction,result-> used_subreads_in_vote, result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);

@@ -4802,7 +4802,7 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 	out_strands[0] = is_negative?'-':'+';
 	char main_piece_strand = (is_first_section_negative_strand == is_first_section_reversed)?'+':'-';
 
-if(1 && FIXLENstrcmp("toy3_367546", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  AT %u   F_S_NEG %d  F_S_OPPO %d\n", in_cigar, sel_pos, is_first_section_negative_strand, is_first_section_reversed);
+if(0 && FIXLENstrcmp("toy3_367546", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  AT %u   F_S_NEG %d  F_S_OPPO %d\n", in_cigar, sel_pos, is_first_section_negative_strand, is_first_section_reversed);
 	for(cigar_cursor=0;;cigar_cursor++)
 	{
 		char ncch = in_cigar[cigar_cursor];
@@ -4879,7 +4879,7 @@ if(1 && FIXLENstrcmp("toy3_367546", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  
 			{
 
 
-if(1 && FIXLENstrcmp("toy3_367546", read_name)==0){
+if(0 && FIXLENstrcmp("toy3_367546", read_name)==0){
 char * fm_chr=NULL;int fm_offset=0;
 locate_gene_position_max(current_perfect_cursor, &global_context -> chromosome_table, & fm_chr, & fm_offset, NULL, NULL, 1);
 char * db_chr=NULL;int db_offset=0;
