@@ -3028,7 +3028,7 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 						match_base_quality(current_value_index, read_text+read_cursor, current_perfect_section_abs, qual_text_cur, tmp_int, current_reversed, global_context->config.phred_score_format, &preclip_high_quality_mismatches, preclip_mismatched_bases, global_context->config.high_quality_base_threshold, 0, 0);
 				}
 
-				if(0){
+				if(0 && FIXLENstrcmp("toy3_367546/1",read_name)){
 					int is_head_in_chro = get_offset_maximum_chro_pos(global_context,thread_context, current_perfect_section_abs );
 					int is_end_in_chro = get_offset_maximum_chro_pos(global_context,thread_context, current_perfect_section_abs + tmp_int );
 					char posout1[100];
@@ -3116,6 +3116,21 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 				else {
 					//if(FIXLENstrcmp("HWI-ST212:219:C0C1TACXX:1:1101:2133:53562", read_name)==0)fprintf(stderr,"QMAP : at %u : match_len %d [%s]\n",current_perfect_section_abs, tmp_int , cigar_string);
 					section_qual =  match_base_quality(current_value_index, read_text+read_cursor, current_perfect_section_abs, qual_text_cur, tmp_int, current_reversed, global_context->config.phred_score_format , mismatched_bases, &all_mismatched, global_context -> config.high_quality_base_threshold, mismatch_calculation_start, mismatch_calculation_end);
+
+
+
+if(1 && FIXLENstrcmp("toy3_367546/1",read_name)==0){
+
+char * src_chr;
+int src_pos;
+locate_gene_position(current_perfect_section_abs +1,  &global_context -> chromosome_table, &src_chr , &src_pos);
+
+fprintf(stderr,"ONESEGG: READ %s range [%d - %d] (1-based numbers, converted to POS strandd), tested with %s:%d : having %d mismatched in %d 'M' bases.\n", read_name, read_cursor +1, read_cursor+tmp_int,  src_chr,  src_pos, all_mismatched, tmp_int);
+}
+
+
+
+
 				}
 				all_matched_bases += section_qual;
 				rebuilt_read_len += tmp_int;
@@ -3462,7 +3477,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 
 
 			//#warning " ========== COMMENT THIS LINE !! ========="
-			if(0 && (FIXLENstrcmp("toy3_097950", explain_context -> read_name) ==0 ||  FIXLENstrcmp("toy3_229763", explain_context -> read_name) ==0 )){
+			if(1 && (FIXLENstrcmp("toy3_367546", explain_context -> read_name) ==0)){
 				char outpos1[100];
 				absoffset_to_posstr(global_context, final_position, outpos1);
 				SUBREADprintf("FINALQUAL %s : FINAL_POS=%s ( %u )\tCIGAR=%s\tMM=%d / MAPLEN=%d > %d?\tVOTE=%d > %0.2f x %d ?  MASK=%d\tQUAL=%d\tBRNO=%d\nKNOWN_JUNCS=%d PENALTY=%d\n\n", explain_context -> read_name, outpos1 , final_position , tmp_cigar, mismatch_bases, non_clipped_length, applied_mismatch,  result -> selected_votes, global_context -> config.minimum_exonic_subread_fraction,result-> used_subreads_in_vote, result->result_flags, final_qual, explain_context -> best_read_id, known_junction_supp, explain_context -> best_indel_penalty);
