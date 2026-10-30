@@ -133,7 +133,7 @@ static int realignment_section_score(int matches, int length, int fusion_detecti
 static int trace_956_read(const char *name)
 {
 	return 0;
-	return name && strcmp(name, "SRR10080547-GSM4065621-PDAC_154.956") == 0;
+	return name && strcmp(name, "toy3_146726/2") == 0;
 }
 
 static void trace_956_site(global_context_t *g, explain_context_t *e, const char *dir,
@@ -152,8 +152,8 @@ static void trace_956_site(global_context_t *g, explain_context_t *e, const char
 			if(dir[0] == 'F') wrong_indel_side = site == (e->current_is_strand_jumped ? ev->event_small_side : ev->event_large_side);
 			else wrong_indel_side = site == (e->current_is_strand_jumped ? ev->event_large_side : ev->event_small_side);
 		}
-		SUBREADprintf("TRACE956 SITE name=%s mate=%d anchor=%d dir=%s depth=%d site=%u read_pos=%d event=%p type=%d small=%u large=%u indel_len=%d junction_ins=%d strand_jump=%d support=%d anti=%d matches=%d length=%d mismatches=%d section_score=%d score_before=%d gate=%d fully_covered_skip=%d wrong_indel_side=%d tries=%d\n",
-			e->read_name, e->is_second_read+1, e->best_read_id, dir, e->tmp_search_sections, site, read_pos, (void *)ev, ev->event_type, ev->event_small_side, ev->event_large_side, ev->indel_length, ev->indel_at_junction, ev->is_strand_jumped, ev->supporting_reads, ev->anti_supporting_reads, matches, length, length-matches, realignment_section_score(matches, length, g->config.do_fusion_detection), sofar, gate, fully_covered_skip, wrong_indel_side, e->total_tries);
+		SUBREADprintf("TRACE956 SITE name=%s mate=%d anchor=%d dir=%s depth=%d site=%u read_pos=%d event=%p type=%d small=%u large=%u indel_len=%d junction_ins=%d strand_jump=%d donor_annotation=%d support=%d anti=%d matches=%d length=%d mismatches=%d section_score=%d score_before=%d gate=%d fully_covered_skip=%d wrong_indel_side=%d tries=%d\n",
+			e->read_name, e->is_second_read+1, e->best_read_id, dir, e->tmp_search_sections, site, read_pos, (void *)ev, ev->event_type, ev->event_small_side, ev->event_large_side, ev->indel_length, ev->indel_at_junction, ev->is_strand_jumped, ev->is_donor_found_or_annotation, ev->supporting_reads, ev->anti_supporting_reads, matches, length, length-matches, realignment_section_score(matches, length, g->config.do_fusion_detection), sofar, gate, fully_covered_skip, wrong_indel_side, e->total_tries);
 	}
 }
 
@@ -165,7 +165,7 @@ static void trace_956_path(global_context_t *g, explain_context_t *e, const char
 	SUBREADprintf("TRACE956 PATH name=%s mate=%d anchor=%d dir=%s events=%d terminal_matches=%d terminal_length=%d terminal_mismatches=%d terminal_score=%d prior_score=%d score_before_indel=%d indel_penalty=%d score=%d best_score=%d\n", e->read_name, e->is_second_read+1, e->best_read_id, dir, e->tmp_search_sections, matches, length, length-matches, realignment_section_score(matches, length, g->config.do_fusion_detection), sofar, score, e->tmp_indel_penalty, score-e->tmp_indel_penalty, e->best_matching_bases-e->best_indel_penalty);
 	for(i = 0; i < e->tmp_search_sections; i++){
 		chromosome_event_t *ev = e->tmp_search_junctions[i + (back ? 1 : 0)].event_after_section;
-		if(ev) SUBREADprintf("TRACE956 PATH_EVENT name=%s mate=%d anchor=%d dir=%s path_index=%d event=%p type=%d small=%u large=%u indel_len=%d junction_ins=%d strand_jump=%d\n", e->read_name, e->is_second_read+1, e->best_read_id, dir, i, (void *)ev, ev->event_type, ev->event_small_side, ev->event_large_side, ev->indel_length, ev->indel_at_junction, ev->is_strand_jumped);
+		if(ev) SUBREADprintf("TRACE956 PATH_EVENT name=%s mate=%d anchor=%d dir=%s path_index=%d event=%p type=%d small=%u large=%u indel_len=%d junction_ins=%d strand_jump=%d donor_annotation=%d support=%d anti=%d\n", e->read_name, e->is_second_read+1, e->best_read_id, dir, i, (void *)ev, ev->event_type, ev->event_small_side, ev->event_large_side, ev->indel_length, ev->indel_at_junction, ev->is_strand_jumped, ev->is_donor_found_or_annotation, ev->supporting_reads, ev->anti_supporting_reads);
 	}
 }
 
@@ -364,6 +364,15 @@ void new_explain_try_replace(global_context_t* global_context, thread_context_t 
 {
 	int is_better_result = 0, is_same_best = 0;
 
+	if(trace_956_read(explain_context->read_name))
+		SUBREADprintf("TRACE956 TIE_INPUT name=%s mate=%d anchor=%d dir=%s candidate_sections=%d best_complex_before=%d candidate_raw=%d candidate_penalty=%d candidate_score=%d best_raw=%d best_penalty=%d best_score=%d best_pure_donor=%d best_simple_support=%d best_simple_anti=%d simple_anti_ge_support_plus_2=%d best_complex_support=%d tmp_simple_support=%d tmp_anti=%d tmp_complex_support=%d tmp_pure_donor=%d current_tie=%d\n",
+			explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, search_to_back?"BACK":"FRONT", explain_context->tmp_search_sections, explain_context->best_is_complex,
+			explain_context->tmp_total_matched_bases, explain_context->tmp_indel_penalty, explain_context->tmp_total_matched_bases-explain_context->tmp_indel_penalty,
+			explain_context->best_matching_bases, explain_context->best_indel_penalty, explain_context->best_matching_bases-explain_context->best_indel_penalty,
+			explain_context->best_is_pure_donor_found_explain, explain_context->best_support_as_simple, explain_context->best_min_unsupport_as_simple,
+			explain_context->best_min_unsupport_as_simple >= explain_context->best_support_as_simple+2, explain_context->best_min_support_as_complex,
+			explain_context->tmp_support_as_simple, explain_context->tmp_min_unsupport, explain_context->tmp_min_support_as_complex, explain_context->tmp_is_pure_donor_found_explain, explain_context->is_currently_tie);
+
 if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADprintf("TRY_REPLACE : %s has best=%d, b_evn=%d, tscore=%d, t_evn=%d\n", explain_context->read_name, explain_context -> best_matching_bases ,  explain_context -> best_is_complex , explain_context-> tmp_total_matched_bases,  explain_context -> tmp_search_sections );
 
 	if(explain_context -> best_matching_bases - explain_context -> best_indel_penalty < explain_context-> tmp_total_matched_bases - explain_context -> tmp_indel_penalty)
@@ -444,7 +453,7 @@ if(0 && FIXLENstrcmp("toy3_061656", explain_context -> read_name) == 0) SUBREADp
 		if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 DECISION name=%s mate=%d anchor=%d dir=%s result=lower_score\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, search_to_back?"BACK":"FRONT");
 		return;
 	}
-	if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 DECISION name=%s mate=%d anchor=%d dir=%s better=%d same=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, search_to_back?"BACK":"FRONT", is_better_result, is_same_best);
+	if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 DECISION name=%s mate=%d anchor=%d dir=%s better=%d same=%d best_complex_after=%d current_tie_after=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, search_to_back?"BACK":"FRONT", is_better_result, is_same_best, explain_context->best_is_complex, explain_context->is_currently_tie);
 
 	if(is_better_result || is_same_best){
 		if(search_to_back){
@@ -3485,7 +3494,7 @@ unsigned int finalise_explain_CIGAR(global_context_t * global_context, thread_co
 			}
 
 
-			if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 COMBINATION_FINAL name=%s mate=%d anchor=%d back=%d front=%d position=%u cigar=%s matches=%d mismatches=%d mismatch_limit=%d non_clipped=%d indel_length=%d quality=%d full_section_clipped=%d exonic_ok=%d fusions=%d accepted=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, back_i, front_i, final_position, tmp_cigar, final_MATCH, mismatch_bases, applied_mismatch, non_clipped_length, final_qual, full_section_clipped, is_exonic_read_fraction_OK, fusions_in_read, mismatch_bases <= applied_mismatch && preclip_mismatched_bases <= global_context->config.max_preclip_mismatches && is_exonic_read_fraction_OK && fusions_in_read < 2);
+			if(trace_956_read(explain_context->read_name)) SUBREADprintf("TRACE956 COMBINATION_FINAL name=%s mate=%d anchor=%d back=%d front=%d position=%u cigar=%s matches=%d mismatches=%d mismatch_limit=%d preclip_mismatches=%d preclip_limit=%d non_clipped=%d quality=%d full_section_clipped=%d exonic_ok=%d fusions=%d accepted=%d\n", explain_context->read_name, explain_context->is_second_read+1, explain_context->best_read_id, back_i, front_i, final_position, tmp_cigar, final_MATCH, mismatch_bases, applied_mismatch, preclip_mismatched_bases, global_context->config.max_preclip_mismatches, non_clipped_length, final_qual, full_section_clipped, is_exonic_read_fraction_OK, fusions_in_read, mismatch_bases <= applied_mismatch && preclip_mismatched_bases <= global_context->config.max_preclip_mismatches && is_exonic_read_fraction_OK && fusions_in_read < 2);
 			if(mismatch_bases <= applied_mismatch && preclip_mismatched_bases <= global_context->config.max_preclip_mismatches && is_exonic_read_fraction_OK && fusions_in_read < 2 ){// && (0 == full_section_clipped || 0 == global_context -> config.do_breakpoint_detection)) {
 				realignment_result_t * realign_res = final_realignments+final_alignment_number;
 				final_alignment_number ++;
