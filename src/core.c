@@ -1536,8 +1536,23 @@ int convert_read_to_tmp(global_context_t * global_context , subread_output_conte
 						&cp_chr, &cp_offset, NULL, NULL, 1) && cp_chr == chimaric_chr
 					){
 						char strand_xor = (r->out_strands[xk1] == '-') != is_second_read;
-						SUBreadSprintf(r->additional_information + strlen(r->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen(r->additional_information), "\tCG:Z:%s\tCP:i:%u\tCT:Z:%c\tCC:Z:%s", r->out_cigars[xk1], (unsigned int)(cp_offset + 1), strand_xor?'-':'+', chimaric_chr);
+						size_t used = strlen(r->additional_information);
+						size_t available = sizeof(r->additional_information) - used;
+						size_t written = SUBreadSprintf(r->additional_information + used, available, "\tCG:Z:%s\tCP:i:%u\tCT:Z:%c\tCC:Z:%s", r->out_cigars[xk1], (unsigned int)(cp_offset + 1), strand_xor?'-':'+', chimaric_chr);
+						if(written >= available) is_r_OK = 0;
 					}else is_r_OK = 0;
+				}
+				/* Leave room for tags added later; do not emit truncated groups. */
+				if(is_r_OK && chimeric_sections > 1){
+					size_t reserve = sizeof("\tXS:A:+\tNM:i:-32768") - 1;
+					if(global_context->config.do_fusion_detection || global_context->config.max_preclip_mismatches < 999999){
+						char *raw_chr = NULL;
+						int raw_offset = -1;
+						if(locate_gene_position(current_result->first_base_position, &global_context->chromosome_table, &raw_chr, &raw_offset)) raw_chr = "*";
+						reserve += sizeof("\tXM:i:-2147483648\tXC:Z:\tXP:Z::-2147483648") - 1;
+						reserve += strlen(current_result->cigar_string) + strlen(raw_chr);
+					}
+					if(strlen(r->additional_information) + reserve >= sizeof(r->additional_information)) is_r_OK = 0;
 				}
 				r->linear_position = r->out_poses[0];
 				r->strand = r->out_strands[0]=='-';
@@ -4775,8 +4790,31 @@ void absoffset_to_posstr(global_context_t * global_context, unsigned int pos, ch
 	SUBreadSprintf(res,100 , "%s:%u", ch, off);
 }
 
-int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos, int is_first_section_negative_strand, int is_first_section_reversed, char * in_cigar, unsigned int * out_poses, unsigned int * out_ref_left, unsigned int * out_ref_right, unsigned int * out_ref_first, unsigned int * out_ref_last, char ** out_cigars, char * out_strands, int read_len, short * perfect_lens, char * read_name)
+/* After mirroring, deletions after the last mapped base would precede CP.
+ * They do not belong to either independently anchored split piece. */
+static int trim_split_terminal_deletions(char *cigar)
 {
+	char *last_m = strrchr(cigar, 'M'), *read, *write;
+	if(!last_m) return -1;
+	read = write = last_m + 1;
+	while(*read){
+		char *start = read;
+		while(isdigit((unsigned char)*read)) read++;
+		if(!*read) return -1;
+		read++;
+		if(read[-1] != 'D'){
+			memmove(write, start, read - start);
+			write += read - start;
+		}
+	}
+	*write = 0;
+	return (int)(write - cigar);
+}
+
+static int chimeric_cigar_parts_pass(global_context_t * global_context, unsigned int sel_pos, int is_first_section_negative_strand, int is_first_section_reversed, char * in_cigar, unsigned int * out_poses, unsigned int * out_ref_left, unsigned int * out_ref_right, unsigned int * out_ref_first, unsigned int * out_ref_last, char ** out_cigars, char * out_strands, int read_len, short * perfect_lens, char * read_name, int split_n, int primary_origin, int *selected_origin)
+{
+	int origins[CIGAR_PERFECT_SECTIONS], origin = 0;
+	origins[0] = 0;
 	unsigned int current_perfect_map_start = sel_pos;
 	int current_perfect_section_no = 0;
 	unsigned int current_perfect_cursor = sel_pos;
@@ -4875,7 +4913,9 @@ if(0 && FIXLENstrcmp("toy3_367546", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  
 			if(0 && FIXLENstrcmp("R000000007", read_name)==0)
 				SUBREADprintf("CHR_JMP=%d, NCCH=%c, LONG_JMP=%d\n", is_chro_jump, ncch, is_long_jump);
 			section_ref_cursor = jummped_location;
-			if(is_chro_jump || islower(ncch) || ncch == 'B' || is_long_jump)
+			int natural_boundary = is_chro_jump || islower(ncch) || ncch == 'B' || is_long_jump;
+			int split_boundary = split_n && ncch == 'N' && !natural_boundary && origin != primary_origin;
+			if(natural_boundary || split_boundary)
 			{
 
 
@@ -4899,14 +4939,24 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 
 				current_perfect_map_start = current_perfect_cursor;
 				tmpi = 0;
-				if(read_cursor<read_len)
-					SUBreadSprintf(out_cigars[current_perfect_section_no] + out_cigar_writer_ptr, 60-out_cigar_writer_ptr,"%dS", read_len - read_cursor);
+				if(split_boundary){
+					if(!perfect_len) return -1;
+					out_cigar_writer_ptr = trim_split_terminal_deletions(out_cigars[current_perfect_section_no]);
+					if(out_cigar_writer_ptr < 0) return -1;
+				}
+				if(read_cursor<read_len){
+					size_t available = 60 - out_cigar_writer_ptr;
+					size_t added = SUBreadSprintf(out_cigars[current_perfect_section_no] + out_cigar_writer_ptr, available,"%dS", read_len - read_cursor);
+					if(added >= available) return -1;
+				}
 
 				perfect_lens [current_perfect_section_no] = perfect_len ;
 				perfect_len = 0;
 
+				if(natural_boundary) origin++;
 				current_perfect_section_no++;
-				if(current_perfect_section_no>=CIGAR_PERFECT_SECTIONS)break;
+				if(current_perfect_section_no>=CIGAR_PERFECT_SECTIONS) return -1;
+				origins[current_perfect_section_no] = origin;
 
 				out_poses[current_perfect_section_no] = current_perfect_map_start - read_cursor;
 				out_ref_left[current_perfect_section_no] = ~0U;
@@ -4915,6 +4965,7 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 				out_ref_last[current_perfect_section_no] = ~0U;
 				out_strands[current_perfect_section_no] = is_negative?'-':'+';
 				out_cigar_writer_ptr = SUBreadSprintf(out_cigars[current_perfect_section_no], 60,"%dS", read_cursor);
+				if(out_cigar_writer_ptr >= 60) return -1;
 				is_chimeric_section_end  = 1;
 			}
 		}
@@ -4923,7 +4974,10 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 		{
 			if(isalpha(ncch))
 			{
-				out_cigar_writer_ptr+=SUBreadSprintf(out_cigars[current_perfect_section_no]+out_cigar_writer_ptr, 60-out_cigar_writer_ptr, "%u%c", tmpi, ncch);
+				size_t available = 60 - out_cigar_writer_ptr;
+				size_t added = SUBreadSprintf(out_cigars[current_perfect_section_no]+out_cigar_writer_ptr, available, "%u%c", tmpi, ncch);
+				if(added >= available) return -1;
+				out_cigar_writer_ptr += added;
 			}
 			if(ncch == 'M'|| ncch == 'S')
 			{
@@ -4990,6 +5044,13 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 			best_match = xk1;
 	}
 
+	if(split_n){
+		best_match = -1;
+		for(xk1=0; xk1<current_perfect_section_no; xk1++)
+			if(origins[xk1] == primary_origin){ best_match = xk1; break; }
+		if(best_match < 0) return -1;
+	}
+	if(selected_origin) *selected_origin = origins[best_match];
 	if(best_match>0)
 	{
 		unsigned int tmpv;
@@ -5024,6 +5085,18 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 	}
 
 	return current_perfect_section_no;
+}
+
+int chimeric_cigar_parts(global_context_t *global_context, unsigned int sel_pos, int is_first_section_negative_strand, int is_first_section_reversed, char *in_cigar, unsigned int *out_poses, unsigned int *out_ref_left, unsigned int *out_ref_right, unsigned int *out_ref_first, unsigned int *out_ref_last, char **out_cigars, char *out_strands, int read_len, short *perfect_lens, char *read_name)
+{
+	/* Select the primary before subdivision. When the SEQ frame is mirrored,
+	 * a forward internal N becomes a backward jump in the emitted order. */
+	int primary_origin = -1;
+	int count = chimeric_cigar_parts_pass(global_context, sel_pos, is_first_section_negative_strand, is_first_section_reversed, in_cigar, out_poses, out_ref_left, out_ref_right, out_ref_first, out_ref_last, out_cigars, out_strands, read_len, perfect_lens, read_name, 0, -1, &primary_origin);
+	int anchor_negative = is_first_section_negative_strand ^ is_first_section_reversed;
+	if(count > 1 && anchor_negative != (out_strands[0] == '-'))
+		count = chimeric_cigar_parts_pass(global_context, sel_pos, is_first_section_negative_strand, is_first_section_reversed, in_cigar, out_poses, out_ref_left, out_ref_right, out_ref_first, out_ref_last, out_cigars, out_strands, read_len, perfect_lens, read_name, 1, primary_origin, NULL);
+	return count;
 }
 
 void quick_sort_run(void * arr, int spot_low,int spot_high, int compare (void * arr, int l, int r), void exchange(void * arr, int l, int r));

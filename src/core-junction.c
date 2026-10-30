@@ -3119,7 +3119,7 @@ int final_CIGAR_quality(global_context_t * global_context, thread_context_t * th
 
 
 
-if(0 && FIXLENstrcmp("toy3_367546/1",read_name)==0){
+if(0 && FIXLENstrcmp("toy3_495902/1",read_name)==0){
 
 char * src_chr;
 int src_pos;
