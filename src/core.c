@@ -2081,15 +2081,23 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 		if(is_R1_OK) {// && !strstr(rec1->additional_information, "\tNM:i:")){
 			short rec1_edit = calc_edit_dist(global_context, rec1->raw_result, rec1->cigar , rec1->linear_position, read_text_1, raw_r1 -> final_mismatched_bases);
 			SUBreadSprintf(rec1->additional_information + strlen( rec1->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec1->additional_information), "\tNM:i:%d", rec1_edit );
-			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999)
-				SUBreadSprintf(rec1->additional_information + strlen( rec1->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec1->additional_information), "\tXM:i:%d", raw_r1 -> preclip_mismatched_bases );
+			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999){
+				char *raw_chr = NULL;
+				int raw_offset = -1;
+				if(locate_gene_position(raw_r1->first_base_position, &global_context->chromosome_table, &raw_chr, &raw_offset)) raw_chr = "*", raw_offset = -1;
+				SUBreadSprintf(rec1->additional_information + strlen( rec1->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec1->additional_information), "\tXM:i:%d\tXC:Z:%s\tXP:Z:%s:%lld", raw_r1->preclip_mismatched_bases, raw_r1->cigar_string, raw_chr, (long long)raw_offset + 1);
+			}
 		}
 		if(global_context->input_reads.is_paired_end_reads && is_R2_OK) //&& !strstr(rec2->additional_information, "\tNM:i:"))
 		{
 			short rec2_edit = calc_edit_dist(global_context, rec2->raw_result, rec2->cigar , rec2->linear_position, read_text_2, raw_r2 -> final_mismatched_bases);
 			SUBreadSprintf(rec2->additional_information + strlen( rec2->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec2->additional_information), "\tNM:i:%d", rec2_edit );
-			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999)
-				SUBreadSprintf(rec2->additional_information + strlen( rec2->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec2->additional_information), "\tXM:i:%d", raw_r2 -> preclip_mismatched_bases );
+			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999){
+				char *raw_chr = NULL;
+				int raw_offset = -1;
+				if(locate_gene_position(raw_r2->first_base_position, &global_context->chromosome_table, &raw_chr, &raw_offset)) raw_chr = "*", raw_offset = -1;
+				SUBreadSprintf(rec2->additional_information + strlen( rec2->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec2->additional_information), "\tXM:i:%d\tXC:Z:%s\tXP:Z:%s:%lld", raw_r2->preclip_mismatched_bases, raw_r2->cigar_string, raw_chr, (long long)raw_offset + 1);
+			}
 		}
 	}
 
@@ -4774,8 +4782,8 @@ int chimeric_cigar_parts(global_context_t * global_context, unsigned int sel_pos
 	int is_reversed = is_first_section_reversed;
 	int is_negative = is_first_section_negative_strand;
 	int read_cursor = 0;
+	// Reference-walk state uses the same convention as final_CIGAR_quality.
 	unsigned int section_ref_cursor = sel_pos;
-	unsigned int section_last_match_left = sel_pos;
 	unsigned int reverse_indel_deletion = 0;
 	int reverse_indel_pending = 0;
 	int out_cigar_writer_ptr = 0;
@@ -4809,27 +4817,16 @@ if(1 && FIXLENstrcmp("toy3_027587", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  
 			unsigned int jummped_location;
 			int is_chro_jump = 0, is_long_jump = 0;
 
-			if(is_reversed)
-			{
-				if(toupper(ncch)=='N')
-					jummped_location = current_perfect_map_start - 1 + tmpi;
-				else
-					jummped_location = current_perfect_map_start - 1 - tmpi;
-			}
+			if(toupper(ncch)=='N')
+				jummped_location = section_ref_cursor + tmpi;
 			else
-			{
-				if(toupper(ncch)=='N')
-					jummped_location = current_perfect_cursor + tmpi;
-				else
-					jummped_location = current_perfect_cursor - tmpi;
-
-			}
+				jummped_location = section_ref_cursor - tmpi;
 
 			if(ncch == 'N')
 			{
 				char * curr_chr, * new_chr;
 				int curr_offset, new_offset;
-				locate_gene_position_max(current_perfect_cursor, &global_context -> chromosome_table, & curr_chr, & curr_offset, NULL, NULL, 1);
+				locate_gene_position_max(section_ref_cursor, &global_context -> chromosome_table, & curr_chr, & curr_offset, NULL, NULL, 1);
 				locate_gene_position_max(jummped_location      , &global_context -> chromosome_table, &  new_chr, &  new_offset, NULL, NULL, 1);
 				if( curr_chr == NULL || new_chr == NULL ){
 					/*
@@ -4843,7 +4840,7 @@ if(1 && FIXLENstrcmp("toy3_027587", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  
 				assert(new_chr);
 				is_chro_jump = (curr_chr != new_chr);
 
-				long long int dist = (long long int)current_perfect_cursor;
+				long long int dist = (long long int)section_ref_cursor;
 				dist -= (long long int)jummped_location;
 
 				// A long jump is the jump longer than 2^27.
@@ -4856,6 +4853,7 @@ if(1 && FIXLENstrcmp("toy3_027587", read_name)==0)fprintf(stderr,"TOY_JUMP0 %s  
 			//#warning ">>>>>> COMMENT WHEN RELEASE <<<<<<"
 			if(0 && FIXLENstrcmp("R000000007", read_name)==0)
 				SUBREADprintf("CHR_JMP=%d, NCCH=%c, LONG_JMP=%d\n", is_chro_jump, ncch, is_long_jump);
+			section_ref_cursor = jummped_location;
 			if(is_chro_jump || islower(ncch) || ncch == 'B' || is_long_jump)
 			{
 
@@ -4869,7 +4867,6 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 }
 
 				current_perfect_cursor = jummped_location;
-				section_ref_cursor = current_perfect_cursor;
 
 				if(islower(ncch)){
 					is_reversed = !is_reversed;
@@ -4893,12 +4890,6 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 				out_poses[current_perfect_section_no] = current_perfect_map_start - read_cursor;
 				out_ref_left[current_perfect_section_no] = ~0U;
 				out_ref_right[current_perfect_section_no] = 0;
-				// Later reversed sections start one base after the stored
-				// jump target, including uppercase backward jumps.
-				// section_ref_cursor = current_perfect_map_start + (is_reversed ? 1 : 0);
-				section_last_match_left = section_ref_cursor;
-				reverse_indel_pending = 0;
-				reverse_indel_deletion = 0;
 				out_strands[current_perfect_section_no] = is_negative?'-':'+';
 				out_cigar_writer_ptr = SUBreadSprintf(out_cigars[current_perfect_section_no], 60,"%dS", read_cursor);
 				is_chimeric_section_end  = 1;
@@ -4914,25 +4905,18 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 			if(ncch == 'M'|| ncch == 'S')
 			{
 				if(ncch == 'M'){
-					// Internal reversed CIGARs anchor each M at its leftmost base.
-					// As in final_CIGAR_quality, the M following a reverse indel
-					// lies before the previous M, not after it in reference order.
-					if(is_reversed && reverse_indel_pending && out_ref_left[current_perfect_section_no] != ~0U)
-						section_ref_cursor = section_last_match_left - reverse_indel_deletion - tmpi;
-					reverse_indel_pending = 0;
-					reverse_indel_deletion = 0;
-					section_last_match_left = section_ref_cursor;
+					if(is_reversed && reverse_indel_pending){
+						section_ref_cursor -= reverse_indel_deletion + tmpi - 1;
+						reverse_indel_pending = 0;
+						reverse_indel_deletion = 0;
+					}
 					if(out_ref_left[current_perfect_section_no] == ~0U || section_ref_cursor < out_ref_left[current_perfect_section_no])
 						out_ref_left[current_perfect_section_no] = section_ref_cursor;
 					if(section_ref_cursor + tmpi - 1 > out_ref_right[current_perfect_section_no])
 						out_ref_right[current_perfect_section_no] = section_ref_cursor + tmpi - 1;
 				}
-				if(ncch == 'S' && is_reversed && out_ref_left[current_perfect_section_no] != ~0U){
-					out_ref_left[current_perfect_section_no] += tmpi;
-					out_ref_right[current_perfect_section_no] += tmpi;
-					section_last_match_left += tmpi;
-				}
-				section_ref_cursor += tmpi;
+				if(is_reversed) section_ref_cursor--;
+				else section_ref_cursor += tmpi;
 				read_cursor += tmpi;
 				if(ncch == 'M')
 					perfect_len += tmpi;
@@ -4946,9 +4930,9 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 			{
 				if(is_reversed && ncch == 'D'){
 					reverse_indel_pending = 1;
-					reverse_indel_deletion += tmpi;
+					reverse_indel_deletion = tmpi;
 				}
-				section_ref_cursor += tmpi;
+				else if(ncch == 'D') section_ref_cursor += tmpi;
 				if(is_reversed)
 					out_poses[current_perfect_section_no] += tmpi;
 				else
@@ -4957,7 +4941,10 @@ fprintf(stderr,"TOY_JUMP1 %s:%d => %s:%d with a CMD %c\n", fm_chr, fm_offset+1, 
 			}
 			else if(ncch == 'I')
 			{
-				if(is_reversed) reverse_indel_pending = 1;
+				if(is_reversed){
+					reverse_indel_pending = 1;
+					reverse_indel_deletion = 0;
+				}
 				read_cursor += tmpi;
 				tmpi = 0;
 			}
