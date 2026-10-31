@@ -1,4 +1,5 @@
-mkdir result
+mkdir -p result
+cc -std=c99 -Wall -Wextra -Werror -o result/event-direction-test event-direction-test.c && result/event-direction-test || exit 1
 
 ../../bin/subread-buildindex -o ../small1 ../chr901.fa
 

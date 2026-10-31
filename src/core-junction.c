@@ -31,6 +31,7 @@
 #include "core-indel.h"
 #include "core-junction.h"
 #include "core-bigtable.h"
+#include "subjunc-event-direction.h"
 
 #define TTTSNAME "V0112_0155:7:1308:1308:136442"
 
@@ -284,6 +285,20 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 						}else{
 							if(potential_event_pos == tested_event-> event_large_side) continue; 
 						}
+					}
+					// In fusion mode, a breakpoint may only be crossed through its retained flanks.
+					if(global_context -> config.entry_program_name == CORE_PROGRAM_SUBJUNC &&
+					   global_context -> config.do_fusion_detection &&
+					   (tested_event -> event_type == CHRO_EVENT_TYPE_JUNCTION ||
+					    tested_event -> event_type == CHRO_EVENT_TYPE_FUSION))
+					{
+						int is_fusion = tested_event -> event_type == CHRO_EVENT_TYPE_FUSION;
+						// Several ordinary-junction constructors leave the side fields unset.
+						int small_right = is_fusion ? tested_event -> small_side_increasing_coordinate : 0;
+						int large_right = is_fusion ? tested_event -> large_side_increasing_coordinate : 1;
+						if(!subjunc_event_direction_allowed(0, explain_context -> current_is_strand_jumped,
+						   potential_event_pos == tested_event -> event_large_side, small_right, large_right,
+						   is_fusion && tested_event -> is_strand_jumped)) continue;
 					}
 					if( tested_event -> event_type != CHRO_EVENT_TYPE_INDEL){
 						this_round_junction_scanned = 1;
@@ -735,6 +750,20 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 						}else{
 							if(potential_event_pos == tested_event-> event_small_side) continue; 
 						}
+					}
+					// In fusion mode, a breakpoint may only be crossed through its retained flanks.
+					if(global_context -> config.entry_program_name == CORE_PROGRAM_SUBJUNC &&
+					   global_context -> config.do_fusion_detection &&
+					   (tested_event -> event_type == CHRO_EVENT_TYPE_JUNCTION ||
+					    tested_event -> event_type == CHRO_EVENT_TYPE_FUSION))
+					{
+						int is_fusion = tested_event -> event_type == CHRO_EVENT_TYPE_FUSION;
+						// Several ordinary-junction constructors leave the side fields unset.
+						int small_right = is_fusion ? tested_event -> small_side_increasing_coordinate : 0;
+						int large_right = is_fusion ? tested_event -> large_side_increasing_coordinate : 1;
+						if(!subjunc_event_direction_allowed(1, explain_context -> current_is_strand_jumped,
+						   potential_event_pos == tested_event -> event_large_side, small_right, large_right,
+						   is_fusion && tested_event -> is_strand_jumped)) continue;
 					}
 					if( tested_event -> event_type != CHRO_EVENT_TYPE_INDEL){
 						this_round_junction_scanned = 1;
