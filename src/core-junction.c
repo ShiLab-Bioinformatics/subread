@@ -287,8 +287,7 @@ void search_events_to_front(global_context_t * global_context, thread_context_t 
 						}
 					}
 					// In fusion mode, a breakpoint may only be crossed through its retained flanks.
-					if(global_context -> config.entry_program_name == CORE_PROGRAM_SUBJUNC &&
-					   global_context -> config.do_fusion_detection &&
+					if(global_context -> config.do_fusion_detection &&
 					   (tested_event -> event_type == CHRO_EVENT_TYPE_JUNCTION ||
 					    tested_event -> event_type == CHRO_EVENT_TYPE_FUSION))
 					{
@@ -752,8 +751,7 @@ void search_events_to_back(global_context_t * global_context, thread_context_t *
 						}
 					}
 					// In fusion mode, a breakpoint may only be crossed through its retained flanks.
-					if(global_context -> config.entry_program_name == CORE_PROGRAM_SUBJUNC &&
-					   global_context -> config.do_fusion_detection &&
+					if(global_context -> config.do_fusion_detection &&
 					   (tested_event -> event_type == CHRO_EVENT_TYPE_JUNCTION ||
 					    tested_event -> event_type == CHRO_EVENT_TYPE_FUSION))
 					{
