@@ -4542,6 +4542,7 @@ void init_global_context(global_context_t * context)
 	context->config.max_mismatch_exonic_reads = 5;
 	context->config.max_mismatch_junction_reads = 2;
 	context->config.max_preclip_mismatches = 999999;
+	context->config.report_preclip_mismatches = 0;
 	context->config.all_threads = 1;
 	context->config.is_first_iteration_running = 1;
 	context->config.is_second_iteration_running = 1;

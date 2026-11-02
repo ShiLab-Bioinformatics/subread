@@ -1545,7 +1545,7 @@ int convert_read_to_tmp(global_context_t * global_context , subread_output_conte
 				/* Leave room for tags added later; do not emit truncated groups. */
 				if(is_r_OK && chimeric_sections > 1){
 					size_t reserve = sizeof("\tXS:A:+\tNM:i:-32768") - 1;
-					if(global_context->config.do_fusion_detection || global_context->config.max_preclip_mismatches < 999999){
+					if(global_context->config.do_fusion_detection || global_context->config.max_preclip_mismatches < 999999 || global_context->config.report_preclip_mismatches){
 						char *raw_chr = NULL;
 						int raw_offset = -1;
 						if(locate_gene_position(current_result->first_base_position, &global_context->chromosome_table, &raw_chr, &raw_offset)) raw_chr = "*";
@@ -2097,7 +2097,7 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 		if(is_R1_OK) {// && !strstr(rec1->additional_information, "\tNM:i:")){
 			short rec1_edit = calc_edit_dist(global_context, rec1->raw_result, rec1->cigar , rec1->linear_position, read_text_1, raw_r1 -> final_mismatched_bases);
 			SUBreadSprintf(rec1->additional_information + strlen( rec1->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec1->additional_information), "\tNM:i:%d", rec1_edit );
-			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999){
+			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999 || global_context->config.report_preclip_mismatches){
 				char *raw_chr = NULL;
 				int raw_offset = -1;
 				if(locate_gene_position(raw_r1->first_base_position, &global_context->chromosome_table, &raw_chr, &raw_offset)) raw_chr = "*", raw_offset = -1;
@@ -2108,7 +2108,7 @@ void write_single_fragment(global_context_t * global_context, thread_context_t *
 		{
 			short rec2_edit = calc_edit_dist(global_context, rec2->raw_result, rec2->cigar , rec2->linear_position, read_text_2, raw_r2 -> final_mismatched_bases);
 			SUBreadSprintf(rec2->additional_information + strlen( rec2->additional_information), CORE_ADDITIONAL_INFO_LENGTH + 1 - strlen( rec2->additional_information), "\tNM:i:%d", rec2_edit );
-			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999){
+			if(global_context-> config.do_fusion_detection ||  global_context->config.max_preclip_mismatches < 999999 || global_context->config.report_preclip_mismatches){
 				char *raw_chr = NULL;
 				int raw_offset = -1;
 				if(locate_gene_position(raw_r2->first_base_position, &global_context->chromosome_table, &raw_chr, &raw_offset)) raw_chr = "*", raw_offset = -1;

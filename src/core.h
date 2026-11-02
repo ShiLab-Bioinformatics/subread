@@ -171,6 +171,7 @@ typedef struct{
 	int max_mismatch_exonic_reads;
 	int max_mismatch_junction_reads;
 	int max_preclip_mismatches;
+	int report_preclip_mismatches;
 	int ignore_unmapped_reads;
 	int report_unmapped_using_mate_pos;
 	int report_multi_mapping_reads;

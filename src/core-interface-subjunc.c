@@ -65,6 +65,7 @@ static struct option long_options[] =
 	{"reportPairedMultiBest",  no_argument, 0, 0},
 	{"maxMismatches",  required_argument, 0, 'M'},
 	{"maxMismatchesBeforeSoftClipping", required_argument, 0, 0},
+	{"reportPreclipMismatches", no_argument, 0, 0},
 	{"exonicSubreadFrac",  required_argument, 0, 0},
 	{"SVdetection", no_argument, 0, 0},
 	{"maxVoteSimples",  required_argument, 0, 0},
@@ -135,6 +136,9 @@ void print_usage_core_subjunc()
 	SUBREADputs("  -M <int>          Maximum number of mis-matched bases allowed in each reported");
 	SUBREADputs("                    alignment. 3 by default. Mis-matched bases found in soft-");
 	SUBREADputs("                    clipped bases are not counted.");
+	SUBREADputs("");
+	SUBREADputs("  --reportPreclipMismatches  Report XM, XC and XP tags without changing the");
+	SUBREADputs("                    pre-clipping mismatch threshold.");
 	SUBREADputs("");
 	SUBREADputs("  --maxMismatchesBeforeSoftClipping <int> Maximum mismatches before soft");
 	SUBREADputs("                    clipping. 999999 by default (effectively unlimited).");
@@ -536,6 +540,10 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 						return -1;
 					}
 					global_context->config.max_preclip_mismatches = (int)limit;
+				}
+				else if(strcmp("reportPreclipMismatches", long_options[option_index].name)==0)
+				{
+					global_context->config.report_preclip_mismatches = 1;
 				}
 				else if(strcmp("multiMapping", long_options[option_index].name)==0)
 				{
