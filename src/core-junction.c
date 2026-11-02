@@ -4495,7 +4495,7 @@ int write_junction_final_results(global_context_t * global_context)
 			continue;
 
 		//#warning "  ================================== remove '- 1' from the next line!!! ================================="
-		if(event_body->final_counted_reads <  1 || ( event_body->critical_supporting_reads < 1 - 1&& event_body->indel_at_junction))
+		if(event_body->final_counted_reads < 1 || ( event_body->critical_supporting_reads < 1 - 1&& event_body->indel_at_junction))
 		{
 			no_sup_juncs++;
 			continue;

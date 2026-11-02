@@ -962,6 +962,10 @@ int conc_sort_compare(void * arr, int l, int r){
 	if(body_l -> event_large_side < body_r -> event_large_side)return -3;
 	if(body_l -> event_type != body_r -> event_type) return body_l -> event_type > body_r -> event_type ? 3 : -3; // never merge different event types
 
+	/* Opposite-strand splice junctions are distinct biological events. */
+	if(body_l->event_type == CHRO_EVENT_TYPE_JUNCTION && body_l->is_negative_strand != body_r->is_negative_strand)
+		return body_l->is_negative_strand > body_r->is_negative_strand ? 2 : -2;
+
 	if(abs(body_l -> indel_length) < abs(body_r -> indel_length)) return 2;
 	if(abs(body_l -> indel_length) > abs(body_r -> indel_length)) return -2;
 	if(body_l -> indel_length > body_r -> indel_length) return -2; // same length, but L is del and R is ins -- prefer del than ins
@@ -1166,179 +1170,232 @@ int finalise_indel_and_junction_thread(global_context_t * global_context, thread
 }
 
 
-void add_annotation_to_junctions(void * key, void * val, HashTable * tab){
-	global_context_t * global_context = tab->appendix1;
-	indel_context_t * indel_context = (indel_context_t *)global_context -> module_contexts[MODULE_INDEL_ID]; 
-	char * gene_chr = key;
-	int * pos_strands = val;
-	int current_lagre_end = -1;
-	char chroname[MAX_CHROMOSOME_NAME_LEN];
+/* Annotation coordinates are stored as zero-based, inclusive exon ends. */
+typedef struct {
+	unsigned int start, end;
+	int negative_strand;
+} known_junction_exon_t;
 
-	int x1, ww=0, wi=0;
-	for(x1 =0 ; ; x1++){
-		if(ww){
-			chroname[wi++]=gene_chr[x1];
-			chroname[wi]=0;
-		}
-		if(0==gene_chr[x1]) break;
-		if(gene_chr[x1]==':')
-			ww=1;
-	}
-
-	//#warning ">>>>>>> COMMENt NEXT <<<<<<<<<<<<<<"
-	//if(1) SUBREADprintf("SEE LOCATION: %s has %d\n",  gene_chr ,  pos_strands[0]+1 );
-
-	for(x1 = 1; x1 < pos_strands[0]+1; x1+=3){
-		if(pos_strands[x1]==0)break;
-		//#warning ">>>>>>> COMMENt NEXT <<<<<<<<<<<<<<"
-		//SUBREADprintf("SEE LOCATION ___ : %d >0 && %d < %d %d %d\n", current_lagre_end , current_lagre_end,  pos_strands[x1],  pos_strands[x1+1],  pos_strands[x1+2]);
-		if(current_lagre_end > 0 && current_lagre_end < pos_strands[x1]){
-			// add a junction between current_lagre_end and pos_strands[x1]
-			if(indel_context -> total_events >= indel_context -> current_max_event_number -1){
-				indel_context -> current_max_event_number*=1.2;
-				indel_context -> event_space_dynamic = realloc(indel_context -> event_space_dynamic , sizeof( chromosome_event_t )*indel_context -> current_max_event_number);
-			}
-			chromosome_event_t * newbody = indel_context -> event_space_dynamic  + indel_context -> total_events ;
-			memset(newbody, 0, sizeof(chromosome_event_t));
-			newbody -> global_event_id = indel_context -> total_events++;
-			newbody -> event_type = CHRO_EVENT_TYPE_JUNCTION;
-			
-			newbody -> event_small_side = linear_gene_position(&global_context->chromosome_table , chroname, current_lagre_end);
-			newbody -> event_large_side = linear_gene_position(&global_context->chromosome_table , chroname, pos_strands[x1]);
-
-			//#warning ">>>>>>> COMMENt NEXT <<<<<<<<<<<<<<"
-			if(0){
-				if ( 1 || newbody -> event_small_side == 625683723){
-					SUBREADprintf("Loaded event :");
-					debug_show_event(global_context, newbody);
-				}
-			}
-			newbody -> is_negative_strand = pos_strands[x1+2];
-			newbody -> is_donor_found_or_annotation = 127;
-		//	printf("09NOV: add_annotation_to_junctions: %u -> %u '%s', %d,%d\n", newbody -> event_small_side ,  newbody -> event_large_side, chroname, current_lagre_end, pos_strands[x1]);
-		}
-
-		if(current_lagre_end < pos_strands[x1+1])
-			current_lagre_end = pos_strands[x1+1];
-	}
-}
-
+typedef struct {
+	char * chromosome;
+	char * identifier;
+	int negative_strand;
+	known_junction_exon_t * exons;
+	size_t count, capacity;
+} known_junction_group_t;
 
 typedef struct {
 	global_context_t * global_context;
 	HashTable * feature_sorting_table;
+	HashTable * junctions;
+	int transcript_mode, failed;
+	unsigned int skipped_features;
 } do_load_juncs_context_t;
 
-int do_juncs_add_feature(char * gene_name, char * transcript_id, char * chro_name, unsigned int feature_start, unsigned int feature_end, int is_negative_strand, void * context){
-	//#warning ">>>>>>>>>>>>>>>>> COMMENT NEXT <<<<<<<<<<<<<<<<<<<<"
-	//return 0;
-	//#warning ">>>>>>>>>>>>>>>>> COMMENT NEXT <<<<<<<<<<<<<<<<<<<<"
-	//SUBREADprintf("INJ LOCS: %s : %u, %u\n", chro_name, feature_start, feature_end);
-	do_load_juncs_context_t * do_load_juncs_context = context;
-	HashTable * feature_sorting_table = do_load_juncs_context -> feature_sorting_table;
+static void free_known_junction_group(void * value){
+	known_junction_group_t * group = value;
+	free(group->chromosome);
+	free(group->identifier);
+	free(group->exons);
+	free(group);
+}
 
-	global_context_t * global_context = do_load_juncs_context -> global_context;
+static int compare_known_junction_exons(const void * va, const void * vb){
+	const known_junction_exon_t * a = va, * b = vb;
+	if(a->start != b->start) return a->start < b->start ? -1 : 1;
+	return a->end == b->end ? 0 : (a->end < b->end ? -1 : 1);
+}
+
+int do_juncs_add_feature(char * gene_name, char * transcript_id, char * chro_name, unsigned int feature_start, unsigned int feature_end, int is_negative_strand, void * context){
+	do_load_juncs_context_t * load = context;
+	global_context_t * global_context = load->global_context;
+	known_junction_group_t * group;
+	char * key, * transcript = load->transcript_mode ? transcript_id : "";
 	char tmp_chro_name[MAX_CHROMOSOME_NAME_LEN];
-	if(global_context -> sam_chro_to_anno_chr_alias){
-		char * sam_chro = get_sam_chro_name_from_alias(global_context -> sam_chro_to_anno_chr_alias, chro_name);
-		if(sam_chro!=NULL) chro_name = sam_chro;
+	if(load->failed) return -1;
+	if(!gene_name || !chro_name || !transcript || (load->transcript_mode && !transcript[0]) ||
+	   feature_start < 1 || feature_end < feature_start || feature_end > 0x7fffffffU){
+		SUBREADprintf("\nERROR: invalid exon coordinates or missing identifiers in known-junction annotation.\n");
+		load->failed = 1;
+		return -1;
 	}
-	int access_n = HashTableGet( global_context -> chromosome_table.read_name_to_index, chro_name ) - NULL;
-	if(access_n < 1){
-		if(chro_name[0]=='c' && chro_name[1]=='h' && chro_name[2]=='r'){
-			chro_name += 3;
-		}else{
-			strcpy(tmp_chro_name, "chr");
-			strcat(tmp_chro_name, chro_name);
+	if(global_context->sam_chro_to_anno_chr_alias){
+		char * alias = get_sam_chro_name_from_alias(global_context->sam_chro_to_anno_chr_alias, chro_name);
+		if(alias) chro_name = alias;
+	}
+	if(!HashTableGet(global_context->chromosome_table.read_name_to_index, chro_name)){
+		if(strncmp(chro_name, "chr", 3)==0) chro_name += 3;
+		else {
+			if(strlen(chro_name) + 4 > sizeof(tmp_chro_name)){
+				load->skipped_features++;
+				return 0;
+			}
+			snprintf(tmp_chro_name, sizeof(tmp_chro_name), "chr%s", chro_name);
 			chro_name = tmp_chro_name;
 		}
 	}
-
-	char sort_key[ MAX_CHROMOSOME_NAME_LEN * 3 + 2 ];
-	SUBreadSprintf(sort_key,  MAX_CHROMOSOME_NAME_LEN * 3 + 2, "%s:%s", gene_name, chro_name);
-	int * old_features = HashTableGet(feature_sorting_table, sort_key), x1;
-	int written_space = -1, written_last_item = 0;
-	if(old_features){
-		int has_space = 0;
-		for(x1= 1; x1 < old_features[0] + 1 ; x1+=3){
-			if(old_features[x1]==0){
-				has_space = 1;
-				break;
-			}
-		}
-		if(!has_space){
-			int old_size = old_features[0];
-			old_features[0] *= 1.5;
-			old_features[0] -= old_features[0]%3;
-
-			// I used malloc but not realloc here, because the old memory block will be freed by HashTablePutReplace.
-			int * old_features2 = malloc( sizeof(int) * (old_features[0] +1));
-			memcpy(old_features2, old_features, (old_size + 1) * sizeof(int));
-			old_features2[old_size + 1] = 0;
-
-			HashTablePutReplace(feature_sorting_table, sort_key, old_features2, 0);
-			old_features = old_features2;
-		}
-		for(x1= 1; x1 < old_features[0] + 1 ; x1+=3){
-			if(old_features[x1]> feature_start || old_features[x1]==0){
-				written_space = x1;
-				if(old_features[x1]> feature_start){
-					int x2;
-					for(x2 = x1+3; x2 <  old_features[0] + 1;x2+=3){
-						if(old_features[x2]==0)break;
-					}
-					x2 += 2;
-					assert(x2 < old_features[0] + 1);
-					if(x2 + 1 <  old_features[0] + 1) old_features[x2+1]=0;
-
-					for(; x2 >= x1 + 3; x2 --)
-						old_features[x2] = old_features[x2-3];
-				} else written_last_item = 1;
-				break;
-			}
-		}
-	}else{
-		int init_space_sort = 15;
-		old_features = malloc((init_space_sort + 1) * sizeof(int));
-		old_features[0]=init_space_sort;
-		char * mm_sort_key = malloc(strlen(sort_key)+1);
-		strcpy(mm_sort_key, sort_key);
-		HashTablePut(feature_sorting_table, mm_sort_key, old_features);
-		written_space = 1;
-		written_last_item = 1;
+	/* Never turn an absent reference chromosome into a UINT_MAX endpoint. */
+	if(!HashTableGet(global_context->chromosome_table.read_name_to_index, chro_name)){
+		load->skipped_features++;
+		return 0;
 	}
-	assert(written_space >0);
-	old_features[written_space]=feature_start - 1;
-	old_features[written_space+1]=feature_end - 1;
-	old_features[written_space+2]=is_negative_strand;
-	if(written_last_item && written_space + 3 < old_features[0]+1) old_features[written_space+3]=0;
-
+	/* Length-prefixed components avoid collisions, even for IDs containing ':'.
+	   Chromosome metadata is stored separately and never parsed out of the key. */
+	key = malloc(strlen(gene_name) + strlen(transcript) + strlen(chro_name) + 96);
+	if(!key) goto allocation_error;
+	sprintf(key, "%zu:%s%zu:%s%zu:%s:%d", strlen(gene_name), gene_name,
+	        strlen(transcript), transcript, strlen(chro_name), chro_name,
+	        load->transcript_mode ? !!is_negative_strand : 0);
+	group = HashTableGet(load->feature_sorting_table, key);
+	if(!group){
+		group = calloc(1, sizeof(*group));
+		if(!group){ free(key); goto allocation_error; }
+		group->chromosome = strdup(chro_name);
+		group->identifier = strdup(load->transcript_mode ? transcript : gene_name);
+		group->negative_strand = !!is_negative_strand;
+		if(!group->chromosome || !group->identifier){
+			free(key);
+			free_known_junction_group(group);
+			goto allocation_error;
+		}
+		if(HashTablePut(load->feature_sorting_table, key, group)){
+			free(key);
+			free_known_junction_group(group);
+			goto allocation_error;
+		}
+	}else free(key);
+	if(group->count == group->capacity){
+		size_t capacity = group->capacity ? group->capacity * 2 : 8;
+		known_junction_exon_t * exons = realloc(group->exons, capacity * sizeof(*exons));
+		if(!exons) goto allocation_error;
+		group->exons = exons;
+		group->capacity = capacity;
+	}
+	group->exons[group->count].start = feature_start - 1;
+	group->exons[group->count].end = feature_end - 1;
+	group->exons[group->count++].negative_strand = !!is_negative_strand;
 	return 0;
+
+allocation_error:
+	SUBREADprintf("\nERROR: unable to allocate known-junction annotation storage.\n");
+	load->failed = 1;
+	return -1;
+}
+
+static void prepare_known_junction_group(void * key, void * value, HashTable * table){
+	do_load_juncs_context_t * load = table->appendix1;
+	known_junction_group_t * group = value;
+	size_t read, written = 0;
+	if(load->failed) return;
+	qsort(group->exons, group->count, sizeof(*group->exons), compare_known_junction_exons);
+	for(read = 0; read < group->count; read++){
+		known_junction_exon_t exon = group->exons[read];
+		if(written && exon.start == group->exons[written-1].start && exon.end == group->exons[written-1].end)
+			continue; /* An exact duplicate is not a second exon. */
+		if(written && exon.start <= group->exons[written-1].end){
+			if(load->transcript_mode){
+				SUBREADprintf("\nERROR: overlapping exons in transcript '%s' on %s (%u-%u and %u-%u).\n",
+				              group->identifier, group->chromosome,
+				              group->exons[written-1].start+1, group->exons[written-1].end+1,
+				              exon.start+1, exon.end+1);
+				load->failed = 1;
+				return;
+			}
+			/* SAF has no transcript IDs: retain its legacy gene-union semantics. */
+			if(exon.end > group->exons[written-1].end) group->exons[written-1].end = exon.end;
+		}else group->exons[written++] = exon;
+	}
+	group->count = written;
+}
+
+void add_annotation_to_junctions(void * key, void * value, HashTable * table){
+	do_load_juncs_context_t * load = table->appendix1;
+	global_context_t * global_context = load->global_context;
+	indel_context_t * indel_context = global_context->module_contexts[MODULE_INDEL_ID];
+	known_junction_group_t * group = value;
+	size_t i;
+	if(load->failed) return;
+	for(i = 1; i < group->count; i++){
+		unsigned int left = group->exons[i-1].end, right = group->exons[i].start;
+		int negative_strand = load->transcript_mode ? group->negative_strand : group->exons[i].negative_strand;
+		char junction_key[80], * saved_key;
+		chromosome_event_t * event;
+		/* GTF transcript junctions require an intron; SAF retains legacy behavior. */
+		if(load->transcript_mode && right <= left + 1) continue;
+		left = linear_gene_position(&global_context->chromosome_table, group->chromosome, left);
+		right = linear_gene_position(&global_context->chromosome_table, group->chromosome, right);
+		sprintf(junction_key, "%u:%u:%d", left, right, negative_strand);
+		if(HashTableGet(load->junctions, junction_key)) continue;
+		saved_key = strdup(junction_key);
+		if(!saved_key){ load->failed = 1; break; }
+		if(HashTablePut(load->junctions, saved_key, (void *)1)){
+			free(saved_key);
+			load->failed = 1;
+			break;
+		}
+		if(indel_context->total_events + 1 >= indel_context->current_max_event_number){
+			unsigned int capacity = indel_context->current_max_event_number;
+			chromosome_event_t * events;
+			capacity = capacity ? capacity + capacity / 5 + 16 : 16;
+			events = realloc(indel_context->event_space_dynamic, sizeof(*events) * capacity);
+			if(!events){ load->failed = 1; break; }
+			indel_context->current_max_event_number = capacity;
+			indel_context->event_space_dynamic = events;
+		}
+		event = indel_context->event_space_dynamic + indel_context->total_events;
+		memset(event, 0, sizeof(*event));
+		event->global_event_id = indel_context->total_events++;
+		event->event_type = CHRO_EVENT_TYPE_JUNCTION;
+		event->event_small_side = left;
+		event->event_large_side = right;
+		event->is_negative_strand = negative_strand;
+		event->large_side_increasing_coordinate = 1;
+		event->is_donor_found_or_annotation = 127;
+	}
 }
 
 int load_known_junctions(global_context_t * global_context){
-
-	HashTable * feature_sorting_table = HashTableCreate(90239);
-	HashTableSetKeyComparisonFunction(feature_sorting_table, my_strcmp);
-	HashTableSetHashFunction(feature_sorting_table, HashTableStringHashFunction);
-	HashTableSetDeallocationFunctions(feature_sorting_table, free, free);
-
-	do_load_juncs_context_t do_load_juncs_context;
-	memset(&do_load_juncs_context, 0, sizeof(do_load_juncs_context));
-
-	do_load_juncs_context.global_context = global_context;
-	do_load_juncs_context.feature_sorting_table = feature_sorting_table;
-
-	int features = load_features_annotation(global_context->config.exon_annotation_file , global_context->config.exon_annotation_file_type, global_context->config.exon_annotation_gene_id_column, NULL, global_context->config.exon_annotation_feature_name_column, &do_load_juncs_context, do_juncs_add_feature);
-
-	feature_sorting_table -> appendix1 = global_context;
-	HashTableIteration(feature_sorting_table, add_annotation_to_junctions);
-	HashTableDestroy(feature_sorting_table);
-
-	if(features <0)return -1;
-	else{
-		return 0;
+	do_load_juncs_context_t load;
+	indel_context_t * indel_context = global_context->module_contexts[MODULE_INDEL_ID];
+	unsigned int original_events = indel_context->total_events;
+	int features;
+	memset(&load, 0, sizeof(load));
+	load.global_context = global_context;
+	load.transcript_mode = global_context->config.exon_annotation_file_type == FILE_TYPE_GTF;
+	load.feature_sorting_table = HashTableCreate(90239);
+	load.junctions = HashTableCreate(90239);
+	if(!load.feature_sorting_table || !load.junctions){
+		if(load.feature_sorting_table) HashTableDestroy(load.feature_sorting_table);
+		if(load.junctions) HashTableDestroy(load.junctions);
+		return -1;
 	}
+	HashTableSetKeyComparisonFunction(load.feature_sorting_table, my_strcmp);
+	HashTableSetHashFunction(load.feature_sorting_table, HashTableStringHashFunction);
+	HashTableSetDeallocationFunctions(load.feature_sorting_table, free, free_known_junction_group);
+	HashTableSetKeyComparisonFunction(load.junctions, my_strcmp);
+	HashTableSetHashFunction(load.junctions, HashTableStringHashFunction);
+	HashTableSetDeallocationFunctions(load.junctions, free, NULL);
+	features = load_features_annotation(global_context->config.exon_annotation_file,
+	             global_context->config.exon_annotation_file_type,
+	             global_context->config.exon_annotation_gene_id_column,
+	             load.transcript_mode ? "transcript_id" : NULL,
+	             global_context->config.exon_annotation_feature_name_column, &load, do_juncs_add_feature);
+	/* Validate the entire annotation before appending any events. */
+	load.feature_sorting_table->appendix1 = &load;
+	if(features >= 0 && !load.failed)
+		HashTableIteration(load.feature_sorting_table, prepare_known_junction_group);
+	if(features >= 0 && !load.failed)
+		HashTableIteration(load.feature_sorting_table, add_annotation_to_junctions);
+	if(load.skipped_features)
+		SUBREADprintf("\nWARNING: skipped %u annotation features on chromosomes absent from the index.\n", load.skipped_features);
+	HashTableDestroy(load.feature_sorting_table);
+	HashTableDestroy(load.junctions);
+	if(features < 0 || load.failed){
+		indel_context->total_events = original_events;
+		SUBREADprintf("\nERROR: known-junction annotation was not loaded. GTF requires transcript_id and non-overlapping exons within each transcript.\n");
+		return -1;
+	}
+	return 0;
 }
 
 
@@ -4792,5 +4849,4 @@ int core_dynamic_align(global_context_t * global_context, thread_context_t * thr
 	return out_pos;
 
 }
-
 

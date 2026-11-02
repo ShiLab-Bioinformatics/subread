@@ -1190,18 +1190,18 @@ int load_features_annotation(char * file_name, int file_type, char * gene_id_col
 
 				if(!is_gene_id_found){
 					if(!is_GFF_geneid_warned){
-						int ext_att_len = strlen(extra_attrs);
-						if(extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
-						SUBREADprintf("\nERROR: failed to find the gene identifier attribute in the 9th column of the provided GTF file.\nThe specified gene identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\n\n",  gene_id_column, extra_attrs);
+						int ext_att_len = extra_attrs ? strlen(extra_attrs) : 0;
+						if(ext_att_len && extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
+						SUBREADprintf("\nERROR: failed to find the gene identifier attribute in the 9th column of the provided GTF file.\nThe specified gene identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\n\n",  gene_id_column, extra_attrs ? extra_attrs : "(missing)");
 					}
 					is_GFF_geneid_warned++;
 				}
 					
 				if(transcript_id_column && !is_tx_id_found){
 					if(!is_GFF_txid_warned){
-						int ext_att_len = strlen(extra_attrs);
-						if(extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
-						SUBREADprintf("\nERROR: failed to find the transcript identifier attribute in the 9th column of the provided GTF file.\nThe specified transcript identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\n\n", transcript_id_column, extra_attrs);
+						int ext_att_len = extra_attrs ? strlen(extra_attrs) : 0;
+						if(ext_att_len && extra_attrs[ext_att_len-1] == '\n') extra_attrs[ext_att_len-1] =0;
+						SUBREADprintf("\nERROR: failed to find the transcript identifier attribute in the 9th column of the provided GTF file.\nThe specified transcript identifier attribute is '%s'.\nAn example of attributes included in your GTF annotation is '%s'.\n\n", transcript_id_column, extra_attrs ? extra_attrs : "(missing)");
 					}
 					is_GFF_txid_warned++;
 				}
@@ -3955,4 +3955,3 @@ void IVT_query_range(IVT_IntervalTreeNode* root, srInt_64 edge_L_inced, srInt_64
 		if (node->left && !(node->left->posmin > edge_R_inced || node->left->posmax < edge_L_inced)) stack[sp++] = node->left;
 	}
 }
-
