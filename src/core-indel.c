@@ -1322,6 +1322,8 @@ void add_annotation_to_junctions(void * key, void * value, HashTable * table){
 		chromosome_event_t * event;
 		/* GTF transcript junctions require an intron; SAF retains legacy behavior. */
 		if(load->transcript_mode && right <= left + 1) continue;
+
+if(0)fprintf(stderr,"JLOADER group %s having junction %s:%d ^ %s:%d : %s\n", key,  group->chromosome, left,  group->chromosome, right+1, negative_strand?"NEG":"POS");
 		left = linear_gene_position(&global_context->chromosome_table, group->chromosome, left);
 		right = linear_gene_position(&global_context->chromosome_table, group->chromosome, right);
 		sprintf(junction_key, "%u:%u:%d", left, right, negative_strand);
