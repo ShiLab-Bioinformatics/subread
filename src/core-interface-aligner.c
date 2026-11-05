@@ -153,6 +153,9 @@ void print_usage_core_aligner()
 	SUBREADputs("  --complexIndels   Detect multiple short indels that are in close proximity");
 	SUBREADputs("                    (they can be as close as 1bp apart from each other).");
 	SUBREADputs("");
+	SUBREADputs("  -J, --junction    Disable mismatch-based soft clipping at read ends.");
+	SUBREADputs("                    Accurate fusion mode can override this option.");
+	SUBREADputs("");
 	SUBREADputs("# read trimming");
 	SUBREADputs("");
 	SUBREADputs("  --trim5 <int>     Trim off <int> number of bases from 5' end of each read. 0");
