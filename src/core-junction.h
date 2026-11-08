@@ -124,6 +124,9 @@ void new_explain_try_replace(global_context_t* global_context, thread_context_t 
 
 int init_junction_tables(global_context_t * context);
 int destroy_junction_tables(global_context_t * context);
+int event_trace_add_target(global_context_t *context, const char *spec);
+int event_trace_open(global_context_t *context);
+int event_trace_close(global_context_t *context);
 int process_voting_junction(global_context_t * global_context, thread_context_t * thread_context, subread_read_number_t pair_number, gene_vote_t * vote_1, gene_vote_t * vote_2, char * read_name_1, char * read_name_2, char * read_text_1, char * read_text_2,  int read_len_1, int read_len_2, int is_negative_strand,  gene_vote_number_t v1_all_subreads, gene_vote_number_t v2_all_subreads);
 int init_junction_thread_contexts(global_context_t * global_context, thread_context_t * thread_context, int task);
 int finalise_junction_thread(global_context_t * global_context, thread_context_t * thread_context, int task);
@@ -151,10 +154,10 @@ int write_fusion_final_results(global_context_t * global_context);
 
 
 int is_ambiguous_voting(global_context_t * global_context, subread_read_number_t pair_number, int is_second_read, int max_vote, int max_start,int max_end, int read_len, int is_negative);
-void core_search_short_exons(global_context_t * global_context, thread_context_t * thread_context, char * read_text, char * qualityb0, int rl, unsigned int P1_Pos, unsigned int P2_Pos, short read_coverage_start, short read_coverage_end);
+void core_search_short_exons(global_context_t * global_context, thread_context_t * thread_context, char * read_text, char * qualityb0, int rl, unsigned int P1_Pos, unsigned int P2_Pos, short read_coverage_start, short read_coverage_end, char *read_name, int is_second_read, int best_read_id);
 
 
-void core_fragile_junction_voting(global_context_t * global_context, thread_context_t * thread_context, char * rname, char * read, char * qual, unsigned int full_rl, int negative_strand, int color_space, unsigned int low_border, unsigned int high_border, gene_vote_t *vote_p1);
+void core_fragile_junction_voting(global_context_t * global_context, thread_context_t * thread_context, char * rname, char * read, char * qual, unsigned int full_rl, int negative_strand, int color_space, unsigned int low_border, unsigned int high_border, gene_vote_t *vote_p1, int is_second_read);
 
 int is_funky_fragment(global_context_t * global_context, char * rname1, char * chr1, unsigned int pos1, int rlen1, int is_1_negative, char * cigar1, char * seq1, char * rname2, char * chr2, unsigned int pos2, int rlen2, int is_2_negative, char * cigar2, char * seq2, int tlen_removed_intron);
 

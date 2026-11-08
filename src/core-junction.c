@@ -22,6 +22,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <errno.h>
+#include <limits.h>
 #include "subread.h"
 #include "sublog.h"
 #include "gene-value-index.h"
@@ -38,6 +40,144 @@
 #define CLUSTER_ALIGNMENT_DONOR_R1_MAPPED 2
 #define CLUSTER_ALIGNMENT_DONOR_R2_MAPPED 4
 #define CLUSTER_ALIGNMENT_DONOR_NEGATIVE_STRAND 1
+
+/* Monitor the exact stored event sides; chromosome positions are one-based. */
+static int event_trace_endpoint(char *text, char *chromosome, unsigned int *position, int *increasing)
+{
+	char *colon = strchr(text, ':'), *direction, *end;
+	unsigned long value;
+	if(!colon || colon == text || (size_t)(colon-text) >= MAX_CHROMOSOME_NAME_LEN) return -1;
+	*colon++ = 0;
+	direction = strchr(colon, ':');
+	*increasing = -1;
+	if(direction){
+		*direction++ = 0;
+		if((strcmp(direction, "0") != 0) && (strcmp(direction, "1") != 0)) return -1;
+		*increasing = direction[0] - '0';
+	}
+	if(!*colon) return -1;
+	for(end = colon; *end; end++) if(!isdigit((unsigned char)*end)) return -1;
+	errno = 0;
+	value = strtoul(colon, &end, 10);
+	if(errno || *end || !value || value > UINT_MAX) return -1;
+	strcpy(chromosome, text);
+	*position = (unsigned int)value;
+	return 0;
+}
+
+static int event_trace_side(char *text, char *chromosome, unsigned int *position, int *increasing)
+{
+	size_t length = strlen(text);
+	int side, unused;
+	if(length < 2) return -1;
+	if(text[0] == '['){ side = 1; text++; }
+	else if(text[length-1] == ']'){ side = 0; text[length-1] = 0; }
+	else return -1;
+	if(event_trace_endpoint(text, chromosome, position, &unused) || unused != -1) return -1;
+	*increasing = side;
+	return 0;
+}
+
+int event_trace_add_target(global_context_t *context, const char *spec)
+{
+	char buffer[600], *comma, *separator;
+	event_trace_target_t parsed, *p;
+	memset(&parsed, 0, sizeof(parsed));
+	parsed.strand_jumped = -1;
+	if(strlen(spec) >= sizeof(buffer)) goto invalid;
+	strcpy(buffer, spec);
+	separator = strstr(buffer, ":=:");
+	if(!separator) separator = strstr(buffer, ":X:");
+	if(separator){
+		char relation = separator[1];
+		parsed.strand_jumped = relation == 'X';
+		*separator = 0;
+		if(event_trace_side(buffer, parsed.chromosome[0], &parsed.position[0], &parsed.increasing[0]) ||
+		   event_trace_side(separator+3, parsed.chromosome[1], &parsed.position[1], &parsed.increasing[1]) ||
+		   ((parsed.increasing[0] == parsed.increasing[1]) != (relation == 'X'))) goto invalid;
+	}else{
+		comma = strchr(buffer, ',');
+		if(!comma || strchr(comma+1, ',')) goto invalid;
+		*comma++ = 0;
+		if(event_trace_endpoint(buffer, parsed.chromosome[0], &parsed.position[0], &parsed.increasing[0]) ||
+		   event_trace_endpoint(comma, parsed.chromosome[1], &parsed.position[1], &parsed.increasing[1]) ||
+		   ((parsed.increasing[0] < 0) != (parsed.increasing[1] < 0))) goto invalid;
+	}
+	for(p=context->config.event_trace_targets; p; p=p->next){
+		int same = p->strand_jumped == parsed.strand_jumped, reverse = same, i;
+		for(i=0;i<2;i++){
+			same &= !strcmp(p->chromosome[i], parsed.chromosome[i]) && p->position[i] == parsed.position[i] && p->increasing[i] == parsed.increasing[i];
+			reverse &= !strcmp(p->chromosome[i], parsed.chromosome[1-i]) && p->position[i] == parsed.position[1-i] && p->increasing[i] == parsed.increasing[1-i];
+		}
+		if(same || reverse) return 0;
+	}
+	p = malloc(sizeof(*p));
+	if(!p){ SUBREADprintf("ERROR: out of memory adding monitored event.\n"); return -1; }
+	*p = parsed;
+	p->next = context->config.event_trace_targets;
+	context->config.event_trace_targets = p;
+	return 0;
+invalid:
+	SUBREADprintf("ERROR: invalid --monitor-event '%s'; expected a side-aware event ID or chr:pos,chr:pos.\n", spec);
+	return -1;
+}
+
+int event_trace_open(global_context_t *context)
+{
+	char path[MAX_FILE_NAME_LENGTH+32];
+	if(!context->config.event_trace_targets) return 0;
+	SUBreadSprintf(path, sizeof(path), "%s.event-src", context->config.output_prefix);
+	context->event_trace_fp = fopen(path, "wb");
+	if(!context->event_trace_fp){ SUBREADprintf("ERROR: cannot create event trace '%s'.\n", path); return -1; }
+	if(fprintf(context->event_trace_fp, "chromosome1\tposition1\tincreasing1\tchromosome2\tposition2\tincreasing2\tstrand_jumped\tread_name\tmate\tsource\tthread\tcandidate\n") < 0){
+		SUBREADprintf("ERROR: cannot write event trace header.\n"); return -1;
+	}
+	return 0;
+}
+
+int event_trace_close(global_context_t *context)
+{
+	event_trace_target_t *p = context->config.event_trace_targets;
+	while(p){ event_trace_target_t *next = p->next; free(p); p = next; }
+	context->config.event_trace_targets = NULL;
+	if(context->event_trace_fp && fclose(context->event_trace_fp)) context->event_trace_error = 1;
+	context->event_trace_fp = NULL;
+	if(context->event_trace_error) SUBREADprintf("ERROR: failed writing the event trace.\n");
+	return context->event_trace_error;
+}
+
+static void event_trace_insert(global_context_t *context, thread_context_t *thread, chromosome_event_t *event, const char *name, int second, int candidate, const char *source)
+{
+	char *chromosome[2];
+	int position[2], direction[2], match = 0, order, i;
+	event_trace_target_t *target;
+	if(!context->event_trace_fp) return;
+	/* Padding or out-of-range sides have no chromosome name and cannot match. */
+	if(locate_gene_position(event->event_small_side, &context->chromosome_table, &chromosome[0], &position[0]) ||
+	   locate_gene_position(event->event_large_side, &context->chromosome_table, &chromosome[1], &position[1])) return;
+	position[0]++; position[1]++;
+	direction[0] = event->small_side_increasing_coordinate;
+	direction[1] = event->large_side_increasing_coordinate;
+	for(target=context->config.event_trace_targets; target && !match; target=target->next){
+		if(target->strand_jumped >= 0 && target->strand_jumped != event->is_strand_jumped) continue;
+		for(order=0; order<2 && !match; order++){
+			match = 1;
+			for(i=0;i<2;i++){
+				int j = order ? 1-i : i;
+				if(strcmp(target->chromosome[i], chromosome[j]) || target->position[i] != position[j] ||
+				   (target->increasing[i] >= 0 && target->increasing[i] != direction[j])) match = 0;
+			}
+		}
+	}
+	if(!match) return;
+	subread_lock_occupy(&context->output_lock);
+	if(fprintf(context->event_trace_fp, "%s\t%d\t%d\t%s\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%d\n",
+		chromosome[0], position[0], direction[0], chromosome[1], position[1], direction[1],
+		event->is_strand_jumped, name, context->input_reads.is_paired_end_reads ? (second ? "R2" : "R1") : "SE",
+		source, thread ? thread->thread_id : -1, candidate) < 0) context->event_trace_error = 1;
+	if(fflush(context->event_trace_fp)) context->event_trace_error = 1;
+	subread_lock_release(&context->output_lock);
+}
 
 
 unsigned int abs32uint(unsigned int x){
@@ -1824,7 +1964,7 @@ int extend_uncovered_region_juncs(global_context_t * global_context, thread_cont
 	return -1;
 }
 
-void simple_add_junction( global_context_t * global_context, thread_context_t * thread_context, unsigned int left_edge_wanted, unsigned int right_edge_wanted, int indel_at_junction, int is_negative_donors ){
+void simple_add_junction( global_context_t * global_context, thread_context_t * thread_context, unsigned int left_edge_wanted, unsigned int right_edge_wanted, int indel_at_junction, int is_negative_donors, char *read_name, int is_second_read ){
 	char * chro_name_left, *chro_name_right;
 	int chro_pos_left,chro_pos_right;
 
@@ -1887,6 +2027,7 @@ void simple_add_junction( global_context_t * global_context, thread_context_t * 
 			new_event -> small_side_increasing_coordinate = 0;
 			new_event -> large_side_increasing_coordinate = 1;
 			put_new_event(event_table, new_event , event_no);
+			event_trace_insert(global_context, thread_context, new_event, read_name, is_second_read, -1, "cluster");
 	}
 }
 
@@ -2083,7 +2224,7 @@ int align_cluster(global_context_t * global_context, thread_context_t * thread_c
 						}
 
 						//#warning "SUBREAD_151 ============= MAKE SURE:  CHANGE '0' TO INSERTED BASES ================="
-						simple_add_junction(global_context, thread_context, junction_small_side, junction_large_side, 0, (dynamic_highest_mask[ second_end ] & CLUSTER_ALIGNMENT_DONOR_NEGATIVE_STRAND)?1:0);
+						simple_add_junction(global_context, thread_context, junction_small_side, junction_large_side, 0, (dynamic_highest_mask[ second_end ] & CLUSTER_ALIGNMENT_DONOR_NEGATIVE_STRAND)?1:0, is_second_vote_array[x1] ? read_name_2 : read_name_1, is_second_vote_array[x1]);
 					}
 				}
 			}
@@ -2099,7 +2240,7 @@ int align_cluster(global_context_t * global_context, thread_context_t * thread_c
 				absoffset_to_posstr(global_context, junction_large_side+1, out2pos);
 				//SUBREADprintf("FMB=%d\tFS=%d\nPOS=%s , %s\n\n", front_mismatched_bases, front_score, out1pos, out2pos);
 
-				simple_add_junction(global_context, thread_context, junction_small_side, junction_large_side, 0, front_negative_donor);
+				simple_add_junction(global_context, thread_context, junction_small_side, junction_large_side, 0, front_negative_donor, is_second_vote_array[highest_target_end] ? read_name_2 : read_name_1, is_second_vote_array[highest_target_end]);
 			}
 
 			if(0 && tail_mismatched_bases <1 && tail_score >14){
@@ -2113,7 +2254,7 @@ int align_cluster(global_context_t * global_context, thread_context_t * thread_c
 
 
 
-				simple_add_junction(global_context, thread_context, junction_small_side, junction_large_side, 0, tail_negative_donor);
+				simple_add_junction(global_context, thread_context, junction_small_side, junction_large_side, 0, tail_negative_donor, is_second_vote_array[highest_target_end] ? read_name_2 : read_name_1, is_second_vote_array[highest_target_end]);
 			}
 		}
 	}
@@ -4026,7 +4167,7 @@ void find_new_junctions(global_context_t * global_context, thread_context_t * th
 	if(read_len > EXON_LONG_READ_LENGTH)
 	{
 		assert(result -> selected_position <= 0xffff0000);
-		core_search_short_exons(global_context, thread_context,  read_text, qual_text, read_len, result -> selected_position, (subjunc_result -> minor_votes < 1)? result -> selected_position:subjunc_result -> minor_position, result -> confident_coverage_start, result -> confident_coverage_end);
+		core_search_short_exons(global_context, thread_context,  read_text, qual_text, read_len, result -> selected_position, (subjunc_result -> minor_votes < 1)? result -> selected_position:subjunc_result -> minor_position, result -> confident_coverage_start, result -> confident_coverage_end, read_name, is_second_read, best_read_id);
 	}
 
 	int selected_real_split_point = subjunc_result->split_point;
@@ -4295,6 +4436,7 @@ void find_new_junctions(global_context_t * global_context, thread_context_t * th
 				new_event -> large_side_increasing_coordinate = subjunc_result -> large_side_increasing_coordinate;
 				
 				put_new_event(event_table, new_event , event_no);
+				event_trace_insert(global_context, thread_context, new_event, read_name, is_second_read, best_read_id, "junction");
 				
 				if(0 && FIXLENstrcmp("R000000052", read_name) == 0) 
 					SUBREADprintf("NEW_JUNCTION_HERE : %s , %u , %u  (%u, %u)\n", chro_name_right, chro_pos_left, chro_pos_right,  new_event -> event_small_side, new_event -> event_large_side);
@@ -4315,6 +4457,7 @@ void find_new_junctions(global_context_t * global_context, thread_context_t * th
 					new_event -> large_side_increasing_coordinate = subjunc_result -> large_side_increasing_coordinate;
 					
 					put_new_event(event_table, new_event , event_no);
+					event_trace_insert(global_context, thread_context, new_event, read_name, is_second_read, best_read_id, "fusion");
 					//if( 1018082 == pair_number)
 					//	SUBREADprintf("NEW_CHIMERISM_HERE_FULL [%u:%d: R_%d] : %s , %s , %u , %u, %c ; INC=%d %d\n", pair_number, best_read_id, is_second_read+1, chro_name_left, chro_name_right, chro_pos_left, chro_pos_right, is_strand_jumped?'X':'=', new_event -> small_side_increasing_coordinate, new_event -> large_side_increasing_coordinate);
 				}
@@ -4570,7 +4713,7 @@ int paired_chars_part(char * ch1, char * ch2, int is_reverse)
 #define SHORT_EXON_WINDOW 6 
 #define SHORT_EXON_EXTEND 5000
 
-void core_search_short_exons(global_context_t * global_context, thread_context_t * thread_context, char * read_text, char * qualityb0, int rl, unsigned int P1_Pos, unsigned int P2_Pos, short read_coverage_start, short read_coverage_end)
+void core_search_short_exons(global_context_t * global_context, thread_context_t * thread_context, char * read_text, char * qualityb0, int rl, unsigned int P1_Pos, unsigned int P2_Pos, short read_coverage_start, short read_coverage_end, char *read_name, int is_second_read, int best_read_id)
 {
 	char inb[MAX_READ_LENGTH], qualityb[MAX_READ_LENGTH];
 	if ( (rl <= EXON_LONG_READ_LENGTH ) && (!EXON_EXTENDING_SCAN)) return;
@@ -4749,6 +4892,7 @@ void core_search_short_exons(global_context_t * global_context, thread_context_t
 			new_event -> indel_length = 0;
 
 			put_new_event(event_table, new_event , event_no);
+			event_trace_insert(global_context, thread_context, new_event, read_name, is_second_read, best_read_id, "short-exon-head");
 		}
 		//printf("FOUND NEW JUNCTION HEAD: %u - %u\n", best_j1_edge, best_j2_edge);
 	}
@@ -4912,6 +5056,7 @@ void core_search_short_exons(global_context_t * global_context, thread_context_t
 			new_event -> indel_length = 0;
 
 			put_new_event(event_table, new_event , event_no);
+			event_trace_insert(global_context, thread_context, new_event, read_name, is_second_read, best_read_id, "short-exon-tail");
 			//printf("FOUND NEW JUNCTION TAIL: %u - %u\n", best_j1_edge, best_j2_edge);
 		}
 	}
@@ -5335,7 +5480,7 @@ int core13_test_donor(char *read, int read_len, unsigned int pos1, unsigned int 
 #define EXON_LARGE_WINDOW 60 
 #define ACCEPTED_SUPPORT_RATE 0.3
 
-void core_fragile_junction_voting(global_context_t * global_context, thread_context_t * thread_context, char * rname, char * read, char * qual, unsigned int full_rl, int negative_strand, int color_space, unsigned int low_border, unsigned int high_border, gene_vote_t *vote_p1)
+void core_fragile_junction_voting(global_context_t * global_context, thread_context_t * thread_context, char * rname, char * read, char * qual, unsigned int full_rl, int negative_strand, int color_space, unsigned int low_border, unsigned int high_border, gene_vote_t *vote_p1, int is_second_read)
 {
 	int windows = full_rl / EXON_LARGE_WINDOW +1;
 	float overlap = (1.0*windows * EXON_LARGE_WINDOW - full_rl) / (windows-1);
@@ -5597,6 +5742,7 @@ void core_fragile_junction_voting(global_context_t * global_context, thread_cont
 						new_event -> indel_length = 0;
 
 						put_new_event(event_table, new_event , event_no);
+						event_trace_insert(global_context, thread_context, new_event, rname, is_second_read, -1, "fragile");
 			//			SUBREADprintf("ADD JUNCTION BY FRAGILE, %d-%d\n", pos_small, pos_big);
 					}
 

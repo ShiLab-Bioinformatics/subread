@@ -9,6 +9,7 @@
 #include "subread.h"
 #include "input-files.h"
 #include "core.h"
+#include "core-junction.h"
 #include "HelperFunctions.h"
 
 static struct option long_options[] =
@@ -57,6 +58,7 @@ static struct option long_options[] =
 	{"DPGapExt",  required_argument, 0, 'E'},
 	{"extendIndelDetection", no_argument, 0, 0},
 	{"allJunctions",  no_argument, 0, 0},
+	{"monitor-event", required_argument, 0, 0},
 	{"memoryMultiplex",  required_argument, 0, 0},
 	{"ignoreUnmapped",  no_argument, 0, 0},
 	{"extraColumns",  no_argument, 0, 0},
@@ -226,6 +228,13 @@ void print_usage_core_subjunc()
 	SUBREADputs("  --allJunctions    Detect exon-exon junctions (both canonical and non-canonical");
 	SUBREADputs("                    junctions) and structural variants in RNA-seq data. Refer to");
 	SUBREADputs("                    Users Guide for reporting of junctions and fusions.");
+	SUBREADputs("");
+	SUBREADputs("  --monitor-event <chr:pos,chr:pos>  Trace voting-stage insertions. Repeat for");
+	SUBREADputs("                    multiple events; positions are 1-based stored event sides.");
+	SUBREADputs("                    Side-aware IDs such as [chr1:100:=:chr2:200] also work.");
+	SUBREADputs("                    Optionally append :0 or :1 to both positions to match");
+	SUBREADputs("                    stored side directions. Requires --allJunctions and -o.");
+	SUBREADputs("                    Output: <output>.event-src.");
 	SUBREADputs("");
 	SUBREADputs("# gene annotation");
 	SUBREADputs("");
@@ -702,6 +711,10 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 				{
 					global_context->config.do_fusion_detection = 1;
 				}
+				else if(strcmp("monitor-event", long_options[option_index].name)==0)
+				{
+					if(event_trace_add_target(global_context, optarg)) return -1;
+				}
 				else if(strcmp("enable-deep-learning", long_options[option_index].name)==0)
 				{
 					global_context->config.write_deeplearning_output = 1;
@@ -719,6 +732,10 @@ int parse_opts_subjunc(int argc , char ** argv, global_context_t * global_contex
 
 	if(argc > optind){
 		SUBREADprintf("Invalid parameter '%s'\n", argv[optind]);
+		return -1;
+	}
+	if(global_context->config.event_trace_targets && (!global_context->config.do_fusion_detection || !global_context->config.output_prefix[0])){
+		SUBREADprintf("ERROR: --monitor-event requires --allJunctions and an output filename (-o).\n");
 		return -1;
 	}
 
@@ -775,4 +792,3 @@ int main_junction(int argc , char ** argv)
 	int ret = core_main(argc, argv, parse_opts_subjunc);
     return ret;
 }
-

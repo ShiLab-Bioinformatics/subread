@@ -906,12 +906,14 @@ int core_main(int argc , char ** argv, int (parse_opts (int , char **, global_co
 	ret = ret || print_configuration(global_context);
 	ret = ret || check_configuration(global_context);
 	ret = ret || load_global_context(global_context);
+	ret = ret || event_trace_open(global_context);
 	ret = ret || init_modules(global_context);
 	ret = ret || read_chunk_circles(global_context);
 	ret = ret || write_final_results(global_context);
 	ret = ret || destroy_modules(global_context);
 	ret = ret || destroy_global_context(global_context);
 	ret = ret || show_summary(global_context);
+	if(event_trace_close(global_context)) ret = 1;
 
 	free(global_context);
 
@@ -3413,7 +3415,7 @@ int do_voting(global_context_t * global_context, thread_context_t * thread_conte
 				if(global_context->config.do_breakpoint_detection && current_rlen > EXON_LONG_READ_LENGTH)//&& global_context->config.all_threads<2)
 				{
 					char * current_qual =  is_second_read?qual_text_2 : qual_text_1;
-					core_fragile_junction_voting(global_context, thread_context, read_name_1, current_read, current_qual, current_rlen, is_reversed, global_context->config.space_type, low_index_border, current_high_border, vote_fg);
+					core_fragile_junction_voting(global_context, thread_context, is_second_read ? read_name_2 : read_name_1, current_read, current_qual, current_rlen, is_reversed, global_context->config.space_type, low_index_border, current_high_border, vote_fg, is_second_read);
 
 				}
 				if(global_context->config.SAM_extra_columns)

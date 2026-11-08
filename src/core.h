@@ -125,6 +125,14 @@ typedef struct{
 	output_read_buffer_t r2;
 } output_fragment_buffer_t;	
 
+typedef struct event_trace_target {
+	char chromosome[2][MAX_CHROMOSOME_NAME_LEN];
+	unsigned int position[2];
+	int increasing[2]; /* -1 means either direction */
+	int strand_jumped; /* -1 means either orientation */
+	struct event_trace_target *next;
+} event_trace_target_t;
+
 typedef struct{
 	// running_scheme
 	int all_threads;
@@ -165,6 +173,7 @@ typedef struct{
 	char read_group_id[MAX_FILE_NAME_LENGTH];
 	char read_group_txt[MAX_FILE_NAME_LENGTH];
 	char output_prefix[MAX_FILE_NAME_LENGTH];
+	event_trace_target_t *event_trace_targets;
 	int report_sam_file;
 	int report_no_unpaired_reads;
 	int min_mapped_fraction;
@@ -522,6 +531,8 @@ typedef struct{
 	FILE * output_sam_fp;
 	FILE * long_insertion_FASTA_fp;
 	FILE * deeplearning_output_fp;
+	FILE * event_trace_fp;
+	int event_trace_error;
 	char * output_sam_inner_buffer;
 	int output_sam_is_full;
 

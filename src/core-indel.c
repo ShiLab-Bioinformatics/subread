@@ -4465,6 +4465,8 @@ void init_global_context(global_context_t * context)
 {
 	memset(context->module_contexts, 0, 5*sizeof(void *));
 	memset(&context->config, 0, sizeof(configuration_t));
+	context->event_trace_fp = NULL;
+	context->event_trace_error = 0;
 
 	context->config.fast_run = 0;
 	context->config.memory_use_multiplex = 1;
@@ -4852,4 +4854,3 @@ int core_dynamic_align(global_context_t * global_context, thread_context_t * thr
 	return out_pos;
 
 }
-
